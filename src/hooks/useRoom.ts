@@ -1,0 +1,498 @@
+import { useState, useEffect, useCallback } from 'react';
+import { supabase } from '@/integrations/supabase/client';
+import { getSession, saveSession, hashGMKey } from '@/lib/session';
+import type { Room, Participant, Message, StageState, Character } from '@/types/trpg';
+import { useToast } from '@/hooks/use-toast';
+import { getCharacterAvatarUrl } from '@/lib/characterAvatar';
+import { appendLocalStageEvent } from '@/lib/localStageEvents';
+import { applyNpcDisclosureCommandsFromText } from '@/lib/npcDisclosures';
+
+export function useRoom(roomId: string | null) {
+  const [room, setRoom] = useState<Room | null>(null);
+  const [participant, setParticipant] = useState<Participant | null>(null);
+  const [participants, setParticipants] = useState<Participant[]>([]);
+  const [messages, setMessages] = useState<Message[]>([]);
+  const [stageState, setStageState] = useState<StageState | null>(null);
+  const [characters, setCharacters] = useState<Character[]>([]);
+  const [bgmUrl, setBgmUrl] = useState<string | null>(null);
+  const [se, setSe] = useState<{ url: string; nonce: number } | null>(null);
+  const [loading, setLoading] = useState(true);
+  const { toast } = useToast();
+
+  const applyAudioCommandsFromText = useCallback(
+    (rawText: unknown, mode: 'initial' | 'realtime') => {
+      if (typeof rawText !== 'string' || !rawText) return;
+      const cmdRegex = /\[(bgm|se):([^\]]+)\]/gi;
+      let match: RegExpExecArray | null = null;
+      let lastBgm: string | null = null;
+      const seTriggers: string[] = [];
+      while ((match = cmdRegex.exec(rawText)) !== null) {
+        const kind = String(match[1]).toLowerCase();
+        const value = String(match[2] ?? '').trim();
+        if (!value) continue;
+        if (kind === 'bgm') lastBgm = value;
+        if (kind === 'se') seTriggers.push(value);
+      }
+
+      if (lastBgm !== null) {
+        setBgmUrl(lastBgm.toLowerCase() === 'stop' ? null : lastBgm);
+      }
+
+      if (mode === 'realtime' && seTriggers.length > 0) {
+        const lastSe = seTriggers[seTriggers.length - 1];
+        setSe((prev) => ({ url: lastSe, nonce: (prev?.nonce ?? 0) + 1 }));
+      }
+    },
+    []
+  );
+
+  // Fetch room data
+  const fetchRoom = useCallback(async () => {
+    if (!roomId) return;
+    
+    const { data, error } = await supabase
+      .from('rooms')
+      .select('*')
+      .eq('id', roomId)
+      .single();
+    
+    if (error) {
+      console.error('Error fetching room:', error);
+      return;
+    }
+    
+    setRoom(data as Room);
+  }, [roomId]);
+
+  // Fetch participants
+  const fetchParticipants = useCallback(async () => {
+    if (!roomId) return;
+    
+    const { data, error } = await supabase
+      .from('participants')
+      .select('*')
+      .eq('room_id', roomId);
+    
+    if (error) {
+      console.error('Error fetching participants:', error);
+      return;
+    }
+    
+    setParticipants(data as Participant[]);
+    
+    // Find current participant
+    const session = getSession();
+    const current = data.find(p => p.session_id === session.sessionId);
+    if (current) {
+      setParticipant(current as Participant);
+    }
+  }, [roomId]);
+
+  // Fetch messages
+  const fetchMessages = useCallback(async () => {
+    if (!roomId) return;
+    
+    const { data, error } = await supabase
+      .from('messages')
+      .select('*')
+      .eq('room_id', roomId)
+      .order('created_at', { ascending: true }) as { data: any[] | null; error: any };
+    
+    if (error) {
+      console.error('Error fetching messages:', error);
+      return;
+    }
+
+    const list = (data as Message[]) || [];
+    // Derive initial BGM from message history (no SE triggering on load)
+    try {
+      list.forEach((m) => {
+        applyAudioCommandsFromText((m as any)?.text, 'initial');
+        applyNpcDisclosureCommandsFromText(roomId, (m as any)?.text);
+      });
+    } catch {
+      // ignore
+    }
+
+    setMessages(list as Message[]);
+  }, [roomId, applyAudioCommandsFromText]);
+
+  // Fetch stage state
+  const fetchStageState = useCallback(async () => {
+    if (!roomId) return;
+    
+    const { data, error } = await supabase
+      .from('stage_states')
+      .select('*')
+      .eq('room_id', roomId)
+      .single();
+    
+    if (!error && data) {
+      const stageData = data as any;
+      setStageState({
+        ...stageData,
+        active_portraits: Array.isArray(stageData.active_portraits) 
+          ? stageData.active_portraits 
+          : []
+      } as StageState);
+    }
+  }, [roomId]);
+
+  // Fetch characters
+  const fetchCharacters = useCallback(async () => {
+    if (!roomId) return;
+    
+    const { data, error } = await supabase
+      .from('characters')
+      .select('*')
+      .eq('room_id', roomId);
+    
+    if (error) {
+      console.error('Error fetching characters:', error);
+      return;
+    }
+
+    // Shared avatar fallback via assets table (tag="__avatar__")
+    const { data: avatarAssets } = await supabase
+      .from('assets')
+      .select('character_id,url,label')
+      .eq('room_id', roomId)
+      .eq('kind', 'portrait')
+      .eq('tag', '__avatar__');
+
+    const avatarMap = new Map<string, { url: string; scale?: number; offsetX?: number; offsetY?: number }>();
+    (avatarAssets || []).forEach((a: any) => {
+      if (!a?.character_id || !a?.url) return;
+      const url = String(a.url);
+      const entry: { url: string; scale?: number; offsetX?: number; offsetY?: number } = { url };
+      if (typeof a.label === 'string' && a.label.startsWith('avatar|')) {
+        const parts = a.label.split('|').slice(1);
+        for (const p of parts) {
+          const [k, v] = p.split('=');
+          if (!k || v === undefined) continue;
+          if (k === 'scale') entry.scale = Number.parseFloat(v);
+          if (k === 'x') entry.offsetX = Number.parseInt(v, 10);
+          if (k === 'y') entry.offsetY = Number.parseInt(v, 10);
+        }
+      }
+      avatarMap.set(String(a.character_id), entry);
+    });
+
+    const merged = (data as any[]).map((c) => {
+      const local = getCharacterAvatarUrl(c.id);
+      const shared = avatarMap.get(c.id);
+      return {
+        ...c,
+        avatar_url: c.avatar_url || shared?.url || local || null,
+        avatar_scale: typeof c.avatar_scale === 'number' ? c.avatar_scale : (shared?.scale ?? undefined),
+        avatar_offset_x: typeof c.avatar_offset_x === 'number' ? c.avatar_offset_x : (shared?.offsetX ?? undefined),
+        avatar_offset_y: typeof c.avatar_offset_y === 'number' ? c.avatar_offset_y : (shared?.offsetY ?? undefined),
+      };
+    });
+
+    setCharacters(merged as unknown as Character[]);
+  }, [roomId]);
+
+  // Join room
+  const joinRoom = async (name: string, gmKey?: string) => {
+    if (!roomId || !room) return null;
+    
+    const session = getSession();
+    let role: 'PL' | 'GM' = 'PL';
+    
+    // Check GM key if provided
+    if (gmKey) {
+      const keyHash = hashGMKey(gmKey);
+      if (keyHash === room.gm_key_hash) {
+        role = 'GM';
+      } else {
+        toast({
+          title: 'GMキーが正しくありません',
+          variant: 'destructive',
+        });
+        return null;
+      }
+    }
+    
+    const { data, error } = await supabase
+      .from('participants')
+      .insert({
+        room_id: roomId,
+        name,
+        role,
+        session_id: session.sessionId,
+      })
+      .select()
+      .single();
+    
+    if (error) {
+      console.error('Error joining room:', error);
+      toast({
+        title: 'ルームへの参加に失敗しました',
+        variant: 'destructive',
+      });
+      return null;
+    }
+    
+    const newParticipant = data as Participant;
+    setParticipant(newParticipant);
+    
+    // Update session
+    saveSession({
+      ...session,
+      participantId: newParticipant.id,
+      roomId,
+      role,
+      name,
+    });
+    
+    // Post system message
+    await sendMessage('system', `${name} がルームに参加しました`, 'システム');
+    
+    return newParticipant;
+  };
+
+  // Send message
+  const sendMessage = async (
+    type: 'speech' | 'mono' | 'system' | 'dice',
+    text: string,
+    speakerName: string,
+    options?: {
+      channel?: 'public' | 'secret' | 'chat';
+      secretAllowList?: string[];
+      dicePayload?: any;
+      portraitUrl?: string;
+    }
+  ) => {
+    if (!roomId) return null;
+    
+    const { data, error } = await supabase
+      .from('messages')
+      .insert({
+        room_id: roomId,
+        type,
+        text,
+        speaker_name: speakerName,
+        channel: options?.channel || 'public',
+        secret_allow_list: options?.secretAllowList || [],
+        dice_payload: options?.dicePayload,
+        speaker_portrait_url: options?.portraitUrl,
+      })
+      .select()
+      .single();
+    
+    if (error) {
+      console.error('Error sending message:', error);
+      return null;
+    }
+    
+    return data as unknown as Message;
+  };
+
+  // Update stage state
+  const updateStageState = async (updates: Partial<StageState>) => {
+    if (!roomId) return;
+    
+    const updateData: any = {
+      room_id: roomId,
+      ...updates,
+      // Ensure ordering for replay/local history by always bumping updated_at
+      updated_at: new Date().toISOString(),
+    };
+    
+    const { error } = await supabase
+      .from('stage_states')
+      .upsert(updateData, { onConflict: 'room_id' });
+    
+    if (error) {
+      console.error('Error updating stage state:', error);
+      return;
+    }
+
+    // Record stage transitions for replay (best-effort)
+    try {
+      if (updates.background_url !== undefined) {
+        await supabase.from('stage_events').insert({
+          room_id: roomId,
+          kind: 'background',
+          data: { url: updates.background_url },
+        } as any);
+      }
+      if (updates.active_portraits !== undefined) {
+        await supabase.from('stage_events').insert({
+          room_id: roomId,
+          kind: 'portraits',
+          data: { portraits: updates.active_portraits },
+        } as any);
+      }
+      if (updates.is_secret !== undefined || updates.secret_allow_list !== undefined) {
+        await supabase.from('stage_events').insert({
+          room_id: roomId,
+          kind: 'secret',
+          data: {
+            isSecret: updates.is_secret,
+            secretAllowList: updates.secret_allow_list,
+          },
+        } as any);
+      }
+    } catch (e) {
+      // ignore; replay will just miss these transitions
+      console.warn('Failed to insert stage_events:', e);
+    }
+  };
+
+  // Update room
+  const updateRoom = async (updates: Partial<Room>) => {
+    if (!roomId) return;
+    
+    const { error } = await supabase
+      .from('rooms')
+      .update(updates as any)
+      .eq('id', roomId);
+    
+    if (error) {
+      console.error('Error updating room:', error);
+    } else {
+      setRoom(prev => prev ? { ...prev, ...updates } : null);
+    }
+  };
+
+  // Real-time subscriptions
+  useEffect(() => {
+    if (!roomId) return;
+
+    // Subscribe to messages
+    const messagesChannel = supabase
+      .channel(`messages:${roomId}`)
+      .on(
+        'postgres_changes',
+        {
+          event: 'INSERT',
+          schema: 'public',
+          table: 'messages',
+          filter: `room_id=eq.${roomId}`,
+        },
+        (payload) => {
+          setMessages((prev) => {
+            const nextMsg = payload.new as unknown as Message;
+            if (prev.some((m) => m.id === nextMsg.id)) return prev;
+            try {
+              applyAudioCommandsFromText((payload.new as any)?.text, 'realtime');
+              applyNpcDisclosureCommandsFromText(roomId, (payload.new as any)?.text);
+            } catch {
+              // ignore
+            }
+            return [...prev, nextMsg];
+          });
+        }
+      )
+      .subscribe();
+
+    // Subscribe to stage state
+    const stageChannel = supabase
+      .channel(`stage:${roomId}`)
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'stage_states',
+          filter: `room_id=eq.${roomId}`,
+        },
+        (payload) => {
+          if (payload.new) {
+            const stageData = payload.new as any;
+            const nextState = {
+              ...stageData,
+              active_portraits: Array.isArray(stageData.active_portraits) ? stageData.active_portraits : [],
+            } as StageState;
+
+            setStageState((prev) => {
+              // Record transitions locally for replay (works even if stage_events table isn't available)
+              try {
+                const ts = String((payload as any).commit_timestamp || nextState.updated_at || new Date().toISOString());
+                if (!prev || prev.background_url !== nextState.background_url) {
+                  appendLocalStageEvent(roomId, { timestamp: ts, type: 'background', data: { url: nextState.background_url || null } });
+                }
+                const prevPortraits = JSON.stringify(prev?.active_portraits ?? []);
+                const nextPortraits = JSON.stringify(nextState.active_portraits ?? []);
+                if (!prev || prevPortraits !== nextPortraits) {
+                  appendLocalStageEvent(roomId, { timestamp: ts, type: 'portraits', data: { portraits: nextState.active_portraits ?? [] } });
+                }
+                if (!prev || prev.is_secret !== nextState.is_secret || JSON.stringify(prev.secret_allow_list ?? []) !== JSON.stringify(nextState.secret_allow_list ?? [])) {
+                  appendLocalStageEvent(roomId, { timestamp: ts, type: 'secret', data: { isSecret: nextState.is_secret, secretAllowList: nextState.secret_allow_list } });
+                }
+              } catch {
+                // ignore
+              }
+              return nextState;
+            });
+          }
+        }
+      )
+      .subscribe();
+
+    // Subscribe to participants
+    const participantsChannel = supabase
+      .channel(`participants:${roomId}`)
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'participants',
+          filter: `room_id=eq.${roomId}`,
+        },
+        () => {
+          fetchParticipants();
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(messagesChannel);
+      supabase.removeChannel(stageChannel);
+      supabase.removeChannel(participantsChannel);
+    };
+  }, [roomId, fetchParticipants, applyAudioCommandsFromText]);
+
+  // Initial fetch
+  useEffect(() => {
+    if (!roomId) {
+      setLoading(false);
+      return;
+    }
+
+    const fetchAll = async () => {
+      setLoading(true);
+      await Promise.all([
+        fetchRoom(),
+        fetchParticipants(),
+        fetchMessages(),
+        fetchStageState(),
+        fetchCharacters(),
+      ]);
+      setLoading(false);
+    };
+
+    fetchAll();
+  }, [roomId, fetchRoom, fetchParticipants, fetchMessages, fetchStageState, fetchCharacters]);
+
+  return {
+    room,
+    participant,
+    participants,
+    messages,
+    stageState,
+    characters,
+    bgmUrl,
+    se,
+    loading,
+    isGM: participant?.role === 'GM',
+    joinRoom,
+    sendMessage,
+    updateStageState,
+    updateRoom,
+    refreshCharacters: fetchCharacters,
+  };
+}

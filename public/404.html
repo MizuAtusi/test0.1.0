@@ -1,0 +1,28 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Redirecting...</title>
+    <script>
+      (function () {
+        var location = window.location;
+        var injectedBasePath = '__BASE_PATH__';
+        var repo = '';
+
+        if (injectedBasePath && injectedBasePath !== '__BASE_PATH__') {
+          repo = injectedBasePath;
+        } else {
+          var isGithubIo = /\.github\.io$/.test(location.hostname);
+          repo = isGithubIo ? '/' + location.pathname.split('/')[1] : '';
+        }
+
+        var path = location.pathname.replace(repo, '');
+        var search = location.search ? '&' + location.search.slice(1).replace(/&/g, '~and~') : '';
+
+        window.location.replace(location.origin + repo + '/?/' + path.slice(1) + search + location.hash);
+      })();
+    </script>
+  </head>
+  <body></body>
+</html>
