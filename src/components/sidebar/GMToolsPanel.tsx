@@ -1,5 +1,5 @@
-import { useState, useEffect, useRef, useCallback } from 'react';
-import { Plus, Image, FileText, Eye, EyeOff, Send, Trash2, Palette, Upload, GripVertical, Music, Settings } from 'lucide-react';
+import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
+import { Plus, Image, FileText, Eye, EyeOff, Send, Trash2, Palette, Upload, GripVertical, Music, Settings, Edit2, RotateCcw } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -15,7 +15,10 @@ import { supabase } from '@/integrations/supabase/client';
 import { deleteFile, uploadFile } from '@/lib/upload';
 import { useToast } from '@/hooks/use-toast';
 import { ThemeSettings } from './ThemeSettings';
+import { EffectsEditorDialog } from './EffectsEditorDialog';
+import { OtherEffectsEditorDialog } from './OtherEffectsEditorDialog';
 import { getDisplayText } from '@/lib/expressionTag';
+import { getPortraitTransformRel } from '@/lib/portraitTransformsShared';
 import type { Participant, Character, StageState, Macro, Room, Asset, ActivePortrait } from '@/types/trpg';
 
 interface GMToolsPanelProps {
@@ -46,25 +49,73 @@ export function GMToolsPanel({
   onUpdateStage,
   onUpdateRoom,
 }: GMToolsPanelProps) {
+  type MacroAssetSource = 'upload' | 'select' | null;
+  const SENT_MACROS_STORAGE_KEY = `trpg:sentMacros:${roomId}`;
+  const SENT_MACROS_COLLAPSED_STORAGE_KEY = `trpg:sentMacrosCollapsed:${roomId}`;
+
   const [macros, setMacros] = useState<Macro[]>([]);
+  const [sentMacroIds, setSentMacroIds] = useState<string[]>(() => {
+    try {
+      const raw = localStorage.getItem(SENT_MACROS_STORAGE_KEY);
+      const parsed = raw ? JSON.parse(raw) : null;
+      return Array.isArray(parsed) ? parsed.map(String) : [];
+    } catch {
+      return [];
+    }
+  });
+  const [sentMacrosOpen, setSentMacrosOpen] = useState(() => {
+    try {
+      return localStorage.getItem(SENT_MACROS_COLLAPSED_STORAGE_KEY) !== '1';
+    } catch {
+      return true;
+    }
+  });
   const [newMacroText, setNewMacroText] = useState('');
   const [newMacroSpeakerId, setNewMacroSpeakerId] = useState<'gm' | string>('gm');
   const [newMacroSpeakerPortraitTag, setNewMacroSpeakerPortraitTag] = useState('');
   const [newMacroBgUrl, setNewMacroBgUrl] = useState('');
   const [newMacroBgmUrl, setNewMacroBgmUrl] = useState('');
   const [newMacroSeUrl, setNewMacroSeUrl] = useState('');
+  const [newMacroBgSource, setNewMacroBgSource] = useState<MacroAssetSource>(null);
+  const [newMacroBgAssetId, setNewMacroBgAssetId] = useState<string | null>(null);
+  const [newMacroBgmSource, setNewMacroBgmSource] = useState<MacroAssetSource>(null);
+  const [newMacroBgmAssetId, setNewMacroBgmAssetId] = useState<string | null>(null);
+  const [newMacroSeSource, setNewMacroSeSource] = useState<MacroAssetSource>(null);
+  const [newMacroSeAssetId, setNewMacroSeAssetId] = useState<string | null>(null);
   const [newMacroClearBackground, setNewMacroClearBackground] = useState(false);
   const [newMacroClearBgm, setNewMacroClearBgm] = useState(false);
+  const [editingMacro, setEditingMacro] = useState<Macro | null>(null);
+  const [editMacroOpen, setEditMacroOpen] = useState(false);
+  const [editMacroText, setEditMacroText] = useState('');
+  const [editMacroSpeakerId, setEditMacroSpeakerId] = useState<'gm' | string>('gm');
+  const [editMacroSpeakerPortraitTag, setEditMacroSpeakerPortraitTag] = useState('');
+  const [editMacroBgUrl, setEditMacroBgUrl] = useState('');
+  const [editMacroBgmUrl, setEditMacroBgmUrl] = useState('');
+  const [editMacroSeUrl, setEditMacroSeUrl] = useState('');
+  const [editMacroBgSource, setEditMacroBgSource] = useState<MacroAssetSource>(null);
+  const [editMacroBgAssetId, setEditMacroBgAssetId] = useState<string | null>(null);
+  const [editMacroBgmSource, setEditMacroBgmSource] = useState<MacroAssetSource>(null);
+  const [editMacroBgmAssetId, setEditMacroBgmAssetId] = useState<string | null>(null);
+  const [editMacroSeSource, setEditMacroSeSource] = useState<MacroAssetSource>(null);
+  const [editMacroSeAssetId, setEditMacroSeAssetId] = useState<string | null>(null);
+  const [editMacroClearBackground, setEditMacroClearBackground] = useState(false);
+  const [editMacroClearBgm, setEditMacroClearBgm] = useState(false);
   const [isSecretMode, setIsSecretMode] = useState(stageState?.is_secret || false);
   const [secretDialogOpen, setSecretDialogOpen] = useState(false);
   const [secretSelectedIds, setSecretSelectedIds] = useState<string[]>([]);
   const [showThemeSettings, setShowThemeSettings] = useState(false);
+  const [effectsEditorOpen, setEffectsEditorOpen] = useState(false);
+  const [otherEffectsEditorOpen, setOtherEffectsEditorOpen] = useState(false);
+  const [otherEffectsCreateNonce, setOtherEffectsCreateNonce] = useState(0);
   const [assets, setAssets] = useState<Asset[]>([]);
   const bgFileRef = useRef<HTMLInputElement>(null);
   const macroBgFileRef = useRef<HTMLInputElement>(null);
+  const editMacroBgFileRef = useRef<HTMLInputElement>(null);
   const stageBgmFileRef = useRef<HTMLInputElement>(null);
   const bgmFileRef = useRef<HTMLInputElement>(null);
+  const editMacroBgmFileRef = useRef<HTMLInputElement>(null);
   const seFileRef = useRef<HTMLInputElement>(null);
+  const editMacroSeFileRef = useRef<HTMLInputElement>(null);
   const stageSeFileRef = useRef<HTMLInputElement>(null);
   const stageSeEditFileRef = useRef<HTMLInputElement>(null);
   const stageBgEditFileRef = useRef<HTMLInputElement>(null);
@@ -125,6 +176,22 @@ export function GMToolsPanel({
     fetchMacros();
   }, [roomId]);
 
+  useEffect(() => {
+    try {
+      localStorage.setItem(SENT_MACROS_STORAGE_KEY, JSON.stringify(sentMacroIds));
+    } catch {
+      // ignore
+    }
+  }, [SENT_MACROS_STORAGE_KEY, sentMacroIds]);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem(SENT_MACROS_COLLAPSED_STORAGE_KEY, sentMacrosOpen ? '0' : '1');
+    } catch {
+      // ignore
+    }
+  }, [SENT_MACROS_COLLAPSED_STORAGE_KEY, sentMacrosOpen]);
+
   // Realtime sync for macros (shared across devices)
   useEffect(() => {
     const channel = supabase
@@ -148,6 +215,20 @@ export function GMToolsPanel({
       supabase.removeChannel(channel);
     };
   }, [roomId]);
+
+  // Keep sent IDs in sync with current macros list
+  useEffect(() => {
+    setSentMacroIds((prev) => {
+      if (prev.length === 0) return prev;
+      const set = new Set(macros.map((m) => m.id));
+      const next = prev.filter((id) => set.has(id));
+      return next.length === prev.length ? prev : next;
+    });
+  }, [macros]);
+
+  const sentMacroIdSet = useMemo(() => new Set(sentMacroIds), [sentMacroIds]);
+  const stockMacros = useMemo(() => macros.filter((m) => !sentMacroIdSet.has(m.id)), [macros, sentMacroIdSet]);
+  const sentMacros = useMemo(() => macros.filter((m) => sentMacroIdSet.has(m.id)), [macros, sentMacroIdSet]);
 
   // Fetch assets
   useEffect(() => {
@@ -188,9 +269,12 @@ export function GMToolsPanel({
       const isCmdShiftJ = e.metaKey && e.shiftKey && !e.altKey && !e.ctrlKey && e.key.toLowerCase() === 'j';
       if (isCtrlShiftJ || isCmdShiftJ) {
         e.preventDefault();
-        if (macros.length > 0) {
-          const oldestMacro = macros[0];
-          handleSendMacroWithEffects(oldestMacro);
+        if (stockMacros.length > 0) {
+          const oldestMacro = stockMacros[0];
+          void (async () => {
+            await handleSendMacroWithEffects(oldestMacro);
+            setSentMacroIds((prev) => (prev.includes(oldestMacro.id) ? prev : [...prev, oldestMacro.id]));
+          })();
         } else {
           toast({ title: '送信する定型文がありません', variant: 'destructive' });
         }
@@ -199,7 +283,7 @@ export function GMToolsPanel({
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [macros]);
+  }, [stockMacros]);
 
   const getMacroBodyForDisplay = (macroText: string) => {
     const withoutCommands = macroText.replace(/\[(bg|portrait|bgm|se|speaker):[^\]]+\]\n?/g, '');
@@ -209,6 +293,89 @@ export function GMToolsPanel({
   const deriveMacroTitle = (text: string) => {
     const firstLine = text.split('\n').map(l => l.trim()).find(Boolean) || '定型文';
     return firstLine.length > 24 ? `${firstLine.slice(0, 24)}…` : firstLine;
+  };
+
+  const stripMacroCommands = (macroText: string) => {
+    return String(macroText || '').replace(/\[(bg|portrait|bgm|se|speaker):[^\]]+\]\n?/gi, '').trim();
+  };
+
+  const extractFirstCommandFromMacro = (macroText: string, kind: 'speaker' | 'bg' | 'bgm' | 'se') => {
+    const regex = new RegExp(`\\[${kind}:([^\\]]+)\\]`, 'i');
+    const match = String(macroText || '').match(regex);
+    return match ? match[1].trim() : null;
+  };
+
+  const extractPortraitTagForSpeaker = (macroText: string, speakerId: string) => {
+    if (!speakerId || speakerId === 'gm') return '';
+    const portraitRegex = new RegExp(`\\[portrait:${speakerId}:([^\\]]+)\\]`, 'i');
+    const m = String(macroText || '').match(portraitRegex);
+    return m ? String(m[1] ?? '').trim() : '';
+  };
+
+  const openMacroEditor = (macro: Macro) => {
+    setEditingMacro(macro);
+    const text = String(macro.text || '');
+
+    const speakerToken = extractFirstCommandFromMacro(text, 'speaker');
+    const bgToken = extractFirstCommandFromMacro(text, 'bg');
+    const bgmToken = extractFirstCommandFromMacro(text, 'bgm');
+    const seToken = extractFirstCommandFromMacro(text, 'se');
+
+    const speakerId = speakerToken ? (speakerToken.toLowerCase() === 'gm' ? 'gm' : speakerToken) : 'gm';
+    setEditMacroSpeakerId(speakerId as any);
+    setEditMacroSpeakerPortraitTag(extractPortraitTagForSpeaker(text, speakerId));
+
+    setEditMacroClearBackground(bgToken?.toLowerCase() === 'clear');
+    {
+      const url = bgToken && bgToken.toLowerCase() !== 'clear' ? bgToken : '';
+      setEditMacroBgUrl(url);
+      const hit = url ? macroBgAssets.find((a) => a.url === url) ?? null : null;
+      if (hit) {
+        setEditMacroBgSource('select');
+        setEditMacroBgAssetId(hit.id);
+      } else if (url) {
+        setEditMacroBgSource('upload');
+        setEditMacroBgAssetId(null);
+      } else {
+        setEditMacroBgSource(null);
+        setEditMacroBgAssetId(null);
+      }
+    }
+
+    setEditMacroClearBgm(bgmToken?.toLowerCase() === 'stop');
+    {
+      const url = bgmToken && bgmToken.toLowerCase() !== 'stop' ? bgmToken : '';
+      setEditMacroBgmUrl(url);
+      const hit = url ? macroBgmAssets.find((a) => a.url === url) ?? null : null;
+      if (hit) {
+        setEditMacroBgmSource('select');
+        setEditMacroBgmAssetId(hit.id);
+      } else if (url) {
+        setEditMacroBgmSource('upload');
+        setEditMacroBgmAssetId(null);
+      } else {
+        setEditMacroBgmSource(null);
+        setEditMacroBgmAssetId(null);
+      }
+    }
+
+    {
+      const url = seToken || '';
+      setEditMacroSeUrl(url);
+      const hit = url ? macroSeAssets.find((a) => a.url === url) ?? null : null;
+      if (hit) {
+        setEditMacroSeSource('select');
+        setEditMacroSeAssetId(hit.id);
+      } else if (url) {
+        setEditMacroSeSource('upload');
+        setEditMacroSeAssetId(null);
+      } else {
+        setEditMacroSeSource(null);
+        setEditMacroSeAssetId(null);
+      }
+    }
+    setEditMacroText(stripMacroCommands(text));
+    setEditMacroOpen(true);
   };
 
   const handleAddMacro = async () => {
@@ -293,6 +460,12 @@ export function GMToolsPanel({
     setNewMacroBgUrl('');
     setNewMacroBgmUrl('');
     setNewMacroSeUrl('');
+    setNewMacroBgSource(null);
+    setNewMacroBgAssetId(null);
+    setNewMacroBgmSource(null);
+    setNewMacroBgmAssetId(null);
+    setNewMacroSeSource(null);
+    setNewMacroSeAssetId(null);
     setNewMacroClearBackground(false);
     setNewMacroClearBgm(false);
     toast({ title: '定型文を登録しました' });
@@ -306,6 +479,7 @@ export function GMToolsPanel({
 
     if (!error) {
       setMacros(prev => prev.filter(m => m.id !== id));
+      setSentMacroIds((prev) => prev.filter((x) => x !== id));
     }
   };
 
@@ -375,17 +549,34 @@ export function GMToolsPanel({
         if (asset) {
           // Update or add portrait
           const existingIndex = newPortraits.findIndex(p => p.characterId === change.characterId);
+          const finalPosition = existingIndex >= 0 ? newPortraits[existingIndex].position : 'center';
+          const posKey = finalPosition === 'left' ? 'left' : finalPosition === 'right' ? 'right' : 'center';
+          const shared = getPortraitTransformRel({
+            roomId,
+            characterId: change.characterId,
+            key: asset.tag || asset.label,
+            position: posKey,
+          });
           const newPortrait: ActivePortrait = {
             characterId: change.characterId,
             assetId: asset.id,
             url: asset.url,
             label: asset.label,
             tag: asset.tag,
-            position: existingIndex >= 0 ? newPortraits[existingIndex].position : 'center',
+            position: finalPosition,
             layerOrder: existingIndex >= 0 ? newPortraits[existingIndex].layerOrder : newPortraits.length,
-            scale: asset.scale ?? 1,
-            offsetX: asset.offset_x ?? 0,
-            offsetY: asset.offset_y ?? 0,
+            scale: (() => {
+              if (shared?.scale != null) return shared.scale;
+              return asset.scale ?? 1;
+            })(),
+            offsetXRel: shared?.x ?? undefined,
+            offsetYRel: shared?.y ?? undefined,
+            offsetX: (() => {
+              return asset.offset_x ?? 0;
+            })(),
+            offsetY: (() => {
+              return asset.offset_y ?? 0;
+            })(),
           };
           
           if (existingIndex >= 0) {
@@ -415,6 +606,15 @@ export function GMToolsPanel({
     toast({ title: '送信しました' });
   };
 
+  const handleSendStockMacro = async (macro: Macro) => {
+    await handleSendMacroWithEffects(macro);
+    setSentMacroIds((prev) => (prev.includes(macro.id) ? prev : [...prev, macro.id]));
+  };
+
+  const handleSendSentMacro = async (macro: Macro) => {
+    await handleSendMacroWithEffects(macro);
+  };
+
   const persistMacroOrder = async (ordered: Macro[]) => {
     const updates = ordered.map((m, idx) => ({ id: m.id, sort_order: (idx + 1) * 1000 }));
     setMacros(ordered.map((m, idx) => ({ ...(m as any), sort_order: updates[idx].sort_order })));
@@ -434,14 +634,19 @@ export function GMToolsPanel({
     }
   };
 
+  const persistStockOrder = async (orderedStock: Macro[]) => {
+    const full = [...orderedStock, ...sentMacros];
+    await persistMacroOrder(full);
+  };
+
   const moveMacroToIndex = async (macroId: string, toIndex: number) => {
-    const currentIndex = macros.findIndex((m) => m.id === macroId);
+    const currentIndex = stockMacros.findIndex((m) => m.id === macroId);
     if (currentIndex < 0) return;
-    const next = [...macros];
+    const next = [...stockMacros];
     const [item] = next.splice(currentIndex, 1);
     next.splice(Math.max(0, Math.min(toIndex, next.length)), 0, item);
     try {
-      await persistMacroOrder(next);
+      await persistStockOrder(next);
     } catch (e) {
       toast({ title: '並び替えに失敗しました', variant: 'destructive' });
     }
@@ -468,7 +673,10 @@ export function GMToolsPanel({
     const url = await uploadFile(file, `backgrounds/${roomId}`);
     if (url) {
       setNewMacroBgUrl(url);
+      setNewMacroBgSource('upload');
+      setNewMacroBgAssetId(null);
       setNewMacroClearBackground(false);
+      setMacroAssetPicker((p) => (p.open && p.mode === 'new' && p.kind === 'bg' ? { ...p, open: false } : p));
       toast({ title: '背景をアップロードしました' });
     } else {
       toast({ title: 'アップロードに失敗しました', variant: 'destructive' });
@@ -482,7 +690,10 @@ export function GMToolsPanel({
     const url = await uploadFile(file, `bgm/${roomId}`);
     if (url) {
       setNewMacroBgmUrl(url);
+      setNewMacroBgmSource('upload');
+      setNewMacroBgmAssetId(null);
       setNewMacroClearBgm(false);
+      setMacroAssetPicker((p) => (p.open && p.mode === 'new' && p.kind === 'bgm' ? { ...p, open: false } : p));
       toast({ title: 'BGMをアップロードしました' });
     } else {
       toast({ title: 'アップロードに失敗しました', variant: 'destructive' });
@@ -511,10 +722,152 @@ export function GMToolsPanel({
     const url = await uploadFile(file, `se/${roomId}`);
     if (url) {
       setNewMacroSeUrl(url);
+      setNewMacroSeSource('upload');
+      setNewMacroSeAssetId(null);
+      setMacroAssetPicker((p) => (p.open && p.mode === 'new' && p.kind === 'se' ? { ...p, open: false } : p));
       toast({ title: 'SEをアップロードしました' });
     } else {
       toast({ title: 'アップロードに失敗しました', variant: 'destructive' });
     }
+  };
+
+  const handleEditMacroBgFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    const url = await uploadFile(file, `backgrounds/${roomId}`);
+    if (url) {
+      setEditMacroBgUrl(url);
+      setEditMacroBgSource('upload');
+      setEditMacroBgAssetId(null);
+      setEditMacroClearBackground(false);
+      setMacroAssetPicker((p) => (p.open && p.mode === 'edit' && p.kind === 'bg' ? { ...p, open: false } : p));
+      toast({ title: '背景をアップロードしました' });
+    } else {
+      toast({ title: 'アップロードに失敗しました', variant: 'destructive' });
+    }
+  };
+
+  const handleEditMacroBgmFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    const url = await uploadFile(file, `bgm/${roomId}`);
+    if (url) {
+      setEditMacroBgmUrl(url);
+      setEditMacroBgmSource('upload');
+      setEditMacroBgmAssetId(null);
+      setEditMacroClearBgm(false);
+      setMacroAssetPicker((p) => (p.open && p.mode === 'edit' && p.kind === 'bgm' ? { ...p, open: false } : p));
+      toast({ title: 'BGMをアップロードしました' });
+    } else {
+      toast({ title: 'アップロードに失敗しました', variant: 'destructive' });
+    }
+  };
+
+  const handleEditMacroSeFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    const url = await uploadFile(file, `se/${roomId}`);
+    if (url) {
+      setEditMacroSeUrl(url);
+      setEditMacroSeSource('upload');
+      setEditMacroSeAssetId(null);
+      setMacroAssetPicker((p) => (p.open && p.mode === 'edit' && p.kind === 'se' ? { ...p, open: false } : p));
+      toast({ title: 'SEをアップロードしました' });
+    } else {
+      toast({ title: 'アップロードに失敗しました', variant: 'destructive' });
+    }
+  };
+
+  const handleUpdateMacro = async () => {
+    if (!editingMacro) return;
+    if (!editMacroText.trim()) {
+      toast({ title: '本文を入力してください', variant: 'destructive' });
+      return;
+    }
+
+    let macroText = editMacroText.trim();
+    macroText = `[speaker:${editMacroSpeakerId}]\n${macroText}`;
+
+    if (editMacroClearBackground) {
+      macroText = `[bg:clear]\n${macroText}`;
+    } else if (editMacroBgUrl.trim()) {
+      macroText = `[bg:${editMacroBgUrl.trim()}]\n${macroText}`;
+    }
+
+    if (editMacroClearBgm) {
+      macroText = `[bgm:stop]\n${macroText}`;
+    } else if (editMacroBgmUrl.trim()) {
+      macroText = `[bgm:${editMacroBgmUrl.trim()}]\n${macroText}`;
+    }
+    if (editMacroSeUrl.trim()) {
+      macroText = `[se:${editMacroSeUrl.trim()}]\n${macroText}`;
+    }
+
+    if (editMacroSpeakerId !== 'gm' && editMacroSpeakerPortraitTag.trim()) {
+      macroText = `[portrait:${editMacroSpeakerId}:${editMacroSpeakerPortraitTag.trim()}]\n${macroText}`;
+    }
+
+    const payload: any = {
+      title: deriveMacroTitle(editMacroText.trim()),
+      text: macroText,
+    };
+
+    const { error } = await supabase.from('macros').update(payload).eq('id', editingMacro.id);
+    if (error) {
+      toast({ title: `更新に失敗しました: ${String(error.message || error)}`, variant: 'destructive' });
+      return;
+    }
+
+    toast({ title: '定型文を更新しました' });
+    setEditMacroOpen(false);
+    // Optimistic update; realtime will also refresh.
+    setMacros((prev) => prev.map((m) => (m.id === editingMacro.id ? ({ ...m, ...payload } as any) : m)));
+    setEditingMacro(null);
+  };
+
+  const applyPickedMacroAsset = (asset: Asset) => {
+    const { mode, kind } = macroAssetPicker;
+    if (mode === 'new') {
+      if (kind === 'bg') {
+        setNewMacroBgUrl(asset.url);
+        setNewMacroBgSource('select');
+        setNewMacroBgAssetId(asset.id);
+        setNewMacroClearBackground(false);
+      }
+      if (kind === 'bgm') {
+        setNewMacroBgmUrl(asset.url);
+        setNewMacroBgmSource('select');
+        setNewMacroBgmAssetId(asset.id);
+        setNewMacroClearBgm(false);
+      }
+      if (kind === 'se') {
+        setNewMacroSeUrl(asset.url);
+        setNewMacroSeSource('select');
+        setNewMacroSeAssetId(asset.id);
+      }
+    } else {
+      if (kind === 'bg') {
+        setEditMacroBgUrl(asset.url);
+        setEditMacroBgSource('select');
+        setEditMacroBgAssetId(asset.id);
+        setEditMacroClearBackground(false);
+      }
+      if (kind === 'bgm') {
+        setEditMacroBgmUrl(asset.url);
+        setEditMacroBgmSource('select');
+        setEditMacroBgmAssetId(asset.id);
+        setEditMacroClearBgm(false);
+      }
+      if (kind === 'se') {
+        setEditMacroSeUrl(asset.url);
+        setEditMacroSeSource('select');
+        setEditMacroSeAssetId(asset.id);
+      }
+    }
+    setMacroAssetPicker((p) => ({ ...p, open: false }));
   };
 
   const handleStageSeFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -592,6 +945,23 @@ export function GMToolsPanel({
   const isSeAsset = (asset: Asset) => {
     return asset.kind === 'se' || (asset.kind === 'background' && asset.tag === '__se__');
   };
+
+  const macroBgAssets = assets.filter(isBackgroundAsset).sort((a, b) => String(a.label || '').localeCompare(String(b.label || ''), 'ja'));
+  const macroBgmAssets = assets.filter(isBgmAsset).sort((a, b) => String(a.label || '').localeCompare(String(b.label || ''), 'ja'));
+  const macroSeAssets = assets.filter(isSeAsset).sort((a, b) => String(a.label || '').localeCompare(String(b.label || ''), 'ja'));
+
+  const [macroAssetPicker, setMacroAssetPicker] = useState<{
+    open: boolean;
+    mode: 'new' | 'edit';
+    kind: 'bg' | 'bgm' | 'se';
+  }>({ open: false, mode: 'new', kind: 'bg' });
+
+  const openMacroAssetPicker = (mode: 'new' | 'edit', kind: 'bg' | 'bgm' | 'se') => {
+    setMacroAssetPicker({ open: true, mode, kind });
+  };
+
+  const macroAssetButtonActiveClass =
+    'bg-yellow-500/20 border-yellow-500 text-yellow-200 hover:bg-yellow-500/25 hover:border-yellow-500/90';
 
   const handleRegisterStageBackground = async () => {
     if (!stageBgUploadUrl || !stageBgLabel.trim()) {
@@ -1179,32 +1549,70 @@ export function GMToolsPanel({
             テーマ設定
           </Button>
 
-          {/* Macros (Text Templates) */}
-          <div className="space-y-3">
-            <h3 className="text-sm font-semibold text-muted-foreground uppercase tracking-wider flex items-center gap-2">
-              <FileText className="w-4 h-4" />
-              定型文ストック
-              <span className="text-xs font-normal">(Ctrl+Shift+J / Cmd+Shift+Jで送信)</span>
-            </h3>
+          <Button
+            variant="ghost"
+            className="w-full justify-start"
+            onClick={() => setEffectsEditorOpen(true)}
+          >
+            <Image className="w-4 h-4 mr-2" />
+            クリティカル/ファンブル演出
+          </Button>
 
-            {/* Macros */}
-            <div className="space-y-2">
-              {macros.map((macro, index) => (
-                <div 
-                  key={macro.id} 
-                  className="bg-sidebar-accent rounded-lg p-3 group"
-                  onDragOver={(e) => {
-                    if (!draggingMacroId || draggingMacroId === macro.id) return;
+          <div className="space-y-2">
+            <div className="text-sm font-semibold text-muted-foreground uppercase tracking-wider">
+              その他演出
+            </div>
+            <div className="flex gap-2">
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                className="flex-1"
+                onClick={() => {
+                  setOtherEffectsCreateNonce((n) => n + 1);
+                  setOtherEffectsEditorOpen(true);
+                }}
+              >
+                <Plus className="w-4 h-4 mr-2" />
+                演出を追加
+              </Button>
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={() => setOtherEffectsEditorOpen(true)}
+              >
+                編集
+              </Button>
+            </div>
+          </div>
+
+	          {/* Macros (Text Templates) */}
+	          <div className="space-y-3">
+	            <h3 className="text-sm font-semibold text-muted-foreground uppercase tracking-wider flex items-center gap-2">
+	              <FileText className="w-4 h-4" />
+	              定型文ストック
+	              <span className="text-xs font-normal">(Ctrl+Shift+J / Cmd+Shift+Jで送信)</span>
+	            </h3>
+	
+	            {/* Macros */}
+	            <div className="space-y-2">
+	              {stockMacros.map((macro, index) => (
+	                <div 
+	                  key={macro.id} 
+	                  className="bg-sidebar-accent rounded-lg p-3 group"
+	                  onDragOver={(e) => {
+	                    if (!draggingMacroId || draggingMacroId === macro.id) return;
                     e.preventDefault();
                     e.dataTransfer.dropEffect = 'move';
                   }}
                   onDrop={(e) => {
-                    const draggedId = e.dataTransfer.getData('text/plain') || draggingMacroId;
-                    if (!draggedId || draggedId === macro.id) return;
-                    e.preventDefault();
-                    void moveMacroToIndex(draggedId, index);
-                  }}
-                >
+	                    const draggedId = e.dataTransfer.getData('text/plain') || draggingMacroId;
+	                    if (!draggedId || draggedId === macro.id) return;
+	                    e.preventDefault();
+	                    void moveMacroToIndex(draggedId, index);
+	                  }}
+	                >
                   <div className="flex items-start justify-between gap-2">
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center gap-2">
@@ -1223,24 +1631,24 @@ export function GMToolsPanel({
                         >
                           <GripVertical className="w-4 h-4" />
                         </button>
-                        <DropdownMenu>
-                          <DropdownMenuTrigger asChild>
-                            <button
-                              type="button"
-                              className="text-xs bg-primary/20 text-primary px-1.5 py-0.5 rounded hover:bg-primary/30"
-                              title="クリックして順番変更"
-                              onClick={(e) => e.stopPropagation()}
-                            >
-                              {index + 1}
-                            </button>
-                          </DropdownMenuTrigger>
-                          <DropdownMenuContent align="start">
-                            {Array.from({ length: macros.length }, (_, i) => (
-                              <DropdownMenuItem
-                                key={i + 1}
-                                onSelect={() => {
-                                  void moveMacroToIndex(macro.id, i);
-                                }}
+	                        <DropdownMenu>
+	                          <DropdownMenuTrigger asChild>
+	                            <button
+	                              type="button"
+	                              className="text-xs bg-primary/20 text-primary px-1.5 py-0.5 rounded hover:bg-primary/30"
+	                              title="クリックして順番変更"
+	                              onClick={(e) => e.stopPropagation()}
+	                            >
+	                              {index + 1}
+	                            </button>
+	                          </DropdownMenuTrigger>
+	                          <DropdownMenuContent align="start">
+	                            {Array.from({ length: stockMacros.length }, (_, i) => (
+	                              <DropdownMenuItem
+	                                key={i + 1}
+	                                onSelect={() => {
+	                                  void moveMacroToIndex(macro.id, i);
+	                                }}
                               >
                                 {i + 1}番目にする
                               </DropdownMenuItem>
@@ -1251,15 +1659,24 @@ export function GMToolsPanel({
                       <p className="text-sm text-foreground whitespace-pre-wrap leading-relaxed mt-1">
                         {getMacroBodyForDisplay(macro.text)}
                       </p>
-                    </div>
-                    <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                      <Button
-                        size="icon"
+	                    </div>
+	                    <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+	                      <Button
+	                        size="icon"
+	                        variant="ghost"
+	                        className="h-7 w-7"
+	                        onClick={() => void handleSendStockMacro(macro)}
+	                      >
+	                        <Send className="w-3 h-3" />
+	                      </Button>
+	                      <Button
+	                        size="icon"
                         variant="ghost"
                         className="h-7 w-7"
-                        onClick={() => handleSendMacroWithEffects(macro)}
+                        title="編集"
+                        onClick={() => openMacroEditor(macro)}
                       >
-                        <Send className="w-3 h-3" />
+                        <Edit2 className="w-3 h-3" />
                       </Button>
                       <Button
                         size="icon"
@@ -1270,18 +1687,88 @@ export function GMToolsPanel({
                         <Trash2 className="w-3 h-3" />
                       </Button>
                     </div>
-                  </div>
-                </div>
-              ))}
-              {macros.length === 0 && (
-                <p className="text-xs text-muted-foreground text-center py-2">
-                  定型文がありません
-                </p>
-              )}
-            </div>
+	                  </div>
+	                </div>
+	              ))}
+	              {stockMacros.length === 0 && (
+	                <p className="text-xs text-muted-foreground text-center py-2">
+	                  未送信の定型文がありません
+	                </p>
+	              )}
+	            </div>
 
-            {/* Add New Macro */}
-            <div className="space-y-2 pt-2 border-t border-sidebar-border">
+              <Collapsible open={sentMacrosOpen} onOpenChange={setSentMacrosOpen}>
+                <div className="flex items-center justify-between">
+                  <CollapsibleTrigger asChild>
+                    <Button variant="outline" size="sm" className="w-full justify-between">
+                      <span className="flex items-center gap-2">
+                        <FileText className="w-4 h-4" />
+                        送信済定型文
+                        <span className="text-xs text-muted-foreground">({sentMacros.length})</span>
+                      </span>
+                      <span className="text-xs text-muted-foreground">{sentMacrosOpen ? '閉じる' : '開く'}</span>
+                    </Button>
+                  </CollapsibleTrigger>
+                </div>
+                <CollapsibleContent className="mt-2 space-y-2">
+                  {sentMacros.length === 0 ? (
+                    <p className="text-xs text-muted-foreground text-center py-2">送信済の定型文がありません</p>
+                  ) : (
+                    sentMacros.map((macro) => (
+                      <div key={macro.id} className="bg-sidebar-accent/60 rounded-lg p-3 group">
+                        <div className="flex items-start justify-between gap-2">
+                          <div className="flex-1 min-w-0">
+                            <p className="text-sm text-foreground whitespace-pre-wrap leading-relaxed">
+                              {getMacroBodyForDisplay(macro.text)}
+                            </p>
+                          </div>
+                          <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                            <Button
+                              size="icon"
+                              variant="ghost"
+                              className="h-7 w-7"
+                              title="送信"
+                              onClick={() => void handleSendSentMacro(macro)}
+                            >
+                              <Send className="w-3 h-3" />
+                            </Button>
+                            <Button
+                              size="icon"
+                              variant="ghost"
+                              className="h-7 w-7"
+                              title="編集"
+                              onClick={() => openMacroEditor(macro)}
+                            >
+                              <Edit2 className="w-3 h-3" />
+                            </Button>
+                            <Button
+                              size="icon"
+                              variant="ghost"
+                              className="h-7 w-7"
+                              title="送信済から戻す"
+                              onClick={() => setSentMacroIds((prev) => prev.filter((id) => id !== macro.id))}
+                            >
+                              <RotateCcw className="w-3 h-3" />
+                            </Button>
+                            <Button
+                              size="icon"
+                              variant="ghost"
+                              className="h-7 w-7 text-destructive"
+                              title="削除"
+                              onClick={() => handleDeleteMacro(macro.id)}
+                            >
+                              <Trash2 className="w-3 h-3" />
+                            </Button>
+                          </div>
+                        </div>
+                      </div>
+                    ))
+                  )}
+                </CollapsibleContent>
+              </Collapsible>
+	
+	            {/* Add New Macro */}
+	            <div className="space-y-2 pt-2 border-t border-sidebar-border">
               {/* Speaker for macro (above body) */}
               <div className="space-y-1">
                 <Label className="text-xs text-muted-foreground">発言者</Label>
@@ -1316,26 +1803,53 @@ export function GMToolsPanel({
               />
 
               {/* Background/BGM/SE for macro: upload only */}
-              <div className="space-y-1">
-                <Label className="text-xs text-muted-foreground">背景（任意）</Label>
-                <div className="flex items-center justify-between gap-2">
-                  <Button
-                    type="button"
-                    variant="outline"
-                    size="sm"
-                    className="flex-1"
-                    onClick={() => macroBgFileRef.current?.click()}
-                  >
-                    <Upload className="w-4 h-4 mr-2" />
-                    背景をアップロード
-                  </Button>
-                  <input
-                    ref={macroBgFileRef}
-                    type="file"
-                    accept="image/*"
-                    className="hidden"
-                    onChange={handleMacroBgFileChange}
-                  />
+	            <div className="space-y-1">
+	                <Label className="text-xs text-muted-foreground">背景（任意）</Label>
+	                <div className="flex items-center justify-between gap-2">
+		                  <div className="grid grid-cols-2 gap-2 flex-1">
+		                    <Button
+		                      type="button"
+		                      variant="outline"
+		                      size="sm"
+		                      className={`w-full min-w-0 justify-start overflow-hidden text-[clamp(10px,1vw,12px)] leading-none ${
+		                        newMacroBgSource === 'upload' ? macroAssetButtonActiveClass : ''
+		                      }`}
+		                      onClick={() => macroBgFileRef.current?.click()}
+		                      disabled={newMacroClearBackground}
+		                    >
+		                      <Upload className="w-4 h-4 mr-2 shrink-0" />
+		                      <span className="min-w-0 flex-1 truncate">背景をアップロード</span>
+		                    </Button>
+		                    <Button
+		                      type="button"
+		                      variant="outline"
+		                      size="sm"
+		                      className={`w-full min-w-0 justify-start overflow-hidden text-[clamp(10px,1vw,12px)] leading-none ${
+		                        newMacroBgSource === 'select' ? macroAssetButtonActiveClass : ''
+		                      }`}
+		                      onClick={() => openMacroAssetPicker('new', 'bg')}
+		                      disabled={newMacroClearBackground || macroBgAssets.length === 0}
+		                      title={macroBgAssets.length === 0 ? '登録された背景がありません' : undefined}
+		                    >
+		                      <Image className="w-4 h-4 mr-2 shrink-0" />
+		                      <span className="min-w-0 flex-1 truncate">
+		                        {(() => {
+		                          if (newMacroBgSource === 'select' && newMacroBgAssetId) {
+		                            const a = macroBgAssets.find((x) => x.id === newMacroBgAssetId);
+		                            if (a) return a.label || '背景';
+		                          }
+		                          return '一覧から選ぶ';
+		                        })()}
+		                      </span>
+		                    </Button>
+		                  </div>
+	                  <input
+	                    ref={macroBgFileRef}
+	                    type="file"
+	                    accept="image/*"
+	                    className="hidden"
+	                    onChange={handleMacroBgFileChange}
+	                  />
                   <label className="flex items-center gap-2 text-xs text-muted-foreground shrink-0">
                     <input
                       type="checkbox"
@@ -1343,85 +1857,129 @@ export function GMToolsPanel({
                       checked={newMacroClearBackground}
                       onChange={(e) => {
                         setNewMacroClearBackground(e.target.checked);
-                        if (e.target.checked) setNewMacroBgUrl('');
+                        if (e.target.checked) {
+                          setNewMacroBgUrl('');
+                          setNewMacroBgSource(null);
+                          setNewMacroBgAssetId(null);
+                        }
                       }}
                     />
                     背景を消す
                   </label>
-                </div>
-                {newMacroBgUrl && (
-                  <div className="text-[11px] text-muted-foreground break-all">
-                    選択中: {newMacroBgUrl}
-                  </div>
-                )}
-              </div>
-
-              <div className="space-y-1">
-                <Label className="text-xs text-muted-foreground">BGM（任意）</Label>
-                <div className="flex gap-2">
-                  <Button
-                    type="button"
-                    variant="outline"
-                    size="sm"
-                    className="flex-1"
-                    onClick={() => bgmFileRef.current?.click()}
-                  >
-                    <Upload className="w-4 h-4 mr-2" />
-                    BGMをアップロード
-                  </Button>
-                  <label className="flex items-center gap-2 text-xs text-muted-foreground shrink-0">
-                    <input
-                      type="checkbox"
-                      className="accent-primary"
+	                </div>
+	              </div>
+	
+	              <div className="space-y-1">
+	                <Label className="text-xs text-muted-foreground">BGM（任意）</Label>
+	                <div className="flex items-center justify-between gap-2">
+		                  <div className="grid grid-cols-2 gap-2 flex-1">
+		                    <Button
+		                      type="button"
+		                      variant="outline"
+		                      size="sm"
+		                      className={`w-full min-w-0 justify-start overflow-hidden text-[clamp(10px,1vw,12px)] leading-none ${
+		                        newMacroBgmSource === 'upload' ? macroAssetButtonActiveClass : ''
+		                      }`}
+		                      onClick={() => bgmFileRef.current?.click()}
+		                      disabled={newMacroClearBgm}
+		                    >
+		                      <Upload className="w-4 h-4 mr-2 shrink-0" />
+		                      <span className="min-w-0 flex-1 truncate">BGMをアップロード</span>
+		                    </Button>
+		                    <Button
+		                      type="button"
+		                      variant="outline"
+		                      size="sm"
+		                      className={`w-full min-w-0 justify-start overflow-hidden text-[clamp(10px,1vw,12px)] leading-none ${
+		                        newMacroBgmSource === 'select' ? macroAssetButtonActiveClass : ''
+		                      }`}
+		                      onClick={() => openMacroAssetPicker('new', 'bgm')}
+		                      disabled={newMacroClearBgm || macroBgmAssets.length === 0}
+		                      title={macroBgmAssets.length === 0 ? '登録されたBGMがありません' : undefined}
+		                    >
+		                      <Music className="w-4 h-4 mr-2 shrink-0" />
+		                      <span className="min-w-0 flex-1 truncate">
+		                        {(() => {
+		                          if (newMacroBgmSource === 'select' && newMacroBgmAssetId) {
+		                            const a = macroBgmAssets.find((x) => x.id === newMacroBgmAssetId);
+		                            if (a) return a.label || 'BGM';
+		                          }
+		                          return '一覧から選ぶ';
+		                        })()}
+		                      </span>
+		                    </Button>
+		                  </div>
+	                  <label className="flex items-center gap-2 text-xs text-muted-foreground shrink-0">
+	                    <input
+	                      type="checkbox"
+	                      className="accent-primary"
                       checked={newMacroClearBgm}
                       onChange={(e) => {
                         setNewMacroClearBgm(e.target.checked);
-                        if (e.target.checked) setNewMacroBgmUrl('');
+                        if (e.target.checked) {
+                          setNewMacroBgmUrl('');
+                          setNewMacroBgmSource(null);
+                          setNewMacroBgmAssetId(null);
+                        }
                       }}
                     />
                     BGMを消す
                   </label>
-                  <input
-                    ref={bgmFileRef}
-                    type="file"
-                    accept="audio/*"
-                    className="hidden"
-                    onChange={handleBgmFileChange}
-                  />
-                </div>
-                {newMacroBgmUrl && (
-                  <div className="text-[11px] text-muted-foreground break-all">
-                    選択中: {newMacroBgmUrl}
-                  </div>
-                )}
-              </div>
-              <div className="space-y-1">
-                <Label className="text-xs text-muted-foreground">SE（任意）</Label>
-                <div className="flex gap-2">
-                  <Button
-                    type="button"
-                    variant="outline"
-                    size="sm"
-                    className="flex-1"
-                    onClick={() => seFileRef.current?.click()}
-                  >
-                    <Upload className="w-4 h-4 mr-2" />
-                    SEをアップロード
-                  </Button>
-                  <input
-                    ref={seFileRef}
-                    type="file"
-                    accept="audio/*"
-                    className="hidden"
-                    onChange={handleSeFileChange}
-                  />
-                </div>
-                {newMacroSeUrl && (
-                  <div className="text-[11px] text-muted-foreground break-all">
-                    選択中: {newMacroSeUrl}
-                  </div>
-                )}
-              </div>
+	                  <input
+	                    ref={bgmFileRef}
+	                    type="file"
+	                    accept="audio/*"
+	                    className="hidden"
+	                    onChange={handleBgmFileChange}
+	                  />
+	                </div>
+	              </div>
+	              <div className="space-y-1">
+	                <Label className="text-xs text-muted-foreground">SE（任意）</Label>
+		                <div className="grid grid-cols-2 gap-2">
+		                  <Button
+		                    type="button"
+		                    variant="outline"
+		                    size="sm"
+		                    className={`w-full min-w-0 justify-start overflow-hidden text-[clamp(10px,1vw,12px)] leading-none ${
+		                      newMacroSeSource === 'upload' ? macroAssetButtonActiveClass : ''
+		                    }`}
+		                    onClick={() => seFileRef.current?.click()}
+		                  >
+		                    <Upload className="w-4 h-4 mr-2 shrink-0" />
+		                    <span className="min-w-0 flex-1 truncate">SEをアップロード</span>
+		                  </Button>
+		                  <Button
+		                    type="button"
+		                    variant="outline"
+		                    size="sm"
+		                    className={`w-full min-w-0 justify-start overflow-hidden text-[clamp(10px,1vw,12px)] leading-none ${
+		                      newMacroSeSource === 'select' ? macroAssetButtonActiveClass : ''
+		                    }`}
+		                    onClick={() => openMacroAssetPicker('new', 'se')}
+		                    disabled={macroSeAssets.length === 0}
+		                    title={macroSeAssets.length === 0 ? '登録されたSEがありません' : undefined}
+		                  >
+		                    <Music className="w-4 h-4 mr-2 shrink-0" />
+		                    <span className="min-w-0 flex-1 truncate">
+		                      {(() => {
+		                        if (newMacroSeSource === 'select' && newMacroSeAssetId) {
+		                          const a = macroSeAssets.find((x) => x.id === newMacroSeAssetId);
+		                          if (a) return a.label || 'SE';
+		                        }
+		                        return '一覧から選ぶ';
+		                      })()}
+		                    </span>
+		                  </Button>
+		                  <input
+		                    ref={seFileRef}
+		                    type="file"
+	                    accept="audio/*"
+	                    className="hidden"
+	                    onChange={handleSeFileChange}
+	                  />
+	                </div>
+	              </div>
 
               <Button onClick={handleAddMacro} size="sm" className="w-full">
                 <Plus className="w-4 h-4 mr-2" />
@@ -1460,6 +2018,337 @@ export function GMToolsPanel({
         room={room}
         onUpdateRoom={onUpdateRoom}
       />
+
+      <EffectsEditorDialog
+        open={effectsEditorOpen}
+        onOpenChange={setEffectsEditorOpen}
+        room={room}
+        characters={characters}
+        assets={assets}
+        onSaved={(next) => {
+          // Best-effort: keep local room state in sync for other UI.
+          onUpdateRoom({ effects: next } as any);
+        }}
+      />
+
+      <OtherEffectsEditorDialog
+        open={otherEffectsEditorOpen}
+        onOpenChange={setOtherEffectsEditorOpen}
+        room={room}
+        createNonce={otherEffectsCreateNonce}
+        onSaved={(next) => {
+          onUpdateRoom({ effects: next } as any);
+        }}
+      />
+
+      <Dialog
+        open={macroAssetPicker.open}
+        onOpenChange={(open) => setMacroAssetPicker((p) => ({ ...p, open }))}
+      >
+        <DialogContent className="sm:max-w-xl">
+          <DialogHeader>
+            <DialogTitle>
+              {macroAssetPicker.kind === 'bg' ? '背景を選択' : macroAssetPicker.kind === 'bgm' ? 'BGMを選択' : 'SEを選択'}
+            </DialogTitle>
+          </DialogHeader>
+          <ScrollArea className="h-[50vh]">
+            <div className="space-y-2 pr-2">
+              {(macroAssetPicker.kind === 'bg'
+                ? macroBgAssets
+                : macroAssetPicker.kind === 'bgm'
+                  ? macroBgmAssets
+                  : macroSeAssets
+              ).map((a) => (
+                <button
+                  key={a.id}
+                  type="button"
+                  className="w-full flex items-center gap-3 rounded-md border border-border bg-secondary/30 hover:bg-secondary/50 px-3 py-2 text-left"
+                  onClick={() => applyPickedMacroAsset(a)}
+                  title={a.label}
+                >
+                  {macroAssetPicker.kind === 'bg' ? (
+                    <div className="w-[72px] h-[40px] rounded bg-background/40 border border-border overflow-hidden shrink-0">
+                      <img src={a.url} alt={a.label} className="w-full h-full object-cover" />
+                    </div>
+                  ) : (
+                    <div className="w-[72px] h-[40px] rounded bg-background/40 border border-border flex items-center justify-center shrink-0">
+                      <Music className="w-5 h-5 text-muted-foreground" />
+                    </div>
+                  )}
+                  <div className="min-w-0 flex-1">
+                    <div className="text-sm truncate">{a.label || '（無名）'}</div>
+                    <div className="text-[11px] text-muted-foreground truncate">{a.url}</div>
+                  </div>
+                </button>
+              ))}
+              {((macroAssetPicker.kind === 'bg'
+                ? macroBgAssets
+                : macroAssetPicker.kind === 'bgm'
+                  ? macroBgmAssets
+                  : macroSeAssets
+              ).length === 0) && (
+                <div className="text-sm text-muted-foreground py-6 text-center">
+                  まだ登録されていません
+                </div>
+              )}
+            </div>
+          </ScrollArea>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setMacroAssetPicker((p) => ({ ...p, open: false }))}>
+              閉じる
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog
+        open={editMacroOpen}
+        onOpenChange={(open) => {
+          setEditMacroOpen(open);
+          if (!open) {
+            setEditingMacro(null);
+            setEditMacroText('');
+            setEditMacroSpeakerId('gm');
+            setEditMacroSpeakerPortraitTag('');
+            setEditMacroBgUrl('');
+            setEditMacroBgmUrl('');
+            setEditMacroSeUrl('');
+            setEditMacroBgSource(null);
+            setEditMacroBgAssetId(null);
+            setEditMacroBgmSource(null);
+            setEditMacroBgmAssetId(null);
+            setEditMacroSeSource(null);
+            setEditMacroSeAssetId(null);
+            setEditMacroClearBackground(false);
+            setEditMacroClearBgm(false);
+          }
+        }}
+      >
+        <DialogContent className="sm:max-w-xl">
+          <DialogHeader>
+            <DialogTitle>定型文を編集</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-3">
+            <div className="space-y-1">
+              <Label className="text-xs text-muted-foreground">発言者</Label>
+              <div className="flex gap-2">
+                <Select value={editMacroSpeakerId} onValueChange={(v) => setEditMacroSpeakerId(v as any)}>
+                  <SelectTrigger className="bg-sidebar-accent border-sidebar-border text-xs flex-1">
+                    <SelectValue placeholder="発言者を選択" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="gm">GM</SelectItem>
+                    {npcCharacters.map(char => (
+                      <SelectItem key={char.id} value={char.id}>{char.name}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <Input
+                  value={editMacroSpeakerPortraitTag}
+                  onChange={(e) => setEditMacroSpeakerPortraitTag(e.target.value)}
+                  placeholder="立ち絵タグ(任意)"
+                  disabled={editMacroSpeakerId === 'gm'}
+                  className="bg-sidebar-accent border-sidebar-border text-xs w-28"
+                />
+              </div>
+            </div>
+
+            <Textarea
+              value={editMacroText}
+              onChange={(e) => setEditMacroText(e.target.value)}
+              placeholder="本文"
+              className="bg-sidebar-accent border-sidebar-border min-h-[120px]"
+            />
+
+            <div className="space-y-2">
+              <Label className="text-xs text-muted-foreground">背景（任意）</Label>
+              <div className="flex items-center justify-between gap-2">
+	                <div className="grid grid-cols-2 gap-2 flex-1">
+	                  <Button
+	                    type="button"
+	                    variant="outline"
+	                    size="sm"
+	                    className={`w-full min-w-0 justify-start overflow-hidden text-[clamp(10px,1vw,12px)] leading-none ${
+	                      editMacroBgSource === 'upload' ? macroAssetButtonActiveClass : ''
+	                    }`}
+	                    onClick={() => editMacroBgFileRef.current?.click()}
+	                    disabled={editMacroClearBackground}
+	                  >
+	                    <Upload className="w-4 h-4 mr-2 shrink-0" />
+	                    <span className="min-w-0 flex-1 truncate">背景をアップロード</span>
+	                  </Button>
+	                  <Button
+	                    type="button"
+	                    variant="outline"
+	                    size="sm"
+	                    className={`w-full min-w-0 justify-start overflow-hidden text-[clamp(10px,1vw,12px)] leading-none ${
+	                      editMacroBgSource === 'select' ? macroAssetButtonActiveClass : ''
+	                    }`}
+	                    onClick={() => openMacroAssetPicker('edit', 'bg')}
+	                    disabled={editMacroClearBackground || macroBgAssets.length === 0}
+	                    title={macroBgAssets.length === 0 ? '登録された背景がありません' : undefined}
+	                  >
+	                    <Image className="w-4 h-4 mr-2 shrink-0" />
+	                    <span className="min-w-0 flex-1 truncate">
+	                      {(() => {
+	                        if (editMacroBgSource === 'select' && editMacroBgAssetId) {
+	                          const a = macroBgAssets.find((x) => x.id === editMacroBgAssetId);
+	                          if (a) return a.label || '背景';
+	                        }
+	                        return '一覧から選ぶ';
+	                      })()}
+	                    </span>
+	                  </Button>
+	                </div>
+                <label className="flex items-center gap-2 text-xs text-muted-foreground shrink-0">
+                  <input
+                    type="checkbox"
+                    className="accent-primary"
+                    checked={editMacroClearBackground}
+                    onChange={(e) => {
+                      setEditMacroClearBackground(e.target.checked);
+                      if (e.target.checked) {
+                        setEditMacroBgUrl('');
+                        setEditMacroBgSource(null);
+                        setEditMacroBgAssetId(null);
+                      }
+                    }}
+                  />
+                  背景を消す
+                </label>
+                <input
+                  ref={editMacroBgFileRef}
+                  type="file"
+                  accept="image/*"
+                  className="hidden"
+                  onChange={handleEditMacroBgFileChange}
+                />
+              </div>
+            </div>
+
+            <div className="space-y-2">
+              <Label className="text-xs text-muted-foreground">BGM（任意）</Label>
+              <div className="flex items-center justify-between gap-2">
+	                <div className="grid grid-cols-2 gap-2 flex-1">
+	                  <Button
+	                    type="button"
+	                    variant="outline"
+	                    size="sm"
+	                    className={`w-full min-w-0 justify-start overflow-hidden text-[clamp(10px,1vw,12px)] leading-none ${
+	                      editMacroBgmSource === 'upload' ? macroAssetButtonActiveClass : ''
+	                    }`}
+	                    onClick={() => editMacroBgmFileRef.current?.click()}
+	                    disabled={editMacroClearBgm}
+	                  >
+	                    <Upload className="w-4 h-4 mr-2 shrink-0" />
+	                    <span className="min-w-0 flex-1 truncate">BGMをアップロード</span>
+	                  </Button>
+	                  <Button
+	                    type="button"
+	                    variant="outline"
+	                    size="sm"
+	                    className={`w-full min-w-0 justify-start overflow-hidden text-[clamp(10px,1vw,12px)] leading-none ${
+	                      editMacroBgmSource === 'select' ? macroAssetButtonActiveClass : ''
+	                    }`}
+	                    onClick={() => openMacroAssetPicker('edit', 'bgm')}
+	                    disabled={editMacroClearBgm || macroBgmAssets.length === 0}
+	                    title={macroBgmAssets.length === 0 ? '登録されたBGMがありません' : undefined}
+	                  >
+	                    <Music className="w-4 h-4 mr-2 shrink-0" />
+	                    <span className="min-w-0 flex-1 truncate">
+	                      {(() => {
+	                        if (editMacroBgmSource === 'select' && editMacroBgmAssetId) {
+	                          const a = macroBgmAssets.find((x) => x.id === editMacroBgmAssetId);
+	                          if (a) return a.label || 'BGM';
+	                        }
+	                        return '一覧から選ぶ';
+	                      })()}
+	                    </span>
+	                  </Button>
+	                </div>
+                <label className="flex items-center gap-2 text-xs text-muted-foreground shrink-0">
+                  <input
+                    type="checkbox"
+                    className="accent-primary"
+                    checked={editMacroClearBgm}
+                    onChange={(e) => {
+                      setEditMacroClearBgm(e.target.checked);
+                      if (e.target.checked) {
+                        setEditMacroBgmUrl('');
+                        setEditMacroBgmSource(null);
+                        setEditMacroBgmAssetId(null);
+                      }
+                    }}
+                  />
+                  BGMを消す
+                </label>
+                <input
+                  ref={editMacroBgmFileRef}
+                  type="file"
+                  accept="audio/*"
+                  className="hidden"
+                  onChange={handleEditMacroBgmFileChange}
+                />
+              </div>
+            </div>
+
+            <div className="space-y-2">
+              <Label className="text-xs text-muted-foreground">SE（任意）</Label>
+	              <div className="grid grid-cols-2 gap-2">
+	                <Button
+	                  type="button"
+	                  variant="outline"
+	                  size="sm"
+	                  className={`w-full min-w-0 justify-start overflow-hidden text-[clamp(10px,1vw,12px)] leading-none ${
+	                    editMacroSeSource === 'upload' ? macroAssetButtonActiveClass : ''
+	                  }`}
+	                  onClick={() => editMacroSeFileRef.current?.click()}
+	                >
+	                  <Upload className="w-4 h-4 mr-2 shrink-0" />
+	                  <span className="min-w-0 flex-1 truncate">SEをアップロード</span>
+	                </Button>
+	                <Button
+	                  type="button"
+	                  variant="outline"
+	                  size="sm"
+	                  className={`w-full min-w-0 justify-start overflow-hidden text-[clamp(10px,1vw,12px)] leading-none ${
+	                    editMacroSeSource === 'select' ? macroAssetButtonActiveClass : ''
+	                  }`}
+	                  onClick={() => openMacroAssetPicker('edit', 'se')}
+	                  disabled={macroSeAssets.length === 0}
+	                  title={macroSeAssets.length === 0 ? '登録されたSEがありません' : undefined}
+	                >
+	                  <Music className="w-4 h-4 mr-2 shrink-0" />
+	                  <span className="min-w-0 flex-1 truncate">
+	                    {(() => {
+	                      if (editMacroSeSource === 'select' && editMacroSeAssetId) {
+	                        const a = macroSeAssets.find((x) => x.id === editMacroSeAssetId);
+	                        if (a) return a.label || 'SE';
+	                      }
+	                      return '一覧から選ぶ';
+	                    })()}
+	                  </span>
+	                </Button>
+	                <input
+	                  ref={editMacroSeFileRef}
+	                  type="file"
+                  accept="audio/*"
+                  className="hidden"
+                  onChange={handleEditMacroSeFileChange}
+                />
+              </div>
+            </div>
+          </div>
+          <DialogFooter className="gap-2">
+            <Button variant="outline" onClick={() => setEditMacroOpen(false)}>
+              キャンセル
+            </Button>
+            <Button onClick={handleUpdateMacro} disabled={!editingMacro}>
+              保存
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       <Dialog
         open={bgEditOpen}

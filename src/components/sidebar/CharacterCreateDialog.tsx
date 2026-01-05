@@ -11,7 +11,7 @@ import { supabase } from '@/integrations/supabase/client';
 import { useToast } from '@/hooks/use-toast';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import type { CharacterDerived, CharacterStats } from '@/types/trpg';
-import { buildDefaultSkills, buildDerivedFromStats, buildSkillPointBreakdownFromTotals } from '@/lib/coc6';
+import { buildDefaultSkills, buildDerivedFromStats, buildSkillPointBreakdownFromTotals, normalizeSkillNameCoc6 } from '@/lib/coc6';
 
 interface CharacterCreateDialogProps {
   open: boolean;
@@ -101,12 +101,7 @@ export function CharacterCreateDialog({
     const parsedStats: Partial<CharacterStats> = {};
     const parsedSkills: Record<string, number> = {};
 
-    const normalizeSkillName = (s: string) => {
-      const base = String(s || '').trim();
-      if (!base) return '';
-      if (base.includes('こぶし') || base.includes('パンチ')) return '格闘';
-      return base;
-    };
+    const normalizeSkillName = (s: string) => normalizeSkillNameCoc6(s);
 
     const setStat = (key: keyof CharacterStats, value: number) => {
       if (!Number.isFinite(value)) return;
@@ -143,9 +138,12 @@ export function CharacterCreateDialog({
     };
 
     for (const line of lines) {
-      // Example: CCB<=65 【アイデア】
-      //          CC<=50 【幸運】
-      const m = line.match(/^(?:CCB|CC)\s*<=\s*([^\s]+)\s*【([^】]+)】/i);
+      // Example:
+      // - CCB<=65 【アイデア】
+      // - CC<=15 威圧
+      const m =
+        line.match(/^(?:CCB|CC)\s*<=\s*([^\s]+)\s*【([^】]+)】/i) ||
+        line.match(/^(?:CCB|CC)\s*<=\s*([^\s]+)\s+(.+)$/i);
       if (!m) continue;
 
       const thresholdRaw = m[1];
@@ -166,19 +164,7 @@ export function CharacterCreateDialog({
         continue;
       }
 
-      // Derived checks to infer missing stats
-      if (label === 'アイデア') {
-        if (parsedStats.INT === undefined) setStat('INT', Math.floor(threshold / 5));
-        continue;
-      }
-      if (label === '知識') {
-        if (parsedStats.EDU === undefined) setStat('EDU', Math.floor(threshold / 5));
-        continue;
-      }
-      if (label === '幸運') {
-        if (parsedStats.POW === undefined) setStat('POW', Math.floor(threshold / 5));
-        continue;
-      }
+      // Keep アイデア/幸運/知識 as skills (CoC6 chat palette often includes them)
 
       // Ignore obvious non-skill entries
       if (label.includes('ダメージ') || label.includes('判定') || label.includes('ロール')) {
@@ -253,26 +239,44 @@ export function CharacterCreateDialog({
 
     setLoading(true);
 
-    const { data, error } = await supabase
+    const basePayload: any = {
+      room_id: roomId,
+      // Ownership is used for edit permissions; NPCs are owned by the creator too.
+      owner_participant_id: participantId,
+      name: name.trim(),
+      is_npc: isNpc,
+      stats,
+      derived,
+      skills: buildDefaultSkills(stats),
+    };
+
+    let data: any = null;
+    let error: any = null;
+    const withSkillPoints = await supabase
       .from('characters')
-      .insert({
-        room_id: roomId,
-        // Ownership is used for edit permissions; NPCs are owned by the creator too.
-        owner_participant_id: participantId,
-        name: name.trim(),
-        is_npc: isNpc,
-        stats,
-        derived,
-        skills: buildDefaultSkills(stats),
-        skill_points: { occupation: {}, interest: {}, other: {} },
-      })
+      .insert({ ...basePayload, skill_points: { occupation: {}, interest: {}, other: {} } } as any)
       .select('id')
       .single();
+    data = withSkillPoints.data;
+    error = withSkillPoints.error;
+
+    // Backward compatibility: if DB doesn't have skill_points yet, retry without it.
+    if (error) {
+      const msg = String(error?.message || '');
+      const looksLikeMissingSkillPoints =
+        msg.includes('skill_points') && (msg.includes('column') || msg.includes('schema') || msg.includes('does not exist'));
+      if (looksLikeMissingSkillPoints) {
+        const withoutSkillPoints = await supabase.from('characters').insert(basePayload).select('id').single();
+        data = withoutSkillPoints.data;
+        error = withoutSkillPoints.error;
+      }
+    }
 
     setLoading(false);
 
     if (error) {
-      toast({ title: '作成に失敗しました', variant: 'destructive' });
+      console.error('Character create error:', error);
+      toast({ title: `作成に失敗しました: ${String(error.message || error)}`, variant: 'destructive' });
       return;
     }
 
@@ -317,41 +321,154 @@ export function CharacterCreateDialog({
       try {
         const data = JSON.parse(importText);
 
-        charName = data.name || data.pc_name || charName;
-        stats = {
-          STR: parseInt(data.STR || data.str || 10),
-          CON: parseInt(data.CON || data.con || 10),
-          POW: parseInt(data.POW || data.pow || 10),
-          DEX: parseInt(data.DEX || data.dex || 10),
-          APP: parseInt(data.APP || data.app || 10),
-          SIZ: parseInt(data.SIZ || data.siz || 10),
-          INT: parseInt(data.INT || data.int || 10),
-          EDU: parseInt(data.EDU || data.edu || 10),
-        };
+        // Cocoforia command export (charaeno/iachara)
+        const cocoforia = data?.kind === 'character' && data?.data && typeof data.data === 'object';
+        if (cocoforia) {
+          const d = data.data;
+          charName = (d.name || charName) as string;
 
-        derived = {
-          HP: parseInt(data.HP || data.hp || Math.floor((stats.CON + stats.SIZ) / 2)),
-          MP: parseInt(data.MP || data.mp || stats.POW),
-          SAN: parseInt(data.SAN || data.san || data.現在SAN || stats.POW * 5),
-          DB: data.DB || data.db || buildDerivedFromStats(stats).DB,
-        };
+          const params: Array<{ label: string; value: string | number }> = Array.isArray(d.params) ? d.params : [];
+          const status: Array<{ label: string; value: number; max?: number }> = Array.isArray(d.status) ? d.status : [];
+          const getParam = (label: string) => {
+            const row = params.find((p) => String(p.label).trim() === label);
+            const n = row ? Number.parseInt(String(row.value ?? '0'), 10) : NaN;
+            return Number.isFinite(n) ? n : null;
+          };
+          const getStatus = (label: string) => {
+            const row = status.find((s: any) => String(s.label).trim() === label);
+            const n = row ? Number(row.value ?? 0) : NaN;
+            return Number.isFinite(n) ? n : null;
+          };
+          const getStatusMax = (label: string) => {
+            const row = status.find((s: any) => String(s.label).trim() === label);
+            const n = row ? Number((row as any).max ?? 0) : NaN;
+            return Number.isFinite(n) ? n : null;
+          };
 
-        // Extract skills
-        if (data.skills || data.技能) {
-          const skillData = data.skills || data.技能;
-          if (typeof skillData === 'object') {
-            Object.entries(skillData).forEach(([key, value]) => {
-              if (typeof value === 'number') {
-                skills[key] = value;
-              }
-            });
+          stats = {
+            STR: getParam('STR') ?? 10,
+            CON: getParam('CON') ?? 10,
+            POW: getParam('POW') ?? 10,
+            DEX: getParam('DEX') ?? 10,
+            APP: getParam('APP') ?? 10,
+            SIZ: getParam('SIZ') ?? 10,
+            INT: getParam('INT') ?? 10,
+            EDU: getParam('EDU') ?? 10,
+          };
+
+          const hp = getStatus('HP') ?? Math.floor((stats.CON + stats.SIZ) / 2);
+          const mp = getStatus('MP') ?? stats.POW;
+          const san = getStatus('SAN') ?? stats.POW * 5;
+          const dbText = (() => {
+            const row = params.find((p) => String(p.label).trim() === 'DB');
+            return row ? String(row.value ?? '') : '';
+          })();
+
+          derived = {
+            HP: hp,
+            MP: mp,
+            SAN: san,
+            DB: dbText || buildDerivedFromStats(stats).DB,
+          };
+
+          const defaults = buildDefaultSkills(stats);
+          skills = { ...defaults };
+
+          // Parse commands
+          const commandsRaw: string = String(d.commands ?? '');
+          const lines = commandsRaw.split(/\r?\n/g).map((l) => l.trim()).filter(Boolean);
+          const resolveMacro = (token: string) => {
+            const t = String(token || '').trim();
+            const m = t.match(/^\{([^}]+)\}$/);
+            const inner = m ? String(m[1] || '').trim() : t;
+            const up = inner.toUpperCase();
+            if (up === 'SAN') return derived.SAN;
+            if (up === 'HP') return derived.HP;
+            if (up === 'MP') return derived.MP;
+            if (up === 'STR') return stats.STR * 5;
+            if (up === 'CON') return stats.CON * 5;
+            if (up === 'POW') return stats.POW * 5;
+            if (up === 'DEX') return stats.DEX * 5;
+            if (up === 'APP') return stats.APP * 5;
+            if (up === 'SIZ') return stats.SIZ * 5;
+            if (up === 'INT') return stats.INT * 5;
+            if (up === 'EDU') return stats.EDU * 5;
+            const normalized = normalizeSkillNameCoc6(inner);
+            const v = skills[normalized];
+            if (Number.isFinite(v)) return v;
+            return null;
+          };
+
+          for (const line of lines) {
+            const m =
+              line.match(/^(?:CCB|CC)\s*<=\s*([^\s]+)\s*【([^】]+)】/i) ||
+              line.match(/^(?:CCB|CC)\s*<=\s*([^\s]+)\s+(.+)$/i);
+            if (!m) continue;
+            const token = String(m[1] ?? '').trim();
+            const labelRaw = String(m[2] ?? '').trim();
+            const label = labelRaw.replace(/^【|】$/g, '').trim();
+            if (!label) continue;
+
+            // Ignore non-skill rolls / derived checks
+            const ignore = new Set([
+              '正気度ロール', 'アイデア', '幸運', '知識',
+              'STR', 'CON', 'POW', 'DEX', 'APP', 'SIZ', 'INT', 'EDU',
+            ]);
+            if (ignore.has(label)) continue;
+            // Ability x5 lines like "STR×5"
+            if (/^(STR|CON|POW|DEX|APP|SIZ|INT|EDU)\s*(?:×|\*)\s*5$/i.test(label)) continue;
+
+            const n = Number.parseInt(token, 10);
+            const value = Number.isFinite(n) ? n : resolveMacro(token);
+            if (value === null) continue;
+            const skillName = normalizeSkillNameCoc6(label);
+            if (!skillName) continue;
+            const v = Math.max(0, Math.trunc(value));
+            // Some exports output 0 as placeholder; don't clobber defaults in that case.
+            if (v === 0 && Number.isFinite(defaults[skillName]) && (defaults[skillName] ?? 0) > 0) continue;
+            skills[skillName] = v;
           }
-        }
 
-        memo = data.memo || data.メモ || '';
-        const defaults = buildDefaultSkills(stats);
-        skills = { ...defaults, ...skills };
-        skillPoints = buildSkillPointBreakdownFromTotals(stats, skills);
+          memo = String(d.memo ?? '');
+          skillPoints = buildSkillPointBreakdownFromTotals(stats, skills);
+        } else {
+          // Legacy iachara JSON
+          charName = data.name || data.pc_name || charName;
+          stats = {
+            STR: parseInt(data.STR || data.str || 10),
+            CON: parseInt(data.CON || data.con || 10),
+            POW: parseInt(data.POW || data.pow || 10),
+            DEX: parseInt(data.DEX || data.dex || 10),
+            APP: parseInt(data.APP || data.app || 10),
+            SIZ: parseInt(data.SIZ || data.siz || 10),
+            INT: parseInt(data.INT || data.int || 10),
+            EDU: parseInt(data.EDU || data.edu || 10),
+          };
+
+          derived = {
+            HP: parseInt(data.HP || data.hp || Math.floor((stats.CON + stats.SIZ) / 2)),
+            MP: parseInt(data.MP || data.mp || stats.POW),
+            SAN: parseInt(data.SAN || data.san || data.現在SAN || stats.POW * 5),
+            DB: data.DB || data.db || buildDerivedFromStats(stats).DB,
+          };
+
+          // Extract skills
+          if (data.skills || data.技能) {
+            const skillData = data.skills || data.技能;
+            if (typeof skillData === 'object') {
+              Object.entries(skillData).forEach(([key, value]) => {
+                if (typeof value === 'number') {
+                  skills[key] = value;
+                }
+              });
+            }
+          }
+
+          memo = data.memo || data.メモ || '';
+          const defaults = buildDefaultSkills(stats);
+          skills = { ...defaults, ...skills };
+          skillPoints = buildSkillPointBreakdownFromTotals(stats, skills);
+        }
       } catch {
         // Fallback: parse chat palette output
         const parsed = parseIacharaChatPalette(importText);
@@ -363,22 +480,50 @@ export function CharacterCreateDialog({
 
       const { data: created, error } = await supabase
         .from('characters')
-        .insert({
-          room_id: roomId,
-          // Ownership is used for edit permissions; NPCs are owned by the creator too.
-          owner_participant_id: participantId,
-          name: charName,
-          is_npc: isNpc,
-          stats,
-          derived,
-          skills,
-          skill_points: skillPoints,
-          memo,
-        })
+        .insert((() => {
+          const payload: any = {
+            room_id: roomId,
+            // Ownership is used for edit permissions; NPCs are owned by the creator too.
+            owner_participant_id: participantId,
+            name: charName,
+            is_npc: isNpc,
+            stats,
+            derived,
+            skills,
+            skill_points: skillPoints,
+            memo,
+          };
+          return payload;
+        })())
         .select('id')
         .single();
 
-      if (error) throw error;
+      if (error) {
+        const msg = String((error as any)?.message || '');
+        const looksLikeMissingSkillPoints =
+          msg.includes('skill_points') && (msg.includes('column') || msg.includes('schema') || msg.includes('does not exist'));
+        if (looksLikeMissingSkillPoints) {
+          const retry = await supabase
+            .from('characters')
+            .insert({
+              room_id: roomId,
+              owner_participant_id: participantId,
+              name: charName,
+              is_npc: isNpc,
+              stats,
+              derived,
+              skills,
+              memo,
+            } as any)
+            .select('id')
+            .single();
+          if (retry.error) throw retry.error;
+          // eslint-disable-next-line @typescript-eslint/no-unused-vars
+          const createdFallback = retry.data;
+        } else {
+          throw error;
+        }
+      }
 
       if (isNpc && created?.id) {
         try {

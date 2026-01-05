@@ -5,9 +5,17 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { ScrollArea } from '@/components/ui/scroll-area';
+import { AspectRatio } from '@/components/ui/aspect-ratio';
+import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { supabase } from '@/integrations/supabase/client';
 import { uploadFile } from '@/lib/upload';
 import { getPortraitTransform, setPortraitTransform } from '@/lib/portraitTransforms';
+import {
+  buildPortraitTransformCommand,
+  savePortraitTransformSet,
+  loadPortraitTransformSet,
+  type PortraitTransformSet,
+} from '@/lib/portraitTransformsShared';
 import { useToast } from '@/hooks/use-toast';
 import type { Asset } from '@/types/trpg';
 
@@ -27,9 +35,15 @@ interface PortraitVariant {
   url: string;
   isDefault: boolean;
   file?: File;
-  scale: number;
-  offsetX: number;
-  offsetY: number;
+  scaleLeft: number;
+  offsetXLeft: number; // relative (0.1 = 10% of stage width)
+  offsetYLeft: number; // relative (0.1 = 10% of stage height)
+  scaleCenter: number;
+  offsetXCenter: number; // relative
+  offsetYCenter: number; // relative
+  scaleRight: number;
+  offsetXRight: number; // relative
+  offsetYRight: number; // relative
 }
 
 export function PortraitManager({
@@ -43,6 +57,10 @@ export function PortraitManager({
   const [variants, setVariants] = useState<PortraitVariant[]>([]);
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [selectedIndex, setSelectedIndex] = useState<number>(0);
+  const [previewPos, setPreviewPos] = useState<'left' | 'center' | 'right'>('center');
+  const previewRef = useRef<HTMLDivElement>(null);
+  const [previewSize, setPreviewSize] = useState<{ width: number; height: number }>({ width: 1200, height: 675 });
   const fileInputRef = useRef<HTMLInputElement>(null);
   const { toast } = useToast();
 
@@ -58,33 +76,51 @@ export function PortraitManager({
       .order('layer_order', { ascending: true });
 
     if (!error && data) {
-      setVariants(
+      const nextVariants =
         data.map((a: any) => ({
           id: a.id,
           displayName: a.label,
           tag: a.tag || '',
           url: a.url,
           isDefault: a.is_default || false,
-          scale: (() => {
-            if (typeof a.scale === 'number') return a.scale;
-            const t = getPortraitTransform(characterId, a.tag || a.label);
-            return t?.scale ?? 1;
+          ...((): PortraitVariant extends infer T ? Partial<PortraitVariant> : never => {
+            const key = a.tag || a.label;
+            const set = loadPortraitTransformSet(roomId, characterId, key);
+            if (set) {
+              return {
+                scaleLeft: set.left.scale,
+                offsetXLeft: set.left.x,
+                offsetYLeft: set.left.y,
+                scaleCenter: set.center.scale,
+                offsetXCenter: set.center.x,
+                offsetYCenter: set.center.y,
+                scaleRight: set.right.scale,
+                offsetXRight: set.right.x,
+                offsetYRight: set.right.y,
+              } as any;
+            }
+            const legacy = getPortraitTransform(characterId, key);
+            return {
+              scaleLeft: legacy?.scale ?? 1,
+              offsetXLeft: 0,
+              offsetYLeft: 0,
+              scaleCenter: legacy?.scale ?? 1,
+              offsetXCenter: 0,
+              offsetYCenter: 0,
+              scaleRight: legacy?.scale ?? 1,
+              offsetXRight: 0,
+              offsetYRight: 0,
+            } as any;
           })(),
-          offsetX: (() => {
-            if (typeof a.offset_x === 'number') return a.offset_x;
-            const t = getPortraitTransform(characterId, a.tag || a.label);
-            return t?.offsetX ?? 0;
-          })(),
-          offsetY: (() => {
-            if (typeof a.offset_y === 'number') return a.offset_y;
-            const t = getPortraitTransform(characterId, a.tag || a.label);
-            return t?.offsetY ?? 0;
-          })(),
-        }))
-      );
+        }));
+      setVariants(nextVariants);
+      setSelectedIndex((prev) => {
+        if (nextVariants.length === 0) return 0;
+        return Math.min(Math.max(0, prev), nextVariants.length - 1);
+      });
     }
     setLoading(false);
-  }, [characterId]);
+  }, [characterId, roomId]);
 
   // Load assets when dialog opens
   useEffect(() => {
@@ -105,9 +141,15 @@ export function PortraitManager({
         url,
         isDefault: variants.length === 0,
         file,
-        scale: 1,
-        offsetX: 0,
-        offsetY: 0,
+        scaleLeft: 1,
+        offsetXLeft: 0,
+        offsetYLeft: 0,
+        scaleCenter: 1,
+        offsetXCenter: 0,
+        offsetYCenter: 0,
+        scaleRight: 1,
+        offsetXRight: 0,
+        offsetYRight: 0,
       };
       setVariants(prev => [...prev, newVariant]);
     }
@@ -131,9 +173,15 @@ export function PortraitManager({
         url,
         isDefault: variants.length === 0,
         file,
-        scale: 1,
-        offsetX: 0,
-        offsetY: 0,
+        scaleLeft: 1,
+        offsetXLeft: 0,
+        offsetYLeft: 0,
+        scaleCenter: 1,
+        offsetXCenter: 0,
+        offsetYCenter: 0,
+        scaleRight: 1,
+        offsetXRight: 0,
+        offsetYRight: 0,
       };
       setVariants(prev => [...prev, newVariant]);
     }
@@ -149,6 +197,7 @@ export function PortraitManager({
 
   const removeVariant = (index: number) => {
     setVariants(prev => prev.filter((_, i) => i !== index));
+    setSelectedIndex((prev) => (prev >= index ? Math.max(0, prev - 1) : prev));
   };
 
   const setDefaultVariant = (index: number) => {
@@ -164,6 +213,7 @@ export function PortraitManager({
     setSaving(true);
 
     try {
+      const RESERVED_TAGS = new Set(['delete', 'blindd']);
       const normalizedVariants =
         variants.length > 0 && !variants.some(v => v.isDefault)
           ? variants.map((v, i) => ({ ...v, isDefault: i === 0 }))
@@ -188,6 +238,10 @@ export function PortraitManager({
         if (!variant.displayName.trim()) {
           throw new Error('表示名が空です');
         }
+        const tagNormalized = variant.tag.trim().toLowerCase();
+        if (tagNormalized && RESERVED_TAGS.has(tagNormalized)) {
+          throw new Error(`このタグは使用できません: ${variant.tag}`);
+        }
 
         let url = variant.url;
         if (variant.file) {
@@ -207,9 +261,9 @@ export function PortraitManager({
           url,
           is_default: variant.isDefault,
           layer_order: i,
-          scale: Number.isFinite(variant.scale) ? variant.scale : 1,
-          offset_x: Number.isFinite(variant.offsetX) ? Math.trunc(variant.offsetX) : 0,
-          offset_y: Number.isFinite(variant.offsetY) ? Math.trunc(variant.offsetY) : 0,
+          scale: Number.isFinite(variant.scaleCenter) ? variant.scaleCenter : 1,
+          offset_x: 0,
+          offset_y: 0,
         });
       }
 
@@ -228,13 +282,14 @@ export function PortraitManager({
       if (insertWithTransforms.error) {
         const message = insertWithTransforms.error.message || '';
         const looksLikeMissingColumns =
-          message.includes('scale') || message.includes('offset_x') || message.includes('offset_y');
+          message.includes('scale') ||
+          message.includes('offset_x') ||
+          message.includes('offset_y');
 
         if (!looksLikeMissingColumns) throw insertWithTransforms.error;
-
-        const legacyRows = resolved.map(({ scale, offset_x, offset_y, ...rest }) => rest);
-        const legacyInsert = await supabase.from('assets').insert(legacyRows);
-        if (legacyInsert.error) throw legacyInsert.error;
+        const minimalRows = resolved.map(({ scale, offset_x, offset_y, ...rest }) => rest);
+        const minimalInsert = await supabase.from('assets').insert(minimalRows as any);
+        if (minimalInsert.error) throw minimalInsert.error;
       }
 
       // Persist transforms locally (fallback when DB columns are missing)
@@ -243,8 +298,33 @@ export function PortraitManager({
         if (v.tag.trim()) keys.add(v.tag);
         if (v.displayName.trim()) keys.add(v.displayName);
         for (const key of keys) {
-          setPortraitTransform(characterId, key, { scale: v.scale, offsetX: v.offsetX, offsetY: v.offsetY });
+          setPortraitTransform(characterId, key, { scale: v.scaleCenter, offsetX: 0, offsetY: 0 });
         }
+      }
+
+      // Persist shared transforms (room-wide) via hidden system message
+      const commands: string[] = [];
+      for (const v of normalizedVariants) {
+        const key = v.tag.trim() || v.displayName.trim();
+        if (!key) continue;
+        const set: PortraitTransformSet = {
+          left: { scale: v.scaleLeft, x: v.offsetXLeft, y: v.offsetYLeft },
+          center: { scale: v.scaleCenter, x: v.offsetXCenter, y: v.offsetYCenter },
+          right: { scale: v.scaleRight, x: v.offsetXRight, y: v.offsetYRight },
+        };
+        savePortraitTransformSet(roomId, characterId, key, set);
+        const cmd = buildPortraitTransformCommand({ characterId, key, set });
+        if (cmd) commands.push(cmd);
+      }
+      if (commands.length > 0) {
+        await supabase.from('messages').insert({
+          room_id: roomId,
+          type: 'system',
+          text: commands.join('\n'),
+          speaker_name: 'システム',
+          channel: 'public',
+          secret_allow_list: [],
+        } as any);
       }
 
       // Delete old assets after successful insert
@@ -253,26 +333,116 @@ export function PortraitManager({
         if (deleteError) throw deleteError;
       }
 
-      toast({ title: '立ち絵を保存しました' });
+      if (!insertWithTransforms.error) toast({ title: '立ち絵を保存しました' });
       onUpdate();
       onOpenChange(false);
     } catch (error) {
       console.error('Save error:', error);
-      toast({ title: '保存に失敗しました', variant: 'destructive' });
+      toast({
+        title: '保存に失敗しました',
+        description: error instanceof Error ? error.message : undefined,
+        variant: 'destructive',
+      });
     }
 
     setSaving(false);
   };
 
+  const selectedVariant = variants[selectedIndex] ?? null;
+  const dragRef = useRef<{
+    pos: 'left' | 'center' | 'right';
+    startX: number;
+    startY: number;
+    startOffsetXRel: number;
+    startOffsetYRel: number;
+    width: number;
+    height: number;
+  } | null>(null);
+
+  useEffect(() => {
+    const el = previewRef.current;
+    if (!el) return;
+    const ro = new ResizeObserver((entries) => {
+      const rect = entries[0]?.contentRect;
+      if (!rect) return;
+      setPreviewSize({
+        width: Math.max(1, rect.width),
+        height: Math.max(1, rect.height),
+      });
+    });
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, [open]);
+
+  const onPreviewPointerDown = (pos: 'left' | 'center' | 'right') => (e: React.PointerEvent) => {
+    if (!selectedVariant) return;
+    e.preventDefault();
+    (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
+    const base =
+      pos === 'left'
+        ? { x: selectedVariant.offsetXLeft, y: selectedVariant.offsetYLeft }
+      : pos === 'right'
+          ? { x: selectedVariant.offsetXRight, y: selectedVariant.offsetYRight }
+          : { x: selectedVariant.offsetXCenter, y: selectedVariant.offsetYCenter };
+    dragRef.current = {
+      pos,
+      startX: e.clientX,
+      startY: e.clientY,
+      startOffsetXRel: base.x,
+      startOffsetYRel: base.y,
+      width: previewSize.width,
+      height: previewSize.height,
+    };
+  };
+
+  const onPreviewPointerMove = (e: React.PointerEvent) => {
+    const st = dragRef.current;
+    if (!st) return;
+    const dx = e.clientX - st.startX;
+    const dy = e.clientY - st.startY;
+    const nextXRel = st.startOffsetXRel + dx / Math.max(1, st.width);
+    const nextYRel = st.startOffsetYRel + dy / Math.max(1, st.height);
+    const round = (n: number) => Math.round(n * 10000) / 10000;
+    if (st.pos === 'left') updateVariant(selectedIndex, { offsetXLeft: round(nextXRel), offsetYLeft: round(nextYRel) });
+    if (st.pos === 'center') updateVariant(selectedIndex, { offsetXCenter: round(nextXRel), offsetYCenter: round(nextYRel) });
+    if (st.pos === 'right') updateVariant(selectedIndex, { offsetXRight: round(nextXRel), offsetYRight: round(nextYRel) });
+  };
+
+  const onPreviewPointerUp = () => {
+    dragRef.current = null;
+  };
+
+  const alignAllToDefault = () => {
+    const def = variants.find((v) => v.isDefault) ?? variants[0];
+    if (!def) return;
+    setVariants((prev) =>
+      prev.map((v) => {
+        if (v === def) return v;
+        return {
+          ...v,
+          scaleLeft: def.scaleLeft,
+          offsetXLeft: def.offsetXLeft,
+          offsetYLeft: def.offsetYLeft,
+          scaleCenter: def.scaleCenter,
+          offsetXCenter: def.offsetXCenter,
+          offsetYCenter: def.offsetYCenter,
+          scaleRight: def.scaleRight,
+          offsetXRight: def.offsetXRight,
+          offsetYRight: def.offsetYRight,
+        };
+      }),
+    );
+  };
+
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-2xl max-h-[80vh] flex flex-col">
+      <DialogContent className="max-w-4xl max-h-[85vh] flex flex-col overflow-hidden">
         <DialogHeader>
           <DialogTitle>{characterName} - 立ち絵管理</DialogTitle>
         </DialogHeader>
 
         <div
-          className="flex-1 min-h-0 flex flex-col"
+          className="flex-1 min-h-0 overflow-auto flex flex-col"
           onDrop={handleDrop}
           onDragOver={handleDragOver}
         >
@@ -296,12 +466,15 @@ export function PortraitManager({
           </div>
 
           {/* Variants List */}
-          <ScrollArea className="flex-1">
+          <ScrollArea className="h-[280px] shrink-0">
             <div className="space-y-3">
               {variants.map((variant, index) => (
                 <div
                   key={index}
-                  className="flex items-center gap-3 p-3 bg-secondary rounded-lg"
+                  className={`flex items-center gap-3 p-3 rounded-lg border ${
+                    index === selectedIndex ? 'bg-secondary border-primary/60' : 'bg-secondary border-transparent'
+                  }`}
+                  onClick={() => setSelectedIndex(index)}
                 >
                   <GripVertical className="w-4 h-4 text-muted-foreground cursor-grab" />
                   
@@ -334,40 +507,8 @@ export function PortraitManager({
                         className="h-8"
                       />
                     </div>
-                    <div>
-                      <Label className="text-xs">倍率</Label>
-                      <Input
-                        type="number"
-                        inputMode="decimal"
-                        step="0.05"
-                        value={String(variant.scale)}
-                        onChange={(e) => updateVariant(index, { scale: Number.parseFloat(e.target.value) || 1 })}
-                        className="h-8"
-                      />
-                    </div>
-                    <div className="grid grid-cols-2 gap-2">
-                      <div>
-                        <Label className="text-xs">Xずれ(px)</Label>
-                        <Input
-                          type="number"
-                          inputMode="numeric"
-                          step="1"
-                          value={String(variant.offsetX)}
-                          onChange={(e) => updateVariant(index, { offsetX: Number.parseInt(e.target.value || '0', 10) || 0 })}
-                          className="h-8"
-                        />
-                      </div>
-                      <div>
-                        <Label className="text-xs">Yずれ(px)</Label>
-                        <Input
-                          type="number"
-                          inputMode="numeric"
-                          step="1"
-                          value={String(variant.offsetY)}
-                          onChange={(e) => updateVariant(index, { offsetY: Number.parseInt(e.target.value || '0', 10) || 0 })}
-                          className="h-8"
-                        />
-                      </div>
+                    <div className="col-span-2">
+                      <Label className="text-xs text-muted-foreground">（倍率/ずれは下のプレビューで位置ごとに調整）</Label>
                     </div>
                   </div>
 
@@ -400,6 +541,193 @@ export function PortraitManager({
               )}
             </div>
           </ScrollArea>
+
+          {/* Preview / Drag adjust */}
+          {selectedVariant && selectedVariant.url && (
+            <div className="shrink-0 mt-2 space-y-2">
+              <div className="flex items-center justify-between gap-2">
+                <div className="text-xs text-muted-foreground">プレビュー: ドラッグで位置調整</div>
+                <Tabs value={previewPos} onValueChange={(v) => setPreviewPos(v as any)}>
+                  <TabsList className="h-8">
+                    <TabsTrigger value="left" className="text-xs">左</TabsTrigger>
+                    <TabsTrigger value="center" className="text-xs">中央</TabsTrigger>
+                    <TabsTrigger value="right" className="text-xs">右</TabsTrigger>
+                  </TabsList>
+                </Tabs>
+              </div>
+
+              <AspectRatio ratio={16 / 9} className="relative w-full">
+                <div
+                  ref={previewRef}
+                  className="absolute inset-0 rounded border border-border bg-gradient-to-b from-background/70 to-background/30 overflow-hidden"
+                  onPointerMove={onPreviewPointerMove}
+                  onPointerUp={onPreviewPointerUp}
+                  onPointerCancel={onPreviewPointerUp}
+                >
+                  <div
+                    className="portrait-layer cursor-grab select-none"
+                    style={{
+                      left: '50%',
+                      maxHeight: '95%',
+                      maxWidth: '95%',
+                      transform:
+                        previewPos === 'left'
+                          ? `translate(-50%, 0) translate(${(selectedVariant.offsetXLeft - 0.225) * previewSize.width}px, ${selectedVariant.offsetYLeft * previewSize.height}px) scale(${selectedVariant.scaleLeft})`
+                          : previewPos === 'right'
+                            ? `translate(-50%, 0) translate(${(selectedVariant.offsetXRight + 0.225) * previewSize.width}px, ${selectedVariant.offsetYRight * previewSize.height}px) scale(${selectedVariant.scaleRight})`
+                            : `translate(-50%, 0) translate(${selectedVariant.offsetXCenter * previewSize.width}px, ${selectedVariant.offsetYCenter * previewSize.height}px) scale(${selectedVariant.scaleCenter})`,
+                      transformOrigin: 'bottom center',
+                    }}
+                    onPointerDown={onPreviewPointerDown(previewPos)}
+                  >
+                    <img
+                      src={selectedVariant.url}
+                      alt={selectedVariant.displayName}
+                      className="pointer-events-none select-none object-contain"
+                      style={{ maxWidth: '100%', maxHeight: '100%', height: 'auto', width: 'auto' }}
+                    />
+                  </div>
+                </div>
+              </AspectRatio>
+
+              {variants.length >= 2 && (
+                <div className="flex justify-end">
+                  <Button type="button" variant="outline" size="sm" onClick={alignAllToDefault}>
+                    デフォルトの立ち絵と座標・倍率を合わせる
+                  </Button>
+                </div>
+              )}
+
+              <div className="grid grid-cols-3 gap-2">
+                <div className="space-y-1 rounded border border-border p-2">
+                  <div className="text-xs text-muted-foreground">左</div>
+                  <div className="grid grid-cols-[0.8fr_1fr_1fr] gap-2">
+                    <div>
+                      <Label className="text-xs">倍率</Label>
+                      <Input
+                        type="number"
+                        inputMode="decimal"
+                        step="0.05"
+                        value={String(selectedVariant.scaleLeft)}
+                        onChange={(e) => updateVariant(selectedIndex, { scaleLeft: Number.parseFloat(e.target.value) || 1 })}
+                        className="h-8 tabular-nums"
+                      />
+                    </div>
+                    <div>
+                      <Label className="text-xs">X(%)</Label>
+                      <Input
+                        type="number"
+                        inputMode="decimal"
+                        step="0.1"
+                        value={selectedVariant.offsetXLeft * 100}
+                        onChange={(e) =>
+                          updateVariant(selectedIndex, { offsetXLeft: (Number.parseFloat(e.target.value || '0') || 0) / 100 })
+                        }
+                        className="h-8 tabular-nums"
+                      />
+                    </div>
+                    <div>
+                      <Label className="text-xs">Y(%)</Label>
+                      <Input
+                        type="number"
+                        inputMode="decimal"
+                        step="0.1"
+                        value={selectedVariant.offsetYLeft * 100}
+                        onChange={(e) =>
+                          updateVariant(selectedIndex, { offsetYLeft: (Number.parseFloat(e.target.value || '0') || 0) / 100 })
+                        }
+                        className="h-8 tabular-nums"
+                      />
+                    </div>
+                  </div>
+                </div>
+                <div className="space-y-1 rounded border border-border p-2">
+                  <div className="text-xs text-muted-foreground">中央</div>
+                  <div className="grid grid-cols-[0.8fr_1fr_1fr] gap-2">
+                    <div>
+                      <Label className="text-xs">倍率</Label>
+                      <Input
+                        type="number"
+                        inputMode="decimal"
+                        step="0.05"
+                        value={String(selectedVariant.scaleCenter)}
+                        onChange={(e) => updateVariant(selectedIndex, { scaleCenter: Number.parseFloat(e.target.value) || 1 })}
+                        className="h-8 tabular-nums"
+                      />
+                    </div>
+                    <div>
+                      <Label className="text-xs">X(%)</Label>
+                      <Input
+                        type="number"
+                        inputMode="decimal"
+                        step="0.1"
+                        value={selectedVariant.offsetXCenter * 100}
+                        onChange={(e) =>
+                          updateVariant(selectedIndex, { offsetXCenter: (Number.parseFloat(e.target.value || '0') || 0) / 100 })
+                        }
+                        className="h-8 tabular-nums"
+                      />
+                    </div>
+                    <div>
+                      <Label className="text-xs">Y(%)</Label>
+                      <Input
+                        type="number"
+                        inputMode="decimal"
+                        step="0.1"
+                        value={selectedVariant.offsetYCenter * 100}
+                        onChange={(e) =>
+                          updateVariant(selectedIndex, { offsetYCenter: (Number.parseFloat(e.target.value || '0') || 0) / 100 })
+                        }
+                        className="h-8 tabular-nums"
+                      />
+                    </div>
+                  </div>
+                </div>
+                <div className="space-y-1 rounded border border-border p-2">
+                  <div className="text-xs text-muted-foreground">右</div>
+                  <div className="grid grid-cols-[0.8fr_1fr_1fr] gap-2">
+                    <div>
+                      <Label className="text-xs">倍率</Label>
+                      <Input
+                        type="number"
+                        inputMode="decimal"
+                        step="0.05"
+                        value={String(selectedVariant.scaleRight)}
+                        onChange={(e) => updateVariant(selectedIndex, { scaleRight: Number.parseFloat(e.target.value) || 1 })}
+                        className="h-8 tabular-nums"
+                      />
+                    </div>
+                    <div>
+                      <Label className="text-xs">X(%)</Label>
+                      <Input
+                        type="number"
+                        inputMode="decimal"
+                        step="0.1"
+                        value={selectedVariant.offsetXRight * 100}
+                        onChange={(e) =>
+                          updateVariant(selectedIndex, { offsetXRight: (Number.parseFloat(e.target.value || '0') || 0) / 100 })
+                        }
+                        className="h-8 tabular-nums"
+                      />
+                    </div>
+                    <div>
+                      <Label className="text-xs">Y(%)</Label>
+                      <Input
+                        type="number"
+                        inputMode="decimal"
+                        step="0.1"
+                        value={selectedVariant.offsetYRight * 100}
+                        onChange={(e) =>
+                          updateVariant(selectedIndex, { offsetYRight: (Number.parseFloat(e.target.value || '0') || 0) / 100 })
+                        }
+                        className="h-8 tabular-nums"
+                      />
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
         </div>
 
         {/* Actions */}

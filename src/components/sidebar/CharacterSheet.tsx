@@ -12,9 +12,13 @@ import { PortraitManager } from './PortraitManager';
 import {
   buildDefaultSkills,
   buildSkillPointBreakdownFromTotals,
+  compareCoc6SkillNames,
   computeTotalSkills,
-  COC6_SKILL_CATEGORIES,
+  formatCoc6SkillNameForDisplay,
+  getCoc6SkillBaseValue,
   normalizeSkillNameCoc6,
+  normalizeSkillPointBreakdown,
+  parseCoc6OptionalDetailSkill,
   type SkillPointBreakdown,
 } from '@/lib/coc6';
 import {
@@ -60,12 +64,69 @@ const STAT_LABELS: Record<keyof CharacterStats, string> = {
 const COMMON_SKILLS = [
   '目星', '聞き耳', '図書館', '心理学', '説得', '言いくるめ',
   '回避', '隠れる', '忍び歩き', '応急手当', 'オカルト', '歴史',
-  '母国語', '英語', '運転', '医学', '精神分析', 'クトゥルフ神話',
+  '母国語', 'ほかの言語', '運転', '医学', '精神分析', 'クトゥルフ神話',
   // 戦闘系（よく使うもの）
   '格闘', 'キック', '組み付き', '投擲',
   '拳銃', 'ライフル', 'ショットガン', 'サブマシンガン',
   '刀剣', '弓', 'マーシャルアーツ',
 ];
+
+const SKILL_POINTS_STORAGE_KEY_PREFIX = 'trpg:characterSkillPoints:';
+const SKILL_POINTS_CONFIRMED_KEY_PREFIX = 'trpg:characterSkillPointsConfirmed:';
+function skillPointsStorageKey(roomId: string, characterId: string) {
+  return `${SKILL_POINTS_STORAGE_KEY_PREFIX}${roomId}:${characterId}`;
+}
+function skillPointsConfirmedStorageKey(roomId: string, characterId: string) {
+  return `${SKILL_POINTS_CONFIRMED_KEY_PREFIX}${roomId}:${characterId}`;
+}
+function loadLocalSkillPoints(roomId: string, characterId: string): SkillPointBreakdown | null {
+  try {
+    if (typeof window === 'undefined' || !window.localStorage) return null;
+    const raw = localStorage.getItem(skillPointsStorageKey(roomId, characterId));
+    if (!raw) return null;
+    const parsed = JSON.parse(raw);
+    if (!parsed || typeof parsed !== 'object') return null;
+    return normalizeSkillPointBreakdown({
+      occupation: (parsed as any).occupation || {},
+      interest: (parsed as any).interest || {},
+      other: (parsed as any).other || {},
+    });
+  } catch {
+    return null;
+  }
+}
+function loadLocalSkillPointsConfirmed(roomId: string, characterId: string) {
+  try {
+    if (typeof window === 'undefined' || !window.localStorage) return false;
+    return localStorage.getItem(skillPointsConfirmedStorageKey(roomId, characterId)) === '1';
+  } catch {
+    return false;
+  }
+}
+function saveLocalSkillPointsConfirmed(roomId: string, characterId: string) {
+  try {
+    if (typeof window === 'undefined' || !window.localStorage) return;
+    localStorage.setItem(skillPointsConfirmedStorageKey(roomId, characterId), '1');
+  } catch {
+    // ignore
+  }
+}
+function saveLocalSkillPoints(roomId: string, characterId: string, sp: SkillPointBreakdown) {
+  try {
+    if (typeof window === 'undefined' || !window.localStorage) return;
+    localStorage.setItem(skillPointsStorageKey(roomId, characterId), JSON.stringify(sp));
+  } catch {
+    // ignore
+  }
+}
+function clearLocalSkillPoints(roomId: string, characterId: string) {
+  try {
+    if (typeof window === 'undefined' || !window.localStorage) return;
+    localStorage.removeItem(skillPointsStorageKey(roomId, characterId));
+  } catch {
+    // ignore
+  }
+}
 
 export function CharacterSheet({
   character,
@@ -83,17 +144,29 @@ export function CharacterSheet({
   const [skillPoints, setSkillPoints] = useState<SkillPointBreakdown>(() => {
     const existing = (character as any).skill_points;
     if (existing && typeof existing === 'object') {
-      return {
+      return normalizeSkillPointBreakdown({
         occupation: existing.occupation || {},
         interest: existing.interest || {},
         other: existing.other || {},
-      };
+      });
     }
+    const local = loadLocalSkillPoints(roomId, character.id);
+    if (local) return local;
     return buildSkillPointBreakdownFromTotals(character.stats, character.skills);
   });
   const [memo, setMemo] = useState(character.memo);
   const [showPortraitManager, setShowPortraitManager] = useState(false);
   const [deleting, setDeleting] = useState(false);
+  const [renamingSkill, setRenamingSkill] = useState<string | null>(null);
+  const [renameDraft, setRenameDraft] = useState('');
+  const [renameComposing, setRenameComposing] = useState(false);
+  const [addingSkill, setAddingSkill] = useState(false);
+  const [newSkillName, setNewSkillName] = useState('');
+  const [newSkillComposing, setNewSkillComposing] = useState(false);
+  const [newlyAddedSkills, setNewlyAddedSkills] = useState<string[]>([]);
+  const [optionalDetailDrafts, setOptionalDetailDrafts] = useState<Record<string, string>>({});
+  const [optionalDetailComposing, setOptionalDetailComposing] = useState<string | null>(null);
+  const [resetConfirmOpen, setResetConfirmOpen] = useState(false);
   const { toast } = useToast();
 
   const isNpc = character.is_npc;
@@ -108,29 +181,43 @@ export function CharacterSheet({
     {
       const existing = (character as any).skill_points;
       if (existing && typeof existing === 'object') {
-        setSkillPoints({
-          occupation: existing.occupation || {},
-          interest: existing.interest || {},
-          other: existing.other || {},
-        });
+        setSkillPoints(
+          normalizeSkillPointBreakdown({
+            occupation: existing.occupation || {},
+            interest: existing.interest || {},
+            other: existing.other || {},
+          }),
+        );
       } else {
-        setSkillPoints(buildSkillPointBreakdownFromTotals(character.stats, character.skills));
+        const local = loadLocalSkillPoints(roomId, character.id);
+        if (local) setSkillPoints(local);
+        else setSkillPoints(buildSkillPointBreakdownFromTotals(character.stats, character.skills));
       }
     }
     setMemo(character.memo);
     setIsEditing(false);
-  }, [character.id]);
+    setNewlyAddedSkills([]);
+  }, [character.id, roomId]);
 
   const defaultSkills = useMemo(() => buildDefaultSkills(stats), [stats]);
   const computedSkills = useMemo(() => computeTotalSkills(stats, skillPoints), [stats, skillPoints]);
 
   const combinedSkillNames = useMemo(() => {
-    return Array.from(
-      new Set([...COMMON_SKILLS, ...Object.keys(defaultSkills), ...Object.keys(skills), ...Object.keys(computedSkills)]),
-    )
+    const normalized = [...COMMON_SKILLS, ...Object.keys(defaultSkills), ...Object.keys(skills), ...Object.keys(computedSkills)]
       .map(normalizeSkillNameCoc6)
-      .filter(Boolean)
-      .sort((a, b) => a.localeCompare(b, 'ja'));
+      .filter((n) => !!n && !['アイデア', '幸運', '知識'].includes(n));
+    const unique = Array.from(new Set(normalized)).sort(compareCoc6SkillNames);
+    const optionalBasesWithDetail = new Set<string>();
+    for (const n of unique) {
+      const p = parseCoc6OptionalDetailSkill(n);
+      if (p.isOptionalDetail && p.detail) optionalBasesWithDetail.add(p.base);
+    }
+    return unique.filter((n) => {
+      const p = parseCoc6OptionalDetailSkill(n);
+      const isPlaceholder = p.isOptionalDetail && !p.detail && n.endsWith('（）');
+      if (isPlaceholder && optionalBasesWithDetail.has(p.base)) return false;
+      return true;
+    });
   }, [defaultSkills, skills, computedSkills]);
 
   const occupationLimit = stats.EDU * 20;
@@ -138,36 +225,179 @@ export function CharacterSheet({
   const occupationUsed = Object.values(skillPoints.occupation || {}).reduce((sum, v) => sum + (Number.isFinite(v) ? Number(v) : 0), 0);
   const interestUsed = Object.values(skillPoints.interest || {}).reduce((sum, v) => sum + (Number.isFinite(v) ? Number(v) : 0), 0);
 
-  const categorizedSkillGroups = useMemo(() => {
-    const categoryOrder = COC6_SKILL_CATEGORIES.map((c) => ({
-      key: c.key,
-      label: c.label,
-      skills: c.skills.map(normalizeSkillNameCoc6).filter(Boolean),
-    }));
+  // Skills are displayed in gojuon order (no category grouping)
 
-    const inCategory = new Set<string>();
-    categoryOrder.forEach((c) => c.skills.forEach((s) => inCategory.add(s)));
+  const startRenameSkill = (skillName: string) => {
+    setRenamingSkill(skillName);
+    setRenameDraft(skillName);
+    setRenameComposing(false);
+  };
 
-    const extras = combinedSkillNames.filter((s) => !inCategory.has(s));
-    const groups = [...categoryOrder];
-    if (extras.length > 0) {
-      groups.push({ key: 'other', label: 'その他', skills: extras });
+  const renameSkillKey = (fromName: string, toRaw: string) => {
+    const nextRaw = String(toRaw || '').trim();
+    const next = normalizeSkillNameCoc6(nextRaw);
+    if (!next) return;
+    if (next === fromName) return;
+    setSkillPoints((prev) => {
+      const occ = { ...(prev.occupation || {}) };
+      const intr = { ...(prev.interest || {}) };
+      const oth = { ...(prev.other || {}) };
+
+      const move = (obj: Record<string, number>) => {
+        const from = obj[fromName] ?? 0;
+        if (from) obj[next] = (obj[next] ?? 0) + from;
+        delete obj[fromName];
+      };
+      move(occ);
+      move(intr);
+      move(oth);
+      return normalizeSkillPointBreakdown({ occupation: occ, interest: intr, other: oth });
+    });
+  };
+
+  const commitOptionalDetailSkill = (fromName: string, base: string, draft: string) => {
+    const detail = String(draft || '').trim();
+    const nextRaw = detail ? `${base}（${detail}）` : base;
+    const next = normalizeSkillNameCoc6(nextRaw);
+    if (!next) return;
+
+    // Update skill points: move allocation to the new key, and collapse other variants of the same base.
+    setSkillPoints((prev) => {
+      const occ = { ...(prev.occupation || {}) };
+      const intr = { ...(prev.interest || {}) };
+      const oth = { ...(prev.other || {}) };
+
+      const collapse = (obj: Record<string, number>) => {
+        let sum = 0;
+        for (const k of Object.keys(obj)) {
+          const p = parseCoc6OptionalDetailSkill(k);
+          if (!p.isOptionalDetail || p.base !== base) continue;
+          sum += Number.isFinite(obj[k]) ? Number(obj[k]) : 0;
+          delete obj[k];
+        }
+        if (sum > 0) obj[next] = (obj[next] ?? 0) + sum;
+      };
+      collapse(occ);
+      collapse(intr);
+      collapse(oth);
+
+      // Ensure we don't keep the old key around
+      delete occ[fromName];
+      delete intr[fromName];
+      delete oth[fromName];
+
+      return normalizeSkillPointBreakdown({ occupation: occ, interest: intr, other: oth });
+    });
+
+    // Update local skills map so the label doesn't "disappear" even when allocation is 0.
+    setSkills((prev) => {
+      const nextSkills = { ...(prev || {}) } as Record<string, number>;
+      const keepValue =
+        (prev as any)?.[fromName] ??
+        (prev as any)?.[next] ??
+        getCoc6SkillBaseValue(stats, next);
+
+      for (const k of Object.keys(nextSkills)) {
+        const p = parseCoc6OptionalDetailSkill(k);
+        if (p.isOptionalDetail && p.base === base) delete nextSkills[k];
+      }
+
+      nextSkills[next] = Number.isFinite(keepValue) ? Math.max(0, Math.trunc(Number(keepValue))) : getCoc6SkillBaseValue(stats, next);
+      return nextSkills;
+    });
+
+    setOptionalDetailDrafts((prev) => {
+      const copy = { ...(prev || {}) };
+      delete copy[fromName];
+      if (detail) copy[next] = detail;
+      else delete copy[next];
+      return copy;
+    });
+  };
+
+  const commitRenameSkill = (skillName: string) => {
+    const nextRaw = String(renameDraft || '').trim();
+    const next = normalizeSkillNameCoc6(nextRaw);
+    if (!next) {
+      setRenamingSkill(null);
+      return;
     }
-    return groups;
-  }, [combinedSkillNames]);
+    if (next === skillName) {
+      setRenamingSkill(null);
+      return;
+    }
+    renameSkillKey(skillName, next);
+    setRenamingSkill(null);
+  };
+
+  const commitAddSkill = () => {
+    const raw = String(newSkillName || '').trim();
+    const normalized = normalizeSkillNameCoc6(raw);
+    if (!normalized) {
+      setAddingSkill(false);
+      setNewSkillName('');
+      return;
+    }
+    setSkillPoints((prev) => {
+      const other = { ...(prev.other || {}) };
+      if (other[normalized] === undefined) other[normalized] = 0;
+      return { ...prev, other };
+    });
+    setNewlyAddedSkills((prev) => (prev.includes(normalized) ? prev : [...prev, normalized]));
+    setAddingSkill(false);
+    setNewSkillName('');
+  };
 
   const handleSave = async () => {
     const nextTotals = computeTotalSkills(stats, skillPoints);
-    const { error } = await (supabase
+    const nextTotalsFixed = { ...nextTotals } as Record<string, number>;
+    // If an optional-detail skill is customized but has 0 allocated points, computeTotalSkills would still emit the placeholder.
+    // Reflect the chosen name in saved totals so it persists across sessions.
+    const preferredByBase = new Map<string, string>();
+    for (const k of Object.keys(skills || {})) {
+      const p = parseCoc6OptionalDetailSkill(k);
+      if (p.isOptionalDetail && p.detail) preferredByBase.set(p.base, k);
+    }
+    for (const [base, preferred] of preferredByBase.entries()) {
+      const placeholder = normalizeSkillNameCoc6(base);
+      if (!placeholder || preferred === placeholder) continue;
+      if (nextTotalsFixed[placeholder] !== undefined) {
+        nextTotalsFixed[preferred] = Math.max(nextTotalsFixed[preferred] ?? 0, nextTotalsFixed[placeholder] ?? 0);
+        delete nextTotalsFixed[placeholder];
+      }
+    }
+    const normalizedSkillPoints = normalizeSkillPointBreakdown(skillPoints);
+    let { error } = await (supabase
       .from('characters')
       .update({
         stats: stats as any,
         derived: derived as any,
-        skills: nextTotals as any,
-        skill_points: skillPoints as any,
+        skills: nextTotalsFixed as any,
+        skill_points: normalizedSkillPoints as any,
         memo,
       })
       .eq('id', character.id) as any);
+
+    // Backward compatibility: if DB doesn't have skill_points yet, retry without it.
+    let usedSkillPointsFallback = false;
+    if (error) {
+      const msg = String((error as any)?.message || '');
+      const looksLikeMissingSkillPoints =
+        msg.includes('skill_points') && (msg.includes('column') || msg.includes('schema') || msg.includes('does not exist'));
+      if (looksLikeMissingSkillPoints) {
+        usedSkillPointsFallback = true;
+        const retry = await (supabase
+          .from('characters')
+          .update({
+            stats: stats as any,
+            derived: derived as any,
+            skills: nextTotalsFixed as any,
+            memo,
+          })
+          .eq('id', character.id) as any);
+        error = (retry as any).error;
+      }
+    }
 
     if (error) {
       toast({
@@ -178,7 +408,11 @@ export function CharacterSheet({
     }
 
     toast({ title: '保存しました' });
+    saveLocalSkillPointsConfirmed(roomId, character.id);
+    if (usedSkillPointsFallback) saveLocalSkillPoints(roomId, character.id, normalizedSkillPoints);
+    else clearLocalSkillPoints(roomId, character.id);
     setIsEditing(false);
+    setNewlyAddedSkills([]);
     onUpdate();
   };
 
@@ -189,17 +423,22 @@ export function CharacterSheet({
     {
       const existing = (character as any).skill_points;
       if (existing && typeof existing === 'object') {
-        setSkillPoints({
-          occupation: existing.occupation || {},
-          interest: existing.interest || {},
-          other: existing.other || {},
-        });
+        setSkillPoints(
+          normalizeSkillPointBreakdown({
+            occupation: existing.occupation || {},
+            interest: existing.interest || {},
+            other: existing.other || {},
+          }),
+        );
       } else {
-        setSkillPoints(buildSkillPointBreakdownFromTotals(character.stats, character.skills));
+        const local = loadLocalSkillPoints(roomId, character.id);
+        if (local) setSkillPoints(local);
+        else setSkillPoints(buildSkillPointBreakdownFromTotals(character.stats, character.skills));
       }
     }
     setMemo(character.memo);
     setIsEditing(false);
+    setNewlyAddedSkills([]);
   };
 
   const handleDelete = async () => {
@@ -251,7 +490,27 @@ export function CharacterSheet({
     setSkills(prev => ({ ...prev, [name]: value }));
   };
 
-  const skillNames = combinedSkillNames;
+  const saveDerivedField = async (key: keyof CharacterDerived, value: number) => {
+    if (!editable) return;
+    const nextDerived = { ...derived, [key]: value } as any;
+    setDerived(nextDerived);
+    const { error } = await supabase
+      .from('characters')
+      .update({ derived: nextDerived } as any)
+      .eq('id', character.id);
+    if (error) {
+      toast({ title: '保存に失敗しました', variant: 'destructive' });
+      return;
+    }
+    onUpdate();
+  };
+
+  const skillNames = useMemo(() => {
+    if (!isEditing || newlyAddedSkills.length === 0) return combinedSkillNames;
+    const pinned = new Set(newlyAddedSkills);
+    const base = combinedSkillNames.filter((n) => !pinned.has(n));
+    return [...base, ...newlyAddedSkills.filter((n) => !base.includes(n))];
+  }, [combinedSkillNames, isEditing, newlyAddedSkills]);
   const skillTotal = Object.values(computedSkills).reduce((sum, v) => sum + (Number.isFinite(v) ? v : 0), 0);
   const skillLimit = occupationLimit + interestLimit;
   const skillOver = skillTotal > skillLimit;
@@ -283,10 +542,70 @@ export function CharacterSheet({
               </Button>
             </>
           ) : (
-            <Button size="sm" variant="ghost" onClick={() => setIsEditing(true)}>
-              <Edit2 className="w-4 h-4 mr-1" />
-              編集
-            </Button>
+            <>
+	              <Button
+	                size="sm"
+	                variant="ghost"
+	                onClick={() => {
+	                  const existing = (character as any).skill_points;
+	                  const local = loadLocalSkillPoints(roomId, character.id);
+	                  const confirmed = loadLocalSkillPointsConfirmed(roomId, character.id);
+	                  const estimated = buildSkillPointBreakdownFromTotals(character.stats, character.skills);
+	                  const hasAnyAllocated =
+	                    Object.values(estimated.other || {}).some((v) => Number.isFinite(v) && Number(v) > 0);
+	                  // If there is no breakdown and the character appears to have imported/unknown allocations, confirm before resetting.
+	                  const hasBreakdown = !!(existing && typeof existing === 'object') || !!local || confirmed;
+
+	                  if (!hasBreakdown && hasAnyAllocated) {
+	                    setResetConfirmOpen(true);
+	                    return;
+	                  }
+	                  setIsEditing(true);
+	                }}
+              >
+                <Edit2 className="w-4 h-4 mr-1" />
+                編集
+              </Button>
+
+              <AlertDialog open={resetConfirmOpen} onOpenChange={setResetConfirmOpen}>
+                <AlertDialogContent>
+                  <AlertDialogHeader>
+                    <AlertDialogTitle>割り振られた技能値はリセットされます。よろしいですか？</AlertDialogTitle>
+                    <AlertDialogDescription>
+                      ココフォリアコマ等からインポートしたキャラクターは、職業P/興味Pの内訳が保存されていないため、編集を開始すると初期値に戻してから再割り振りします。
+                    </AlertDialogDescription>
+                  </AlertDialogHeader>
+                  <AlertDialogFooter>
+                    <AlertDialogCancel onClick={() => setResetConfirmOpen(false)}>キャンセル</AlertDialogCancel>
+                    <AlertDialogAction
+                      onClick={() => {
+                        // Reset totals to base values and clear breakdown so user can re-allocate.
+                        const nextSkills: Record<string, number> = {};
+                        const keys = new Set<string>([
+                          ...Object.keys(character.skills || {}),
+                          ...Object.keys(skills || {}),
+                          ...Object.keys(buildDefaultSkills(stats) || {}),
+                        ]);
+                        for (const k of keys) {
+                          const name = normalizeSkillNameCoc6(k);
+                          if (!name) continue;
+                          nextSkills[name] = getCoc6SkillBaseValue(stats, name);
+                        }
+                        setSkills(nextSkills);
+                        setSkillPoints({ occupation: {}, interest: {}, other: {} });
+                        setNewlyAddedSkills([]);
+                        clearLocalSkillPoints(roomId, character.id);
+                        setResetConfirmOpen(false);
+                        setIsEditing(true);
+                      }}
+                      className="bg-destructive hover:bg-destructive/90"
+                    >
+                      はい
+                    </AlertDialogAction>
+                  </AlertDialogFooter>
+                </AlertDialogContent>
+              </AlertDialog>
+            </>
           )}
           <AlertDialog>
             <AlertDialogTrigger asChild>
@@ -387,7 +706,17 @@ export function CharacterSheet({
                 className="h-8 text-center text-sm"
               />
             ) : (
-              <p className="text-lg font-bold text-dice-success">{derived.HP}</p>
+              editable ? (
+                <Input
+                  type="number"
+                  value={derived.HP}
+                  onChange={(e) => updateDerived('HP', parseInt(e.target.value) || 0)}
+                  onBlur={(e) => saveDerivedField('HP', parseInt(e.target.value) || 0)}
+                  className="h-8 text-center text-sm"
+                />
+              ) : (
+                <p className="text-lg font-bold text-dice-success">{derived.HP}</p>
+              )
             )}
           </div>
           <div className="text-center">
@@ -400,7 +729,17 @@ export function CharacterSheet({
                 className="h-8 text-center text-sm"
               />
             ) : (
-              <p className="text-lg font-bold text-primary">{derived.MP}</p>
+              editable ? (
+                <Input
+                  type="number"
+                  value={derived.MP}
+                  onChange={(e) => updateDerived('MP', parseInt(e.target.value) || 0)}
+                  onBlur={(e) => saveDerivedField('MP', parseInt(e.target.value) || 0)}
+                  className="h-8 text-center text-sm"
+                />
+              ) : (
+                <p className="text-lg font-bold text-primary">{derived.MP}</p>
+              )
             )}
           </div>
           <div className="text-center">
@@ -413,7 +752,17 @@ export function CharacterSheet({
                 className="h-8 text-center text-sm"
               />
             ) : (
-              <p className="text-lg font-bold text-accent">{derived.SAN}</p>
+              editable ? (
+                <Input
+                  type="number"
+                  value={derived.SAN}
+                  onChange={(e) => updateDerived('SAN', parseInt(e.target.value) || 0)}
+                  onBlur={(e) => saveDerivedField('SAN', parseInt(e.target.value) || 0)}
+                  className="h-8 text-center text-sm"
+                />
+              ) : (
+                <p className="text-lg font-bold text-accent">{derived.SAN}</p>
+              )
             )}
           </div>
           <div className="text-center">
@@ -456,7 +805,7 @@ export function CharacterSheet({
         {isEditing ? (
           <>
             <div className={cn('text-xs mb-1', skillOver ? 'text-destructive' : 'text-muted-foreground')}>
-              合計: {skillTotal} / 上限(目安): {skillLimit}（職業P: EDU×20={occupationLimit}、興味P: INT×10={interestLimit}）
+              上限(目安): {skillLimit}（職業P: EDU×20={occupationLimit}、興味P: INT×10={interestLimit}）
             </div>
             <div
               className={cn(
@@ -467,95 +816,184 @@ export function CharacterSheet({
               職業P: {occupationUsed}/{occupationLimit}　興味P: {interestUsed}/{interestLimit}
             </div>
 
-            <div className="grid grid-cols-1 gap-2 text-sm">
-              {categorizedSkillGroups.map((group) => (
-                <div key={group.key} className="rounded-md border border-border/40 bg-background/10">
-                  <div className="px-2 py-2 text-xs font-semibold text-muted-foreground">
-                    {group.label}
-                  </div>
-                  <div className="px-2 pb-2">
-                    <div className="flex items-center gap-2 px-2 py-1 text-[11px] text-muted-foreground">
-                      <span className="flex-1">技能</span>
-                      <span className="w-10 text-right">初期</span>
-                      <span className="w-14 text-right">職業P</span>
-                      <span className="w-14 text-right">興味P</span>
-                      <span className="w-12 text-right">合計</span>
-                    </div>
-                    {group.skills.map((skillName) => {
-                      const base = defaultSkills[skillName] ?? 0;
-                      const occ = (skillPoints.occupation || {})[skillName] ?? 0;
-                      const intr = (skillPoints.interest || {})[skillName] ?? 0;
-                      const total = computedSkills[skillName] ?? base;
-                      // Hide truly empty unknown skills to reduce noise
-                      const hasAny = base !== 0 || occ !== 0 || intr !== 0 || total !== 0;
-                      if (!hasAny) return null;
-                      return (
-                        <div
-                          key={skillName}
-                          className="flex items-start justify-between gap-2 px-2 py-1 rounded hover:bg-background/50 min-w-0"
+            <div className="grid grid-cols-1 gap-1 text-sm">
+              <div className="flex items-center gap-2 px-2 py-1 text-[11px] text-muted-foreground">
+                <span className="flex-1">技能</span>
+                <span className="w-10 text-right">初期</span>
+                <span className="w-14 text-right">職業P</span>
+                <span className="w-14 text-right">興味P</span>
+                <span className="w-12 text-right">合計</span>
+              </div>
+              {skillNames.map((skillName) => {
+                const base = getCoc6SkillBaseValue(stats, skillName);
+                const occ = (skillPoints.occupation || {})[skillName] ?? 0;
+                const intr = (skillPoints.interest || {})[skillName] ?? 0;
+                const total = computedSkills[skillName] ?? base;
+                const optional = parseCoc6OptionalDetailSkill(skillName);
+                const optionalDraft =
+                  optionalDetailDrafts[skillName] ?? (optional.isOptionalDetail ? optional.detail : '');
+                return (
+                  <div
+                    key={skillName}
+                    className="flex items-start justify-between gap-2 px-2 py-1 rounded hover:bg-background/50 min-w-0"
+                  >
+                    <span className="text-muted-foreground flex-1 min-w-0 whitespace-normal break-words leading-snug">
+                      {optional.isOptionalDetail ? (
+                        <span className="inline-flex items-center gap-2 min-w-0">
+                          <span className="shrink-0">{optional.base}</span>
+                          <Input
+                            value={optionalDraft}
+                            onChange={(e) => {
+                              const v = e.target.value;
+                              setOptionalDetailDrafts((prev) => ({ ...prev, [skillName]: v }));
+                            }}
+                            onCompositionStart={() => setOptionalDetailComposing(skillName)}
+                            onCompositionEnd={() => setOptionalDetailComposing(null)}
+                            onKeyDown={(e) => {
+                              if (e.key === 'Enter' && optionalDetailComposing !== skillName) {
+                                e.preventDefault();
+                                commitOptionalDetailSkill(skillName, optional.base, optionalDraft);
+                              } else if (e.key === 'Escape') {
+                                e.preventDefault();
+                                setOptionalDetailDrafts((prev) => ({ ...prev, [skillName]: optional.detail }));
+                              }
+                            }}
+                            onBlur={() => {
+                              if (optionalDetailComposing === skillName) return;
+                              commitOptionalDetailSkill(skillName, optional.base, optionalDraft);
+                            }}
+                            placeholder=""
+                            className="h-6 w-40 text-xs"
+                          />
+                        </span>
+                      ) : renamingSkill === skillName ? (
+                        <Input
+                          value={renameDraft}
+                          onChange={(e) => setRenameDraft(e.target.value)}
+                          onCompositionStart={() => setRenameComposing(true)}
+                          onCompositionEnd={() => setRenameComposing(false)}
+                          onKeyDown={(e) => {
+                            if (e.key === 'Enter' && !renameComposing) {
+                              e.preventDefault();
+                              commitRenameSkill(skillName);
+                            } else if (e.key === 'Escape') {
+                              e.preventDefault();
+                              setRenamingSkill(null);
+                            }
+                          }}
+                          onBlur={() => {
+                            if (!renameComposing) commitRenameSkill(skillName);
+                          }}
+                          className="h-6 text-xs"
+                          autoFocus
+                        />
+                      ) : (
+                        <button
+                          type="button"
+                          className="text-left hover:underline"
+                          onClick={() => startRenameSkill(skillName)}
+                          title="クリックして技能名を変更"
                         >
-                          <span className="text-muted-foreground flex-1 min-w-0 whitespace-normal break-words leading-snug">
-                            {skillName}
-                          </span>
-                          <span className="w-10 text-right text-xs text-muted-foreground">{base}</span>
-                          <Input
-                            type="number"
-                            value={occ}
-                            onChange={(e) => {
-                              const n = Number.parseInt(e.target.value || '0', 10) || 0;
-                              setSkillPoints((prev) => ({
-                                ...prev,
-                                occupation: { ...(prev.occupation || {}), [skillName]: Math.max(0, Math.min(999, n)) },
-                              }));
-                            }}
-                            className="w-14 h-6 text-center text-xs"
-                          />
-                          <Input
-                            type="number"
-                            value={intr}
-                            onChange={(e) => {
-                              const n = Number.parseInt(e.target.value || '0', 10) || 0;
-                              setSkillPoints((prev) => ({
-                                ...prev,
-                                interest: { ...(prev.interest || {}), [skillName]: Math.max(0, Math.min(999, n)) },
-                              }));
-                            }}
-                            className="w-14 h-6 text-center text-xs"
-                          />
-                          <span className="w-12 text-right font-mono text-foreground">{total}%</span>
-                        </div>
-                      );
-                    })}
+                          {formatCoc6SkillNameForDisplay(skillName)}
+                        </button>
+                      )}
+                    </span>
+                    <span className="w-10 text-right text-xs text-muted-foreground">{base}</span>
+                    <Input
+                      type="number"
+                      value={occ}
+                      onChange={(e) => {
+                        const n = Number.parseInt(e.target.value || '0', 10) || 0;
+                        setSkillPoints((prev) => ({
+                          ...prev,
+                          occupation: { ...(prev.occupation || {}), [skillName]: Math.max(0, Math.min(999, n)) },
+                        }));
+                      }}
+                      className="w-14 h-6 text-center text-xs"
+                    />
+                    <Input
+                      type="number"
+                      value={intr}
+                      onChange={(e) => {
+                        const n = Number.parseInt(e.target.value || '0', 10) || 0;
+                        setSkillPoints((prev) => ({
+                          ...prev,
+                          interest: { ...(prev.interest || {}), [skillName]: Math.max(0, Math.min(999, n)) },
+                        }));
+                      }}
+                      className="w-14 h-6 text-center text-xs"
+                    />
+                    <span className="w-12 text-right font-mono text-foreground">{total}%</span>
                   </div>
+                );
+              })}
+            </div>
+
+            <div className="pt-2">
+              {addingSkill ? (
+                <div className="flex items-center gap-2">
+                  <Input
+                    value={newSkillName}
+                    onChange={(e) => setNewSkillName(e.target.value)}
+                    onCompositionStart={() => setNewSkillComposing(true)}
+                    onCompositionEnd={() => setNewSkillComposing(false)}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Escape') {
+                        e.preventDefault();
+                        setAddingSkill(false);
+                        setNewSkillName('');
+                      }
+                    }}
+                    placeholder="例：ほかの言語（ドイツ語）、芸術（絵画）…"
+                    className="h-9"
+                    autoFocus
+                  />
+                  <Button
+                    type="button"
+                    onClick={() => {
+                      if (newSkillComposing) return;
+                      commitAddSkill();
+                    }}
+                  >
+                    追加
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    onClick={() => {
+                      setAddingSkill(false);
+                      setNewSkillName('');
+                    }}
+                  >
+                    キャンセル
+                  </Button>
                 </div>
-              ))}
+              ) : (
+                <Button type="button" variant="outline" className="w-full" onClick={() => setAddingSkill(true)}>
+                  技能を追加
+                </Button>
+              )}
             </div>
           </>
         ) : (
-          <div className="space-y-2">
-            {categorizedSkillGroups.map((group) => {
-              const visible = group.skills
-                .map((s) => ({ name: s, value: computedSkills[s] ?? 0 }))
-                .filter((x) => x.value !== 0);
-              if (visible.length === 0) return null;
+          <div className="grid grid-cols-2 gap-1 text-sm">
+            {skillNames.map((skillName) => {
+              const occ = (skillPoints.occupation || {})[skillName] ?? 0;
+              const intr = (skillPoints.interest || {})[skillName] ?? 0;
+              const oth = (skillPoints.other || {})[skillName] ?? 0;
+              const allocated = (Number.isFinite(occ) ? Number(occ) : 0) + (Number.isFinite(intr) ? Number(intr) : 0) + (Number.isFinite(oth) ? Number(oth) : 0);
+              if (allocated <= 0) return null;
+              const value = computedSkills[skillName] ?? 0;
+              if (value === 0) return null;
               return (
-                <div key={group.key} className="rounded-md border border-border/40 bg-background/10">
-                  <div className="px-2 py-2 text-xs font-semibold text-muted-foreground">
-                    {group.label}
-                  </div>
-                  <div className="grid grid-cols-2 gap-1 text-sm px-2 pb-2">
-                    {visible.map(({ name: skillName, value }) => (
-                      <div
-                        key={skillName}
-                        className="flex items-start justify-between gap-2 px-2 py-1 rounded hover:bg-background/50 min-w-0"
-                      >
-                        <span className="text-muted-foreground flex-1 min-w-0 whitespace-normal break-words leading-snug">
-                          {skillName}
-                        </span>
-                        <span className="font-mono text-foreground">{value}%</span>
-                      </div>
-                    ))}
-                  </div>
+                <div
+                  key={skillName}
+                  className="flex items-start justify-between gap-2 px-2 py-1 rounded hover:bg-background/50 min-w-0"
+                >
+                  <span className="text-muted-foreground flex-1 min-w-0 whitespace-normal break-words leading-snug">
+                    {formatCoc6SkillNameForDisplay(skillName)}
+                  </span>
+                  <span className="font-mono text-foreground">{value}%</span>
                 </div>
               );
             })}

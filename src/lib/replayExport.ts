@@ -605,7 +605,7 @@ function generateReplayJs(): string {
     const s = (typeof rawText === 'string') ? rawText : '';
     return s
       .replace(/\\{[^}]+\\}/g, '')
-      .replace(/\\[(bg|bgm|se|portrait|speaker|npc_disclosure):[^\\]]+\\]\\n?/gi, '')
+      .replace(/\\[(bg|bgm|se|portrait|speaker|npc_disclosure|effects_config|portrait_transform):[^\\]]+\\]\\n?/gi, '')
       .trim();
   }
 
@@ -732,91 +732,120 @@ function generateReplayJs(): string {
   }
 
   function showStep(index) {
-    if (!replayData || index >= steps.length) {
-      document.getElementById('message-text').textContent = '(終わり)';
-      document.getElementById('speaker-name').textContent = '';
-      stopAuto();
-      return;
-    }
-    currentIndex = index;
-    const step = steps[index];
-    if (step.background) {
-      document.getElementById('background').style.backgroundImage = 'url(' + step.background + ')';
-    }
-    renderPortraits(step.portraits || []);
+    let idx = index;
+    while (true) {
+      if (!replayData || idx >= steps.length) {
+        document.getElementById('message-text').textContent = '(終わり)';
+        document.getElementById('speaker-name').textContent = '';
+        stopAuto();
+        return;
+      }
 
-    // Reset secret decision when leaving secret segment
-    if (!step.secretActive) {
-      secretDecision = null;
-      hideChoiceOverlay();
-    }
+      currentIndex = idx;
+      const step = steps[idx];
+      if (step.background) {
+        document.getElementById('background').style.backgroundImage = 'url(' + step.background + ')';
+      }
+      renderPortraits(step.portraits || []);
 
-    if (step.kind === 'secret_prompt') {
-      stopAuto();
-      const names = participantNamesForIds(step.secretAllowList || []);
-      const label = names.length > 0 ? ('プレイヤー：' + names.join('、')) : '（GMのみ）';
-      document.getElementById('speaker-name').textContent = 'システム';
-      const container = document.getElementById('message-text');
-      container.innerHTML = '';
-      const msg = document.createElement('div');
-      msg.textContent = 'ここから秘匿モードに突入します';
-      container.appendChild(msg);
-
-      const btnView = document.createElement('button');
-      btnView.textContent = '秘匿を見る（' + label + '）';
-      btnView.className = 'replay-choice-btn';
-      btnView.onclick = function() {
-        secretDecision = 'view';
+      // Reset secret decision when leaving secret segment
+      if (!step.secretActive) {
+        secretDecision = null;
         hideChoiceOverlay();
-        nextEvent();
-      };
+      }
 
-      const btnSkip = document.createElement('button');
-      btnSkip.textContent = '秘匿後までスキップする';
-      btnSkip.className = 'replay-choice-btn';
-      btnSkip.onclick = function() {
-        hideChoiceOverlay();
-        // Jump to first non-secret message after this point
-        for (let k = currentIndex + 1; k < steps.length; k++) {
-          if (steps[k].kind === 'message' && !steps[k].secretActive) {
-            showStep(k);
-            return;
+      if (step.kind === 'secret_prompt') {
+        stopAuto();
+        const names = participantNamesForIds(step.secretAllowList || []);
+        const label = names.length > 0 ? ('プレイヤー：' + names.join('、')) : '（GMのみ）';
+        // Do not show system speaker/text in replay window; choices are rendered on stage overlay.
+        document.getElementById('speaker-name').textContent = '';
+        document.getElementById('message-text').textContent = '';
+
+        const btnView = document.createElement('button');
+        btnView.textContent = '秘匿を見る（' + label + '）';
+        btnView.className = 'replay-choice-btn';
+        btnView.onclick = function() {
+          secretDecision = 'view';
+          hideChoiceOverlay();
+          nextEvent();
+        };
+
+        const btnSkip = document.createElement('button');
+        btnSkip.textContent = '秘匿後までスキップする';
+        btnSkip.className = 'replay-choice-btn';
+        btnSkip.onclick = function() {
+          hideChoiceOverlay();
+          // Jump to first non-secret message after this point
+          for (let k = currentIndex + 1; k < steps.length; k++) {
+            if (steps[k].kind === 'message' && !steps[k].secretActive) {
+              showStep(k);
+              return;
+            }
           }
+          showStep(steps.length);
+        };
+
+        showChoiceOverlay([btnView, btnSkip]);
+        return;
+      }
+
+      if (step.secretActive && secretDecision !== 'view') {
+        // Force prompt if user tries to enter secret without choosing
+        const promptIndex = steps.findIndex((s, idx) => idx >= 0 && idx <= currentIndex && s.kind === 'secret_prompt' && s.timestamp <= step.timestamp);
+        // If prompt exists before, go back to it; else just block.
+        if (promptIndex >= 0) {
+          showStep(promptIndex);
         }
-        showStep(steps.length);
-      };
-
-      showChoiceOverlay([btnView, btnSkip]);
-      return;
-    }
-
-    if (step.secretActive && secretDecision !== 'view') {
-      // Force prompt if user tries to enter secret without choosing
-      const promptIndex = steps.findIndex((s, idx) => idx >= 0 && idx <= currentIndex && s.kind === 'secret_prompt' && s.timestamp <= step.timestamp);
-      // If prompt exists before, go back to it; else just block.
-      if (promptIndex >= 0) {
-        showStep(promptIndex);
+        return;
       }
-      return;
-    }
 
-    const { speaker, text, type, dicePayload } = step.message || {};
-    document.getElementById('speaker-name').textContent = speaker || '';
-      
-    if (dicePayload) {
-      const rolls = dicePayload.rolls ? dicePayload.rolls.join(', ') : '';
-      let resultText = dicePayload.expression + ' → [' + rolls + '] = ' + dicePayload.total;
-      if (dicePayload.result) {
-        const resultLabels = { critical: 'クリティカル！', success: '成功', failure: '失敗', fumble: 'ファンブル！' };
-        resultText += ' (' + (resultLabels[dicePayload.result] || dicePayload.result) + ')';
+      if (step.kind !== 'message' || !step.message) {
+        idx++;
+        continue;
       }
-      document.getElementById('message-text').innerHTML = '<span class="dice-result">🎲 ' + resultText + '</span>';
-    } else {
+
+      const { speaker, text, type, dicePayload } = step.message || {};
+
+      // Hide internal/system-only messages from replay text/log. Effects (audio) still apply.
+      if (speaker === 'システム') {
+        const rawText = (typeof text === 'string') ? text : '';
+        applyAudioFromText(rawText);
+        idx++;
+        continue;
+      }
+
+      document.getElementById('speaker-name').textContent = speaker || '';
+
+      if (dicePayload) {
+        const rolls = dicePayload.rolls ? dicePayload.rolls.join(', ') : '';
+        if (dicePayload.blind) {
+          const expr = dicePayload.expression || '';
+          const thresholdLine = (dicePayload.threshold !== undefined) ? ('<div class="dice-threshold">(目標値: ' + dicePayload.threshold + ')</div>') : '';
+          const nameLine = (dicePayload.skillName) ? ('<div class="dice-skill">' + dicePayload.skillName + '</div>') : '';
+          document.getElementById('message-text').innerHTML =
+            '<div class="dice-result">🎲 ' + expr + '</div>' + thresholdLine + nameLine;
+        } else {
+          let resultText = dicePayload.expression + ' → [' + rolls + '] = ' + dicePayload.total;
+          if (dicePayload.result) {
+            const resultLabels = { critical: 'クリティカル！', success: '成功', failure: '失敗', fumble: 'ファンブル！' };
+            resultText += ' (' + (resultLabels[dicePayload.result] || dicePayload.result) + ')';
+          }
+          document.getElementById('message-text').innerHTML = '<span class="dice-result">🎲 ' + resultText + '</span>';
+        }
+        return;
+      }
+
       const rawText = (typeof text === 'string') ? text : '';
       applyAudioFromText(rawText);
       const displayText = stripCommandsForDisplay(rawText);
+      if (!displayText) {
+        idx++;
+        continue;
+      }
       const style = type === 'mono' ? 'font-style: italic; color: #aaa;' : '';
       document.getElementById('message-text').innerHTML = '<span style="' + style + '">' + displayText + '</span>';
+      return;
     }
   }
 
@@ -906,16 +935,12 @@ function generateReplayJs(): string {
       const step = steps[i];
       if (!step) continue;
 
-      if (step.kind === 'secret_prompt') {
-        flushSecretDetails();
-        const entry = makeEntry(i, 'システム', 'ここから秘匿モードに突入します');
-        logContent.appendChild(entry);
-        continue;
-      }
+      if (step.kind === 'secret_prompt') continue;
 
       if (step.kind !== 'message' || !step.message) continue;
       const channel = step.message.channel || '';
       const speaker = step.message.speaker || '';
+      if (speaker === 'システム') continue;
 
       let displayText = '';
       if (step.message.dicePayload) {
@@ -927,7 +952,7 @@ function generateReplayJs(): string {
       if (!displayText) continue;
 
       const entry = makeEntry(i, speaker, displayText);
-      const isSecret = channel === 'secret';
+      const isSecret = channel === 'secret' || (!!(step.message.dicePayload && step.message.dicePayload.blind));
 
       if (isSecret) {
         if (!secretDetails) {

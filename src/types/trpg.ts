@@ -6,6 +6,7 @@ export interface Room {
   gm_key_hash: string;
   current_background_url?: string;
   theme?: RoomTheme;
+  effects?: any;
   house_rules?: string;
   created_at: string;
 }
@@ -51,6 +52,7 @@ export interface DicePayload {
   threshold?: number;
   skillName?: string;
   result?: 'critical' | 'success' | 'failure' | 'fumble';
+  blind?: boolean;
 }
 
 export interface CharacterStats {
@@ -107,6 +109,15 @@ export interface Asset {
   scale?: number;
   offset_x?: number;
   offset_y?: number;
+  scale_left?: number;
+  offset_x_left?: number;
+  offset_y_left?: number;
+  scale_center?: number;
+  offset_x_center?: number;
+  offset_y_center?: number;
+  scale_right?: number;
+  offset_x_right?: number;
+  offset_y_right?: number;
   created_at: string;
 }
 
@@ -139,6 +150,8 @@ export interface ActivePortrait {
   position: 'left' | 'center' | 'right';
   layerOrder: number;
   scale?: number;
+  offsetXRel?: number;
+  offsetYRel?: number;
   offsetX?: number;
   offsetY?: number;
 }

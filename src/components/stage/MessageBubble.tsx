@@ -4,9 +4,10 @@ import { getDisplayText } from '@/lib/expressionTag';
 
 interface MessageBubbleProps {
   message: Message;
+  viewerParticipantId?: string | null;
 }
 
-export function MessageBubble({ message }: MessageBubbleProps) {
+export function MessageBubble({ message, viewerParticipantId = null }: MessageBubbleProps) {
   const getMessageStyle = () => {
     switch (message.type) {
       case 'speech':
@@ -55,33 +56,53 @@ export function MessageBubble({ message }: MessageBubbleProps) {
 
   if (message.type === 'dice') {
     const payload = message.dice_payload;
+    const allowList = Array.isArray(message.secret_allow_list) ? message.secret_allow_list : [];
+    const canSeeFull = !payload?.blind || (viewerParticipantId ? allowList.includes(viewerParticipantId) : false);
     return (
       <div className={cn('animate-slide-up', getMessageStyle())}>
         <div className="flex items-center gap-3 mb-2">
           <span className="text-sm text-muted-foreground">{message.speaker_name}</span>
           <span className="text-xs text-muted-foreground">{formatTime(message.created_at)}</span>
         </div>
-        <div className="flex items-center gap-3 flex-wrap">
-          <span className="text-lg">🎲</span>
-          <span className="font-mono text-foreground">
-            {payload?.expression} → [{payload?.rolls?.join(', ')}] = {payload?.total}
-          </span>
-          {payload?.threshold !== undefined && (
-            <>
-              <span className="text-muted-foreground">
-                (目標値: {payload.skillName ? `${payload.skillName}(${payload.threshold})` : payload.threshold})
-              </span>
-              {payload.result && (
-                <span className={cn('dice-result', getDiceResultStyle())}>
-                  {payload.result === 'critical' && 'クリティカル！'}
-                  {payload.result === 'success' && '成功'}
-                  {payload.result === 'failure' && '失敗'}
-                  {payload.result === 'fumble' && 'ファンブル！'}
-                </span>
-              )}
-            </>
-          )}
-        </div>
+        {canSeeFull ? (
+          <div className="flex items-center gap-3 flex-wrap">
+            <span className="text-lg">🎲</span>
+            <span className="font-mono text-foreground">
+              {payload?.expression} → [{payload?.rolls?.join(', ')}] = {payload?.total}
+            </span>
+            {payload?.threshold !== undefined && (
+              <>
+                <span className="text-muted-foreground">(目標値: {payload.threshold})</span>
+                {payload.skillName && (
+                  <span className="px-2 py-0.5 rounded bg-secondary/40 text-foreground text-xs">
+                    {payload.skillName}
+                  </span>
+                )}
+                {payload.result && (
+                  <span className={cn('dice-result', getDiceResultStyle())}>
+                    {payload.result === 'critical' && 'クリティカル！'}
+                    {payload.result === 'success' && '成功'}
+                    {payload.result === 'failure' && '失敗'}
+                    {payload.result === 'fumble' && 'ファンブル！'}
+                  </span>
+                )}
+              </>
+            )}
+          </div>
+        ) : (
+          <div className="space-y-1">
+            <div className="flex items-center gap-3">
+              <span className="text-lg">🎲</span>
+              <span className="font-mono text-foreground">{payload?.expression ?? ''}</span>
+            </div>
+            {payload?.threshold !== undefined && (
+              <div className="text-muted-foreground">(目標値: {payload.threshold})</div>
+            )}
+            {payload?.skillName && (
+              <div className="text-foreground">{payload.skillName}</div>
+            )}
+          </div>
+        )}
       </div>
     );
   }

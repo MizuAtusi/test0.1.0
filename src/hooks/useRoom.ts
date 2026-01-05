@@ -6,6 +6,8 @@ import { useToast } from '@/hooks/use-toast';
 import { getCharacterAvatarUrl } from '@/lib/characterAvatar';
 import { appendLocalStageEvent } from '@/lib/localStageEvents';
 import { applyNpcDisclosureCommandsFromText } from '@/lib/npcDisclosures';
+import { applyEffectsConfigCommandsFromText } from '@/lib/effects';
+import { applyPortraitTransformCommandsFromText } from '@/lib/portraitTransformsShared';
 
 export function useRoom(roomId: string | null) {
   const [room, setRoom] = useState<Room | null>(null);
@@ -109,6 +111,8 @@ export function useRoom(roomId: string | null) {
       list.forEach((m) => {
         applyAudioCommandsFromText((m as any)?.text, 'initial');
         applyNpcDisclosureCommandsFromText(roomId, (m as any)?.text);
+        applyEffectsConfigCommandsFromText(roomId, (m as any)?.text);
+        applyPortraitTransformCommandsFromText(roomId, (m as any)?.text);
       });
     } catch {
       // ignore
@@ -285,8 +289,27 @@ export function useRoom(roomId: string | null) {
       console.error('Error sending message:', error);
       return null;
     }
-    
-    return data as unknown as Message;
+
+    const nextMsg = data as unknown as Message;
+    let shouldApply = false;
+    setMessages((prev) => {
+      if (prev.some((m) => m.id === nextMsg.id)) return prev;
+      shouldApply = true;
+      return [...prev, nextMsg];
+    });
+
+    if (shouldApply) {
+      try {
+        applyAudioCommandsFromText((nextMsg as any)?.text, 'realtime');
+        applyNpcDisclosureCommandsFromText(roomId, (nextMsg as any)?.text);
+        applyEffectsConfigCommandsFromText(roomId, (nextMsg as any)?.text);
+        applyPortraitTransformCommandsFromText(roomId, (nextMsg as any)?.text);
+      } catch {
+        // ignore
+      }
+    }
+
+    return nextMsg;
   };
 
   // Update stage state
@@ -361,6 +384,25 @@ export function useRoom(roomId: string | null) {
   useEffect(() => {
     if (!roomId) return;
 
+    // Subscribe to room updates (theme/effects/etc)
+    const roomChannel = supabase
+      .channel(`room:${roomId}`)
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'rooms',
+          filter: `id=eq.${roomId}`,
+        },
+        (payload) => {
+          if (payload.new) {
+            setRoom(payload.new as Room);
+          }
+        }
+      )
+      .subscribe();
+
     // Subscribe to messages
     const messagesChannel = supabase
       .channel(`messages:${roomId}`)
@@ -379,6 +421,8 @@ export function useRoom(roomId: string | null) {
             try {
               applyAudioCommandsFromText((payload.new as any)?.text, 'realtime');
               applyNpcDisclosureCommandsFromText(roomId, (payload.new as any)?.text);
+              applyEffectsConfigCommandsFromText(roomId, (payload.new as any)?.text);
+              applyPortraitTransformCommandsFromText(roomId, (payload.new as any)?.text);
             } catch {
               // ignore
             }
@@ -450,6 +494,7 @@ export function useRoom(roomId: string | null) {
       .subscribe();
 
     return () => {
+      supabase.removeChannel(roomChannel);
       supabase.removeChannel(messagesChannel);
       supabase.removeChannel(stageChannel);
       supabase.removeChannel(participantsChannel);

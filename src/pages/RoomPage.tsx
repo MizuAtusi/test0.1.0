@@ -1,21 +1,31 @@
 import { useParams, useNavigate } from 'react-router-dom';
 import { useEffect, useRef, useState } from 'react';
-import { Loader2, ArrowLeft, Copy, Users } from 'lucide-react';
+import { Loader2, ArrowLeft, Copy, Users, ChevronLeft } from 'lucide-react';
 import { useRoom } from '@/hooks/useRoom';
 import { StageView } from '@/components/stage/StageView';
 import { InputBar } from '@/components/stage/InputBar';
 import { SidePanel } from '@/components/sidebar/SidePanel';
 import { Button } from '@/components/ui/button';
+import { StageFrame } from '@/components/stage/StageFrame';
+import { StageTextPanel } from '@/components/stage/StageTextPanel';
 import { useToast } from '@/hooks/use-toast';
 import { supabase } from '@/integrations/supabase/client';
 import { getPortraitTransform } from '@/lib/portraitTransforms';
 import { getCharacterAvatarUrl } from '@/lib/characterAvatar';
+import { getPortraitTransformRel } from '@/lib/portraitTransformsShared';
 import type { Room } from '@/types/trpg';
 
 const SIDE_PANEL_WIDTH_STORAGE_KEY = 'trpg:sidePanelWidth';
+const SIDE_PANEL_COLLAPSED_STORAGE_KEY = 'trpg:sidePanelCollapsed';
 const DEFAULT_SIDE_PANEL_WIDTH = 320; // w-80
 const MIN_SIDE_PANEL_WIDTH = 280;
 const MAX_SIDE_PANEL_WIDTH = 720;
+const SIDE_PANEL_COLLAPSED_WIDTH = 44;
+const STAGE_RATIO = 16 / 9;
+const ROOM_HEADER_HEIGHT_PX = 48;
+const INPUT_BAR_HEIGHT_PX = 64;
+const STAGE_AREA_PADDING_Y_PX = 16 + 8; // pt-4 + pb-2 (approx)
+const STAGE_STACKED_ASPECT_THRESHOLD = 0.66; // availableStageHeight / stageColumnWidth
 
 export default function RoomPage() {
   const { roomId } = useParams<{ roomId: string }>();
@@ -27,6 +37,43 @@ export default function RoomPage() {
     if (!Number.isFinite(parsed)) return DEFAULT_SIDE_PANEL_WIDTH;
     return Math.min(MAX_SIDE_PANEL_WIDTH, Math.max(MIN_SIDE_PANEL_WIDTH, parsed));
   });
+
+  const [sidePanelCollapsed, setSidePanelCollapsed] = useState(() => {
+    try {
+      return localStorage.getItem(SIDE_PANEL_COLLAPSED_STORAGE_KEY) === '1';
+    } catch {
+      return false;
+    }
+  });
+  useEffect(() => {
+    try {
+      localStorage.setItem(SIDE_PANEL_COLLAPSED_STORAGE_KEY, sidePanelCollapsed ? '1' : '0');
+    } catch {
+      // ignore
+    }
+  }, [sidePanelCollapsed]);
+
+  const [windowSize, setWindowSize] = useState(() => {
+    try {
+      return { width: window.innerWidth, height: window.innerHeight };
+    } catch {
+      return { width: 0, height: 0 };
+    }
+  });
+  useEffect(() => {
+    const handler = () => setWindowSize({ width: window.innerWidth, height: window.innerHeight });
+    window.addEventListener('resize', handler);
+    return () => window.removeEventListener('resize', handler);
+  }, []);
+
+  const effectiveSidePanelWidth = sidePanelCollapsed ? SIDE_PANEL_COLLAPSED_WIDTH : sidePanelWidth;
+  const stageColumnWidth = Math.max(0, windowSize.width - effectiveSidePanelWidth);
+  const availableStageHeightOverlay = Math.max(
+    0,
+    windowSize.height - ROOM_HEADER_HEIGHT_PX - INPUT_BAR_HEIGHT_PX - STAGE_AREA_PADDING_Y_PX,
+  );
+  const stageAreaAspect = stageColumnWidth > 0 ? (availableStageHeightOverlay / stageColumnWidth) : 0;
+  const isStackedLayout = stageColumnWidth > 0 && stageAreaAspect >= STAGE_STACKED_ASPECT_THRESHOLD;
   const resizeStateRef = useRef<{ startX: number; startWidth: number } | null>(null);
   
   const {
@@ -79,18 +126,18 @@ export default function RoomPage() {
   const handleSendMessage = (
     type: 'speech' | 'mono' | 'system' | 'dice',
     text: string,
-    options?: { dicePayload?: any; expressionTags?: string[]; portraitOnly?: boolean; speakerValue?: string }
+    options?: { dicePayload?: any; expressionTags?: string[]; portraitOnly?: boolean; speakerValue?: string; blindDice?: boolean }
   ) => {
     if (!participant) return;
     
-    const requestedSpeakerValue = options?.speakerValue ?? 'participant';
-    const isGmSpeaker = requestedSpeakerValue === 'gm' && participant.role === 'GM';
+    const requestedSpeakerValue = options?.speakerValue ?? speakerValue;
+    const isGmSpeaker = requestedSpeakerValue === 'gm' && isGM;
     const requestedCharacter =
       requestedSpeakerValue !== 'participant'
         ? characters.find(c => c.id === requestedSpeakerValue) ?? null
         : null;
     const canUseCharacter = requestedCharacter
-      ? (participant.role === 'GM' || requestedCharacter.owner_participant_id === participant.id)
+      ? (isGM || requestedCharacter.owner_participant_id === participant.id)
       : false;
     const speakerCharacter = canUseCharacter ? requestedCharacter : null;
     const speakerName = isGmSpeaker ? 'GM' : (speakerCharacter?.name || myCharacter?.name || participant.name);
@@ -98,7 +145,7 @@ export default function RoomPage() {
       ? null
       : (speakerCharacter?.avatar_url || (speakerCharacter ? getCharacterAvatarUrl(speakerCharacter.id) : null));
 
-    const expressionTags = options?.expressionTags || [];
+    const expressionTags = (options?.expressionTags || []).filter((t) => t !== 'blindd');
     const normalizedTags = expressionTags.map(t => t.trim().toLowerCase()).filter(Boolean);
     const lastRawTag = normalizedTags.length > 0 ? normalizedTags[normalizedTags.length - 1] : null;
 
@@ -111,10 +158,12 @@ export default function RoomPage() {
       return { key: token, position: null as null | 'left' | 'center' | 'right' };
     };
     const lastToken = lastRawTag ? parseTagToken(lastRawTag) : null;
-    const requestedChannel = options?.channel || 'public';
+    const blindDice = !!options?.blindDice;
+    const requestedChannel = (options as any)?.channel || 'public';
     const isChat = requestedChannel === 'chat';
     const secretChannel = stageState?.is_secret && !isChat ? 'secret' : null;
     const secretAllowList = stageState?.is_secret && !isChat ? (stageState?.secret_allow_list || []) : null;
+    const blindAllowList = blindDice && participant ? [participant.id] : null;
 
     const sendWithSecret = async (
       t: typeof type,
@@ -122,11 +171,19 @@ export default function RoomPage() {
       speaker: string,
       extra?: any,
     ) => {
+      // Attach roller character id to dice payload so effects can be per-PC
+      if (t === 'dice' && extra?.dicePayload && speakerCharacter?.id) {
+        try {
+          (extra.dicePayload as any).characterId = speakerCharacter.id;
+        } catch {
+          // ignore
+        }
+      }
       return sendMessage(t, body, speaker, {
         ...extra,
         ...options,
         channel: secretChannel || requestedChannel,
-        secretAllowList: secretAllowList ?? (isChat ? [] : options?.secretAllowList),
+        secretAllowList: blindAllowList ?? secretAllowList ?? (isChat ? [] : (options as any)?.secretAllowList),
       });
     };
 
@@ -164,27 +221,30 @@ export default function RoomPage() {
         return;
       }
 
-      const { data: assets, error: assetsError } = await supabase
+      // Some deployments may not have optional portrait transform columns yet (scale/offset_x/offset_y).
+      // Retry with a minimal select so portrait tags still work.
+      const selectWithTransforms = 'id,url,label,tag,is_default,scale,offset_x,offset_y';
+      let {
+        data: portraitAssets,
+        error: portraitAssetsError,
+      } = await supabase
         .from('assets')
-        .select('id,url,label,tag,is_default,scale,offset_x,offset_y')
+        .select(selectWithTransforms)
         .eq('character_id', speakerCharacter.id)
         .eq('kind', 'portrait');
 
-      // Backward compatibility: if DB doesn't have new columns yet
-      let portraitAssets = assets as any;
-      let portraitAssetsError = assetsError as any;
       if (portraitAssetsError) {
         const message = portraitAssetsError.message || '';
         const looksLikeMissingColumns =
           message.includes('scale') || message.includes('offset_x') || message.includes('offset_y');
         if (looksLikeMissingColumns) {
-          const fallback = await supabase
+          const retry = await supabase
             .from('assets')
             .select('id,url,label,tag,is_default')
             .eq('character_id', speakerCharacter.id)
             .eq('kind', 'portrait');
-          portraitAssets = fallback.data as any;
-          portraitAssetsError = fallback.error as any;
+          portraitAssets = retry.data as any;
+          portraitAssetsError = retry.error as any;
         }
       }
 
@@ -199,11 +259,27 @@ export default function RoomPage() {
 
       const byTag = new Map<
         string,
-        { id: string; url: string; label: string; tag: string; scale?: number | null; offset_x?: number | null; offset_y?: number | null }
+        {
+          id: string;
+          url: string;
+          label: string;
+          tag: string;
+          scale?: number | null;
+          offset_x?: number | null;
+          offset_y?: number | null;
+        }
       >();
       const byLabel = new Map<
         string,
-        { id: string; url: string; label: string; tag: string; scale?: number | null; offset_x?: number | null; offset_y?: number | null }
+        {
+          id: string;
+          url: string;
+          label: string;
+          tag: string;
+          scale?: number | null;
+          offset_x?: number | null;
+          offset_y?: number | null;
+        }
       >();
 
       for (const a of portraitAssets as Array<{
@@ -247,19 +323,30 @@ export default function RoomPage() {
       const base = stageState?.active_portraits ?? [];
       const newPortraits = [...base];
       const existingIndex = newPortraits.findIndex(p => p.characterId === speakerCharacter.id);
+      const finalPosition = positionOverride ?? (existingIndex >= 0 ? newPortraits[existingIndex].position : 'center');
+      const posKey = finalPosition === 'left' ? 'left' : finalPosition === 'right' ? 'right' : 'center';
+      const shared = getPortraitTransformRel({
+        roomId: roomId || '',
+        characterId: speakerCharacter.id,
+        key: chosen.tag || chosen.label,
+        position: posKey,
+      });
       const newPortrait = {
         characterId: speakerCharacter.id,
         assetId: chosen.id,
         url: chosen.url,
         label: chosen.label,
         tag: chosen.tag,
-        position: positionOverride ?? 'center',
+        position: finalPosition,
         layerOrder: existingIndex >= 0 ? newPortraits[existingIndex].layerOrder : newPortraits.length,
         scale: (() => {
+          if (shared?.scale != null) return shared.scale;
           if (typeof chosen.scale === 'number') return chosen.scale;
           const t = getPortraitTransform(speakerCharacter.id, chosen.tag || chosen.label);
           return t?.scale ?? 1;
         })(),
+        offsetXRel: shared?.x ?? undefined,
+        offsetYRel: shared?.y ?? undefined,
         offsetX: (() => {
           if (typeof chosen.offset_x === 'number') return chosen.offset_x;
           const t = getPortraitTransform(speakerCharacter.id, chosen.tag || chosen.label);
@@ -378,34 +465,77 @@ export default function RoomPage() {
 
       {/* Main Content */}
       <div className="flex-1 flex min-h-0">
-        {/* Stage Area (Left 3/4) */}
+        {/* Stage Area */}
         <div className="flex-1 flex flex-col min-w-0" style={{ flexBasis: '75%' }}>
-          <div className="flex-1 min-h-0 px-4 pt-4 pb-0 -mb-4">
-            <StageView
-              messages={messages.filter(m => m.channel !== 'chat')}
-              stageState={stageState}
-              bgmUrl={bgmUrl}
-              se={se}
-              room={room}
-              participants={participants}
-              participant={participant}
-              isSecret={stageState?.is_secret || false}
-              canViewSecret={canViewSecret || false}
-              isGM={isGM}
-              characters={characters}
-              onUpdateRoom={handleUpdateRoom}
-            />
-          </div>
-          
+          {isStackedLayout ? (
+            <div className="flex-1 min-h-0 px-4 pt-4 pb-0 flex flex-col gap-2">
+              <div className="flex-[0_0_55%] min-h-0">
+                <StageFrame className="h-full w-full" ratio={16 / 9}>
+                  <StageView
+                    textLayout="none"
+                    messages={messages.filter(m => m.channel !== 'chat')}
+                    stageState={stageState}
+                    bgmUrl={bgmUrl}
+                    se={se}
+                    room={room}
+                    participants={participants}
+                    participant={participant}
+                    isSecret={stageState?.is_secret || false}
+                    canViewSecret={canViewSecret || false}
+                    isGM={isGM}
+                    characters={characters}
+                    onUpdateRoom={handleUpdateRoom}
+                  />
+                </StageFrame>
+              </div>
+
+              <div className="flex-1 min-h-0">
+                <StageTextPanel
+                  messages={messages.filter(m => m.channel !== 'chat')}
+                  stageState={stageState}
+                  room={room}
+                  participants={participants}
+                  participant={participant}
+                  isSecret={stageState?.is_secret || false}
+                  canViewSecret={canViewSecret || false}
+                  isGM={isGM}
+                  characters={characters}
+                  onUpdateRoom={handleUpdateRoom}
+                />
+              </div>
+            </div>
+          ) : (
+            <div className="flex-1 min-h-0 px-4 pt-4 pb-2 flex">
+              <StageFrame className="flex-1 min-h-0 w-full" ratio={16 / 9}>
+                <StageView
+                  messages={messages.filter(m => m.channel !== 'chat')}
+                  stageState={stageState}
+                  bgmUrl={bgmUrl}
+                  se={se}
+                  room={room}
+                  participants={participants}
+                  participant={participant}
+                  isSecret={stageState?.is_secret || false}
+                  canViewSecret={canViewSecret || false}
+                  isGM={isGM}
+                  characters={characters}
+                  onUpdateRoom={handleUpdateRoom}
+                />
+              </StageFrame>
+            </div>
+          )}
+
           <InputBar
             participantName={participant?.name || ''}
+            roomId={roomId || undefined}
             speakerValue={speakerValue}
             onSpeakerValueChange={setSpeakerValue}
             onSendMessage={(type, text, options) => handleSendMessage(type, text, { ...options, speakerValue })}
-            showGmOption={participant?.role === 'GM'}
+            layout={isStackedLayout ? 'stacked' : 'single'}
+            showGmOption={isGM}
             disabled={isExcludedFromSecret}
             disabledReason="秘匿モード中は閲覧できません"
-            characters={participant?.role === 'GM'
+            characters={isGM
               ? characters
               : characters.filter(c => c.owner_participant_id === participant?.id)}
             currentCharacter={speakerValue !== 'participant'
@@ -416,10 +546,14 @@ export default function RoomPage() {
         </div>
 
         {/* Side Panel (Right 1/4) */}
-        <div className="shrink-0 relative" style={{ width: sidePanelWidth }}>
+        <div
+          className="shrink-0 relative"
+          style={{ width: sidePanelCollapsed ? SIDE_PANEL_COLLAPSED_WIDTH : sidePanelWidth }}
+        >
           <div
             className="absolute left-0 top-0 bottom-0 w-3 -translate-x-1.5 cursor-col-resize hidden md:block"
             onMouseDown={(e) => {
+              if (sidePanelCollapsed) return;
               e.preventDefault();
               resizeStateRef.current = { startX: e.clientX, startWidth: sidePanelWidth };
 
@@ -457,22 +591,38 @@ export default function RoomPage() {
             <div className="h-full w-px bg-border/50 mx-auto opacity-0 hover:opacity-100 transition-opacity" />
           </div>
 
-          <div className="h-full pl-0 md:pl-1">
-            <SidePanel
-              roomId={roomId || ''}
-              room={room}
-              participant={participant}
-              participants={participants}
-              characters={characters}
-              messages={messages}
-              stageState={stageState}
-              isGM={isGM}
-              onRefreshCharacters={refreshCharacters}
-              onSendMessage={handleSendMessageFull}
-              onUpdateStage={updateStageState}
-              onUpdateRoom={handleUpdateRoom}
-            />
-          </div>
+          {sidePanelCollapsed ? (
+            <div className="h-full flex flex-col items-center justify-start bg-sidebar border-l border-sidebar-border">
+              <Button
+                type="button"
+                variant="ghost"
+                size="icon"
+                className="mt-2"
+                onClick={() => setSidePanelCollapsed(false)}
+                title="サイドパネルを開く"
+              >
+                <ChevronLeft className="w-5 h-5" />
+              </Button>
+            </div>
+          ) : (
+            <div className="h-full pl-0 md:pl-1">
+              <SidePanel
+                roomId={roomId || ''}
+                room={room}
+                participant={participant}
+                participants={participants}
+                characters={characters}
+                messages={messages}
+                stageState={stageState}
+                isGM={isGM}
+                onRefreshCharacters={refreshCharacters}
+                onSendMessage={handleSendMessageFull}
+                onUpdateStage={updateStageState}
+                onUpdateRoom={handleUpdateRoom}
+                onCollapse={() => setSidePanelCollapsed(true)}
+              />
+            </div>
+          )}
         </div>
       </div>
     </div>

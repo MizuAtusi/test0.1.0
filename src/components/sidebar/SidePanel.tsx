@@ -1,9 +1,10 @@
 import { useState } from 'react';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { Users, MessageCircle, Wand2 } from 'lucide-react';
+import { Users, MessageCircle, Wand2, ChevronRight } from 'lucide-react';
 import { CharacterPanel } from './CharacterPanel';
 import { ChatPanel } from './ChatPanel';
 import { GMToolsPanel } from './GMToolsPanel';
+import { Button } from '@/components/ui/button';
 import type { Character, Participant, Message, StageState, Room } from '@/types/trpg';
 
 interface SidePanelProps {
@@ -24,6 +25,7 @@ interface SidePanelProps {
   ) => void;
   onUpdateStage: (updates: Partial<StageState>) => void;
   onUpdateRoom: (updates: Partial<Room>) => void;
+  onCollapse?: () => void;
 }
 
 export function SidePanel({
@@ -39,6 +41,7 @@ export function SidePanel({
   onSendMessage,
   onUpdateStage,
   onUpdateRoom,
+  onCollapse,
 }: SidePanelProps) {
   const [activeTab, setActiveTab] = useState('characters');
 
@@ -49,29 +52,43 @@ export function SidePanel({
     <div className="h-full flex flex-col bg-sidebar border-l border-sidebar-border overflow-hidden">
       <Tabs value={activeTab} onValueChange={setActiveTab} className="flex-1 flex flex-col min-h-0">
         {/* Fixed Tab Header */}
-        <TabsList className="w-full justify-start rounded-none border-b border-sidebar-border bg-transparent p-0 shrink-0">
-          <TabsTrigger 
-            value="characters" 
-            className="tab-gothic rounded-none data-[state=active]:bg-transparent"
-          >
-            <Users className="w-4 h-4 mr-2" />
-            キャラクター
-          </TabsTrigger>
-          <TabsTrigger 
-            value="chat" 
-            className="tab-gothic rounded-none data-[state=active]:bg-transparent"
-          >
-            <MessageCircle className="w-4 h-4 mr-2" />
-            チャット
-          </TabsTrigger>
-          {isGM && (
+        <TabsList className="w-full rounded-none border-b border-sidebar-border bg-transparent p-0 shrink-0 justify-start">
+          <div className="flex items-stretch">
             <TabsTrigger 
-              value="gm" 
+              value="characters" 
               className="tab-gothic rounded-none data-[state=active]:bg-transparent"
             >
-              <Wand2 className="w-4 h-4 mr-2" />
-              GM
+              <Users className="w-4 h-4 mr-2" />
+              キャラクター
             </TabsTrigger>
+            <TabsTrigger 
+              value="chat" 
+              className="tab-gothic rounded-none data-[state=active]:bg-transparent"
+            >
+              <MessageCircle className="w-4 h-4 mr-2" />
+              チャット
+            </TabsTrigger>
+            {isGM && (
+              <TabsTrigger 
+                value="gm" 
+                className="tab-gothic rounded-none data-[state=active]:bg-transparent"
+              >
+                <Wand2 className="w-4 h-4 mr-2" />
+                GM
+              </TabsTrigger>
+            )}
+          </div>
+          {onCollapse && (
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon"
+              className="ml-auto h-10 w-10 rounded-none opacity-80 hover:opacity-100"
+              onClick={onCollapse}
+              title="サイドパネルを折りたたむ"
+            >
+              <ChevronRight className="w-5 h-5" />
+            </Button>
           )}
         </TabsList>
 

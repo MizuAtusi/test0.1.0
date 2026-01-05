@@ -48,7 +48,7 @@ export function getDisplayText(text: string): string {
   // Remove command lines like [bg:...], [portrait:...], [bgm:...], [se:...], [speaker:...]
   // Keep this permissive so even embedded commands don't show in chat.
   const withoutCommands = withoutTags
-    .replace(/\[(bg|portrait|bgm|se|speaker|npc_disclosure):[^\]]+\]\n?/gi, '')
+    .replace(/\[(bg|portrait|bgm|se|speaker|npc_disclosure|effects_config|portrait_transform):[^\]]+\]\n?/gi, '')
     .replace(/\s{2,}/g, ' ')
     .trim();
 
