@@ -70,8 +70,8 @@ export function useRoom(roomId: string | null) {
     setRoom(data as Room);
   }, [roomId]);
 
-  const fetchMembership = useCallback(async (): Promise<boolean> => {
-    if (!roomId || !user?.id) return false;
+  const fetchMembership = useCallback(async (): Promise<RoomMember | null> => {
+    if (!roomId || !user?.id) return null;
     const { data, error } = await supabase
       .from('room_members')
       .select('*')
@@ -80,16 +80,21 @@ export function useRoom(roomId: string | null) {
       .maybeSingle();
     if (error) {
       console.error('Error fetching membership:', error);
-      return false;
+      return null;
     }
     if (data) {
-      setMember(data as any);
-      setNeedsJoin(false);
-      return true;
+      const next = data as any;
+      setMember((prev) => {
+        if (!prev) return next;
+        if (prev.room_id === next.room_id && prev.user_id === next.user_id && prev.role === next.role) return prev;
+        return next;
+      });
+      setNeedsJoin((prev) => (prev ? false : prev));
+      return next as RoomMember;
     } else {
-      setMember(null);
-      setNeedsJoin(true);
-      return false;
+      setMember((prev) => (prev ? null : prev));
+      setNeedsJoin((prev) => (prev ? prev : true));
+      return null;
     }
   }, [roomId, user?.id]);
 
@@ -614,20 +619,49 @@ export function useRoom(roomId: string | null) {
     const fetchAll = async () => {
       setLoading(true);
       await fetchRoom();
-      const hasMember = await fetchMembership();
+      const membership = await fetchMembership();
       if (!user?.id) {
         setLoading(false);
         return;
       }
       // Only load room content after join
-      if (hasMember) {
+      if (membership) {
         await Promise.all([
           fetchParticipants(),
           fetchMessages(),
           fetchStageState(),
           fetchCharacters(),
         ]);
-        await ensurePresence();
+        // Ensure presence row for this browser session exists (do not depend on member state identity)
+        try {
+          const session = getSession();
+          const { data: existing } = await supabase
+            .from('participants')
+            .select('*')
+            .eq('room_id', roomId)
+            .eq('user_id', user.id)
+            .eq('session_id', session.sessionId)
+            .maybeSingle();
+          if (existing) {
+            setParticipant(existing as any);
+          } else {
+            const name = await getMyDisplayName();
+            const { data: part } = await supabase
+              .from('participants')
+              .insert({
+                room_id: roomId,
+                user_id: user.id,
+                name,
+                role: membership.role,
+                session_id: session.sessionId,
+              } as any)
+              .select('*')
+              .single();
+            if (part) setParticipant(part as any);
+          }
+        } catch {
+          // ignore
+        }
       }
       setLoading(false);
     };
@@ -642,7 +676,6 @@ export function useRoom(roomId: string | null) {
     fetchMessages,
     fetchStageState,
     fetchCharacters,
-    ensurePresence,
   ]);
 
   // React to role changes (e.g., owner promotes a member to GM)
