@@ -4,6 +4,7 @@ export interface Room {
   id: string;
   name: string;
   gm_key_hash: string;
+  owner_user_id?: string | null;
   current_background_url?: string;
   theme?: RoomTheme;
   effects?: any;
@@ -26,6 +27,7 @@ export interface RoomTheme {
 export interface Participant {
   id: string;
   room_id: string;
+  user_id?: string | null;
   name: string;
   role: 'PL' | 'GM';
   session_id: string;
@@ -77,6 +79,7 @@ export interface Character {
   id: string;
   room_id: string;
   owner_participant_id?: string;
+  owner_user_id?: string | null;
   name: string;
   is_npc: boolean;
   stats: CharacterStats;
@@ -162,6 +165,13 @@ export interface SessionData {
   roomId?: string;
   role?: 'PL' | 'GM';
   name?: string;
+}
+
+export interface RoomMember {
+  room_id: string;
+  user_id: string;
+  role: 'PL' | 'GM';
+  created_at: string;
 }
 
 // Replay export types

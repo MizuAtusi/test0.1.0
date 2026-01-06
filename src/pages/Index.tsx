@@ -1,7 +1,7 @@
-import { LobbyView } from '@/components/lobby/LobbyView';
+import DashboardPage from '@/pages/Dashboard';
 
 const Index = () => {
-  return <LobbyView />;
+  return <DashboardPage />;
 };
 
 export default Index;

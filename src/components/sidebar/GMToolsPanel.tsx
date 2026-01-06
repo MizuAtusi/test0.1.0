@@ -20,6 +20,7 @@ import { OtherEffectsEditorDialog } from './OtherEffectsEditorDialog';
 import { getDisplayText } from '@/lib/expressionTag';
 import { getPortraitTransformRel } from '@/lib/portraitTransformsShared';
 import type { Participant, Character, StageState, Macro, Room, Asset, ActivePortrait } from '@/types/trpg';
+import { useAuth } from '@/hooks/useAuth';
 
 interface GMToolsPanelProps {
   roomId: string;
@@ -49,6 +50,7 @@ export function GMToolsPanel({
   onUpdateStage,
   onUpdateRoom,
 }: GMToolsPanelProps) {
+  const { user } = useAuth();
   type MacroAssetSource = 'upload' | 'select' | null;
   const SENT_MACROS_STORAGE_KEY = `trpg:sentMacros:${roomId}`;
   const SENT_MACROS_COLLAPSED_STORAGE_KEY = `trpg:sentMacrosCollapsed:${roomId}`;
@@ -78,6 +80,35 @@ export function GMToolsPanel({
   const [newMacroSeUrl, setNewMacroSeUrl] = useState('');
   const [newMacroBgSource, setNewMacroBgSource] = useState<MacroAssetSource>(null);
   const [newMacroBgAssetId, setNewMacroBgAssetId] = useState<string | null>(null);
+
+  const [roomMembers, setRoomMembers] = useState<Array<{ room_id: string; user_id: string; role: 'PL' | 'GM'; created_at: string }>>([]);
+  const [promoteTarget, setPromoteTarget] = useState<{ userId: string; name: string } | null>(null);
+  const isOwner = !!(room?.owner_user_id && user?.id && room.owner_user_id === user.id);
+
+  const fetchRoomMembers = useCallback(async () => {
+    const { data, error } = await supabase
+      .from('room_members')
+      .select('*')
+      .eq('room_id', roomId)
+      .order('created_at', { ascending: true });
+    if (error) return;
+    setRoomMembers((data as any) || []);
+  }, [roomId]);
+
+  useEffect(() => {
+    void fetchRoomMembers();
+    const channel = supabase
+      .channel(`room_members_all:${roomId}`)
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'room_members', filter: `room_id=eq.${roomId}` },
+        () => void fetchRoomMembers()
+      )
+      .subscribe();
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [roomId, fetchRoomMembers]);
   const [newMacroBgmSource, setNewMacroBgmSource] = useState<MacroAssetSource>(null);
   const [newMacroBgmAssetId, setNewMacroBgmAssetId] = useState<string | null>(null);
   const [newMacroSeSource, setNewMacroSeSource] = useState<MacroAssetSource>(null);
@@ -1991,23 +2022,51 @@ export function GMToolsPanel({
           {/* Participants List */}
           <div className="space-y-2">
             <h3 className="text-sm font-semibold text-muted-foreground uppercase tracking-wider">
-              参加者 ({participants.length})
+              参加者 ({roomMembers.length})
             </h3>
             <div className="space-y-1">
-              {participants.map(p => (
-                <div 
-                  key={p.id}
-                  className="flex items-center justify-between px-3 py-2 rounded bg-sidebar-accent"
-                >
-                  <span className="text-sm">{p.name}</span>
-                  <span className={`text-xs px-2 py-0.5 rounded ${
-                    p.role === 'GM' ? 'bg-accent text-accent-foreground' : 'bg-muted text-muted-foreground'
-                  }`}>
-                    {p.role}
-                  </span>
-                </div>
-              ))}
+              {(() => {
+                const nameByUserId = new Map<string, string>();
+                for (const p of participants) {
+                  const uid = (p as any).user_id as string | undefined;
+                  if (!uid) continue;
+                  nameByUserId.set(uid, p.name);
+                }
+                return roomMembers.map((m) => {
+                  const name = nameByUserId.get(m.user_id) || `${m.user_id.slice(0, 8)}...`;
+                  const canPromote = isOwner && m.role !== 'GM' && m.user_id !== (room?.owner_user_id || '');
+                  return (
+                    <button
+                      key={m.user_id}
+                      type="button"
+                      className={`w-full flex items-center justify-between px-3 py-2 rounded bg-sidebar-accent text-left ${
+                        canPromote ? 'hover:bg-sidebar-accent/80' : ''
+                      }`}
+                      onClick={() => {
+                        if (!canPromote) return;
+                        setPromoteTarget({ userId: m.user_id, name });
+                      }}
+                      disabled={!canPromote}
+                      title={canPromote ? 'クリックしてGM権限を付与' : undefined}
+                    >
+                      <span className="text-sm truncate">{name}</span>
+                      <span
+                        className={`text-xs px-2 py-0.5 rounded ${
+                          m.role === 'GM' ? 'bg-accent text-accent-foreground' : 'bg-muted text-muted-foreground'
+                        }`}
+                      >
+                        {m.role}
+                      </span>
+                    </button>
+                  );
+                });
+              })()}
             </div>
+            {isOwner && (
+              <div className="text-xs text-muted-foreground">
+                参加者をクリックしてGM権限を付与できます（ルーム作成者のみ）
+              </div>
+            )}
           </div>
         </div>
       </ScrollArea>
@@ -2577,6 +2636,38 @@ export function GMToolsPanel({
               }}
             >
               秘匿モードに入る
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={!!promoteTarget} onOpenChange={(open) => { if (!open) setPromoteTarget(null); }}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>GM権限を付与しますか？</DialogTitle>
+          </DialogHeader>
+          <div className="text-sm text-muted-foreground">
+            {promoteTarget?.name} にGM権限を付与してもよろしいですか？
+          </div>
+          <DialogFooter className="gap-2">
+            <Button variant="outline" onClick={() => setPromoteTarget(null)}>いいえ</Button>
+            <Button
+              onClick={async () => {
+                if (!promoteTarget) return;
+                const { error } = await supabase
+                  .from('room_members')
+                  .update({ role: 'GM' } as any)
+                  .eq('room_id', roomId)
+                  .eq('user_id', promoteTarget.userId);
+                if (error) {
+                  toast({ title: 'GM権限の付与に失敗しました', description: error.message, variant: 'destructive' });
+                  return;
+                }
+                toast({ title: 'GM権限を付与しました' });
+                setPromoteTarget(null);
+              }}
+            >
+              はい
             </Button>
           </DialogFooter>
         </DialogContent>

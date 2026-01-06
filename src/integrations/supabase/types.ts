@@ -91,6 +91,7 @@ export type Database = {
           memo: string | null
           name: string
           owner_participant_id: string | null
+          owner_user_id: string | null
           room_id: string
           skills: Json
           stats: Json
@@ -108,6 +109,7 @@ export type Database = {
           memo?: string | null
           name: string
           owner_participant_id?: string | null
+          owner_user_id?: string | null
           room_id: string
           skills?: Json
           stats?: Json
@@ -125,6 +127,7 @@ export type Database = {
           memo?: string | null
           name?: string
           owner_participant_id?: string | null
+          owner_user_id?: string | null
           room_id?: string
           skills?: Json
           stats?: Json
@@ -236,6 +239,7 @@ export type Database = {
           role: string
           room_id: string
           session_id: string
+          user_id: string | null
         }
         Insert: {
           created_at?: string
@@ -244,6 +248,7 @@ export type Database = {
           role?: string
           room_id: string
           session_id: string
+          user_id?: string | null
         }
         Update: {
           created_at?: string
@@ -252,6 +257,7 @@ export type Database = {
           role?: string
           room_id?: string
           session_id?: string
+          user_id?: string | null
         }
         Relationships: [
           {
@@ -271,6 +277,7 @@ export type Database = {
           house_rules: string | null
           id: string
           name: string
+          owner_user_id: string | null
           theme: Json | null
         }
         Insert: {
@@ -280,6 +287,7 @@ export type Database = {
           house_rules?: string | null
           id?: string
           name: string
+          owner_user_id?: string | null
           theme?: Json | null
         }
         Update: {
@@ -289,9 +297,57 @@ export type Database = {
           house_rules?: string | null
           id?: string
           name?: string
+          owner_user_id?: string | null
           theme?: Json | null
         }
         Relationships: []
+      }
+      profiles: {
+        Row: {
+          created_at: string
+          display_name: string
+          id: string
+        }
+        Insert: {
+          created_at?: string
+          display_name: string
+          id: string
+        }
+        Update: {
+          created_at?: string
+          display_name?: string
+          id?: string
+        }
+        Relationships: []
+      }
+      room_members: {
+        Row: {
+          created_at: string
+          role: string
+          room_id: string
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          role?: string
+          room_id: string
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          role?: string
+          room_id?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "room_members_room_id_fkey"
+            columns: ["room_id"]
+            isOneToOne: false
+            referencedRelation: "rooms"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       stage_states: {
         Row: {

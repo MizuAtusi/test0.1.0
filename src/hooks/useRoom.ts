@@ -1,17 +1,21 @@
 import { useState, useEffect, useCallback } from 'react';
 import { supabase } from '@/integrations/supabase/client';
-import { getSession, saveSession, hashGMKey } from '@/lib/session';
-import type { Room, Participant, Message, StageState, Character } from '@/types/trpg';
+import { getSession } from '@/lib/session';
+import type { Room, Participant, Message, StageState, Character, RoomMember } from '@/types/trpg';
 import { useToast } from '@/hooks/use-toast';
 import { getCharacterAvatarUrl } from '@/lib/characterAvatar';
 import { appendLocalStageEvent } from '@/lib/localStageEvents';
 import { applyNpcDisclosureCommandsFromText } from '@/lib/npcDisclosures';
 import { applyEffectsConfigCommandsFromText } from '@/lib/effects';
 import { applyPortraitTransformCommandsFromText } from '@/lib/portraitTransformsShared';
+import { useAuth } from '@/hooks/useAuth';
 
 export function useRoom(roomId: string | null) {
+  const { user } = useAuth();
   const [room, setRoom] = useState<Room | null>(null);
   const [participant, setParticipant] = useState<Participant | null>(null);
+  const [member, setMember] = useState<RoomMember | null>(null);
+  const [needsJoin, setNeedsJoin] = useState(false);
   const [participants, setParticipants] = useState<Participant[]>([]);
   const [messages, setMessages] = useState<Message[]>([]);
   const [stageState, setStageState] = useState<StageState | null>(null);
@@ -66,9 +70,32 @@ export function useRoom(roomId: string | null) {
     setRoom(data as Room);
   }, [roomId]);
 
+  const fetchMembership = useCallback(async (): Promise<boolean> => {
+    if (!roomId || !user?.id) return false;
+    const { data, error } = await supabase
+      .from('room_members')
+      .select('*')
+      .eq('room_id', roomId)
+      .eq('user_id', user.id)
+      .maybeSingle();
+    if (error) {
+      console.error('Error fetching membership:', error);
+      return false;
+    }
+    if (data) {
+      setMember(data as any);
+      setNeedsJoin(false);
+      return true;
+    } else {
+      setMember(null);
+      setNeedsJoin(true);
+      return false;
+    }
+  }, [roomId, user?.id]);
+
   // Fetch participants
   const fetchParticipants = useCallback(async () => {
-    if (!roomId) return;
+    if (!roomId || !user?.id) return;
     
     const { data, error } = await supabase
       .from('participants')
@@ -84,7 +111,7 @@ export function useRoom(roomId: string | null) {
     
     // Find current participant
     const session = getSession();
-    const current = data.find(p => p.session_id === session.sessionId);
+    const current = data.find(p => (p as any).user_id === user.id && p.session_id === session.sessionId);
     if (current) {
       setParticipant(current as Participant);
     }
@@ -197,64 +224,133 @@ export function useRoom(roomId: string | null) {
     setCharacters(merged as unknown as Character[]);
   }, [roomId]);
 
-  // Join room
-  const joinRoom = async (name: string, gmKey?: string) => {
-    if (!roomId || !room) return null;
-    
-    const session = getSession();
-    let role: 'PL' | 'GM' = 'PL';
-    
-    // Check GM key if provided
-    if (gmKey) {
-      const keyHash = hashGMKey(gmKey);
-      if (keyHash === room.gm_key_hash) {
-        role = 'GM';
-      } else {
-        toast({
-          title: 'GMキーが正しくありません',
-          variant: 'destructive',
-        });
+  const getMyDisplayName = async (): Promise<string> => {
+    if (!user?.id) return 'user';
+    try {
+      const metaName =
+        (user.user_metadata as any)?.display_name ||
+        (user.user_metadata as any)?.full_name ||
+        null;
+      if (typeof metaName === 'string' && metaName.trim()) return metaName.trim();
+    } catch {
+      // ignore
+    }
+    const { data } = await supabase.from('profiles').select('display_name').eq('id', user.id).maybeSingle();
+    if (data?.display_name) return String(data.display_name);
+    const email = user.email || '';
+    return email ? email.split('@')[0] : 'user';
+  };
+
+  // Join room as the authenticated user (PL by default)
+  const joinRoom = async () => {
+    if (!roomId || !user?.id) return null;
+
+    const name = await getMyDisplayName();
+
+    // 1) Ensure membership exists.
+    // If the room has no owner yet (legacy rooms), try to claim ownership as the first entrant.
+    let joinRole: 'PL' | 'GM' = 'PL';
+    try {
+      const { data: roomRow } = await supabase
+        .from('rooms')
+        .select('owner_user_id')
+        .eq('id', roomId)
+        .maybeSingle();
+      if (roomRow && !(roomRow as any).owner_user_id) {
+        const claimed = await supabase
+          .from('rooms')
+          .update({ owner_user_id: user.id } as any)
+          .eq('id', roomId)
+          .is('owner_user_id', null);
+        if (!claimed.error) {
+          joinRole = 'GM';
+        }
+      }
+    } catch {
+      // ignore
+    }
+
+    const { error: memberError } = await supabase.from('room_members').insert({
+      room_id: roomId,
+      user_id: user.id,
+      role: joinRole,
+    } as any);
+    if (memberError) {
+      const msg = String(memberError?.message || memberError);
+      // Ignore duplicates
+      if (!msg.toLowerCase().includes('duplicate') && !msg.toLowerCase().includes('already exists')) {
+        toast({ title: 'ルーム参加に失敗しました', description: msg, variant: 'destructive' });
         return null;
       }
     }
-    
-    const { data, error } = await supabase
+
+    await fetchMembership();
+
+    // 2) Create a participant presence row for this browser session if missing
+    const session = getSession();
+    const { data: existing } = await supabase
+      .from('participants')
+      .select('*')
+      .eq('room_id', roomId)
+      .eq('user_id', user.id)
+      .eq('session_id', session.sessionId)
+      .maybeSingle();
+
+    if (existing) {
+      setParticipant(existing as any);
+      return existing as any;
+    }
+
+    const { data: part, error: partError } = await supabase
       .from('participants')
       .insert({
         room_id: roomId,
+        user_id: user.id,
         name,
-        role,
+        role: joinRole,
         session_id: session.sessionId,
-      })
-      .select()
+      } as any)
+      .select('*')
       .single();
-    
-    if (error) {
-      console.error('Error joining room:', error);
-      toast({
-        title: 'ルームへの参加に失敗しました',
-        variant: 'destructive',
-      });
+
+    if (partError) {
+      toast({ title: '参加情報の作成に失敗しました', description: partError.message, variant: 'destructive' });
       return null;
     }
-    
-    const newParticipant = data as Participant;
-    setParticipant(newParticipant);
-    
-    // Update session
-    saveSession({
-      ...session,
-      participantId: newParticipant.id,
-      roomId,
-      role,
-      name,
-    });
-    
-    // Post system message
-    await sendMessage('system', `${name} がルームに参加しました`, 'システム');
-    
-    return newParticipant;
+
+    setParticipant(part as any);
+    return part as any;
   };
+
+  // Ensure participant presence exists when already a member
+  const ensurePresence = useCallback(async () => {
+    if (!roomId || !user?.id || !member) return;
+    const session = getSession();
+    const { data: existing } = await supabase
+      .from('participants')
+      .select('*')
+      .eq('room_id', roomId)
+      .eq('user_id', user.id)
+      .eq('session_id', session.sessionId)
+      .maybeSingle();
+    if (existing) {
+      setParticipant(existing as any);
+      return;
+    }
+    const name = await getMyDisplayName();
+    const { data: part } = await supabase
+      .from('participants')
+      .insert({
+        room_id: roomId,
+        user_id: user.id,
+        name,
+        role: member.role,
+        session_id: session.sessionId,
+      } as any)
+      .select('*')
+      .single();
+    if (part) setParticipant(part as any);
+  }, [roomId, user?.id, member]);
 
   // Send message
   const sendMessage = async (
@@ -510,22 +606,68 @@ export function useRoom(roomId: string | null) {
 
     const fetchAll = async () => {
       setLoading(true);
-      await Promise.all([
-        fetchRoom(),
-        fetchParticipants(),
-        fetchMessages(),
-        fetchStageState(),
-        fetchCharacters(),
-      ]);
+      await fetchRoom();
+      const hasMember = await fetchMembership();
+      if (!user?.id) {
+        setLoading(false);
+        return;
+      }
+      // Only load room content after join
+      if (hasMember) {
+        await Promise.all([
+          fetchParticipants(),
+          fetchMessages(),
+          fetchStageState(),
+          fetchCharacters(),
+        ]);
+        await ensurePresence();
+      }
       setLoading(false);
     };
 
     fetchAll();
-  }, [roomId, fetchRoom, fetchParticipants, fetchMessages, fetchStageState, fetchCharacters]);
+  }, [
+    roomId,
+    user?.id,
+    needsJoin,
+    fetchRoom,
+    fetchMembership,
+    fetchParticipants,
+    fetchMessages,
+    fetchStageState,
+    fetchCharacters,
+    ensurePresence,
+  ]);
+
+  // React to role changes (e.g., owner promotes a member to GM)
+  useEffect(() => {
+    if (!roomId || !user?.id) return;
+    const channel = supabase
+      .channel(`room_members:${roomId}:${user.id}`)
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'room_members',
+          filter: `room_id=eq.${roomId},user_id=eq.${user.id}`,
+        },
+        () => {
+          void fetchMembership();
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [roomId, user?.id, fetchMembership]);
 
   return {
     room,
     participant,
+    member,
+    needsJoin,
     participants,
     messages,
     stageState,
@@ -533,7 +675,7 @@ export function useRoom(roomId: string | null) {
     bgmUrl,
     se,
     loading,
-    isGM: participant?.role === 'GM',
+    isGM: member?.role === 'GM',
     joinRoom,
     sendMessage,
     updateStageState,
