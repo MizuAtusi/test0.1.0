@@ -9,7 +9,14 @@ import { AvatarEditorDialog } from './AvatarEditorDialog';
 import { getCharacterAvatarUrl } from '@/lib/characterAvatar';
 import { supabase } from '@/integrations/supabase/client';
 import { useToast } from '@/hooks/use-toast';
-import { buildNpcDisclosureCommand, loadNpcDisclosure, saveNpcDisclosure, type NpcDisclosureSettings } from '@/lib/npcDisclosures';
+import {
+  buildNpcDisclosureCommand,
+  getNpcDisclosuresTableAvailability,
+  loadNpcDisclosure,
+  saveNpcDisclosure,
+  setNpcDisclosuresTableAvailability,
+  type NpcDisclosureSettings,
+} from '@/lib/npcDisclosures';
 import type { Character, Participant } from '@/types/trpg';
 import { Input } from '@/components/ui/input';
 
@@ -263,11 +270,29 @@ export function CharacterPanel({
 
   useEffect(() => {
     const fetchNpcDisclosures = async () => {
+      // If the table is known-missing, avoid repeated 404 requests and use localStorage only.
+      if (getNpcDisclosuresTableAvailability() === 'missing') {
+        const map = new Map<string, NpcDisclosureSettings>();
+        npcCharacters.forEach((c) => {
+          map.set(c.id, loadNpcDisclosure(roomId, c.id));
+        });
+        setNpcDisclosureById(map);
+        return;
+      }
+
       const { data, error } = await supabase
         .from('npc_disclosures')
         .select('character_id,show_stats,show_derived,show_skills,show_memo')
         .eq('room_id', roomId);
       if (error) {
+        const msg = String((error as any)?.message || '');
+        if (
+          msg.includes('PGRST') ||
+          msg.toLowerCase().includes('schema cache') ||
+          msg.toLowerCase().includes('not found')
+        ) {
+          setNpcDisclosuresTableAvailability('missing');
+        }
         // Table may not exist if migrations aren't applied yet -> fallback to localStorage
         const map = new Map<string, NpcDisclosureSettings>();
         npcCharacters.forEach((c) => {
@@ -276,6 +301,7 @@ export function CharacterPanel({
         setNpcDisclosureById(map);
         return;
       }
+      setNpcDisclosuresTableAvailability('available');
       const map = new Map<string, NpcDisclosureSettings>();
       (data as any[] | null)?.forEach((row) => {
         if (!row?.character_id) return;
@@ -320,6 +346,10 @@ export function CharacterPanel({
     });
 
     if (!nextValue || !prevValue) return;
+    if (getNpcDisclosuresTableAvailability() === 'missing') {
+      saveNpcDisclosure(roomId, characterId, nextValue);
+      return;
+    }
     const { error } = await supabase
       .from('npc_disclosures')
       .upsert(

@@ -5,6 +5,28 @@ export type NpcDisclosureSettings = {
   showMemo: boolean;
 };
 
+type TableAvailability = 'unknown' | 'missing' | 'available';
+const TABLE_KEY = 'trpg:supabaseTable:npc_disclosures';
+
+export function getNpcDisclosuresTableAvailability(): TableAvailability {
+  try {
+    const raw = localStorage.getItem(TABLE_KEY);
+    if (raw === 'missing' || raw === 'available') return raw;
+    return 'unknown';
+  } catch {
+    return 'unknown';
+  }
+}
+
+export function setNpcDisclosuresTableAvailability(value: TableAvailability) {
+  try {
+    if (value === 'unknown') localStorage.removeItem(TABLE_KEY);
+    else localStorage.setItem(TABLE_KEY, value);
+  } catch {
+    // ignore
+  }
+}
+
 const DEFAULT: NpcDisclosureSettings = {
   showStats: false,
   showDerived: false,
@@ -77,4 +99,3 @@ export function applyNpcDisclosureCommandsFromText(roomId: string, rawText: unkn
     saveNpcDisclosure(roomId, characterId, next);
   }
 }
-
