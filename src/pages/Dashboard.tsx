@@ -24,6 +24,9 @@ export default function DashboardPage() {
   const [loading, setLoading] = useState(true);
   const [creating, setCreating] = useState(false);
   const [roomName, setRoomName] = useState('');
+  const [joinRoomId, setJoinRoomId] = useState('');
+  const [joining, setJoining] = useState(false);
+  const [deletingRoomId, setDeletingRoomId] = useState<string | null>(null);
 
   const myId = user?.id ?? '';
 
@@ -56,10 +59,24 @@ export default function DashboardPage() {
         id: r.rooms?.id ?? r.room_id,
         name: r.rooms?.name ?? '(名前不明)',
         role: r.role,
+        ownerUserId: (r.rooms as any)?.owner_user_id ?? null,
         createdAt: r.rooms?.created_at ?? '',
       }))
       .sort((a, b) => (a.createdAt < b.createdAt ? 1 : -1));
   }, [rooms]);
+
+  const createdRooms = useMemo(() => {
+    return roomCards.filter((r) => {
+      // Prefer explicit owner; for legacy rooms owner can be null, treat own GM role as "created" per request.
+      if (r.ownerUserId) return r.ownerUserId === myId;
+      return r.role === 'GM';
+    });
+  }, [roomCards, myId]);
+
+  const joinedRooms = useMemo(() => {
+    const createdIds = new Set(createdRooms.map((r) => r.id));
+    return roomCards.filter((r) => !createdIds.has(r.id));
+  }, [roomCards, createdRooms]);
 
   const createRoom = async () => {
     if (!myId) return;
@@ -102,6 +119,66 @@ export default function DashboardPage() {
     }
   };
 
+  const joinRoom = async () => {
+    if (!myId) return;
+    if (!joinRoomId.trim()) {
+      toast({ title: 'ルームIDを入力してください', variant: 'destructive' });
+      return;
+    }
+    setJoining(true);
+    try {
+      const roomId = joinRoomId.trim();
+      // Ensure room exists (gives nicer error than insert failing)
+      const { data: room, error: roomError } = await supabase.from('rooms').select('id').eq('id', roomId).single();
+      if (roomError || !room) {
+        toast({ title: 'ルームが見つかりません', variant: 'destructive' });
+        return;
+      }
+
+      const { error } = await supabase.from('room_members').insert({
+        room_id: roomId,
+        user_id: myId,
+        role: 'PL',
+      } as any);
+      if (error) {
+        const msg = String(error.message || '');
+        if (!msg.toLowerCase().includes('duplicate') && !msg.toLowerCase().includes('already exists')) {
+          throw error;
+        }
+      }
+
+      toast({ title: 'ルームに参加しました' });
+      setJoinRoomId('');
+      navigate(`/room/${roomId}`);
+    } catch (e: any) {
+      toast({ title: 'ルーム参加に失敗しました', description: String(e?.message || e), variant: 'destructive' });
+    } finally {
+      setJoining(false);
+    }
+  };
+
+  const deleteRoom = async (roomId: string) => {
+    if (!myId) return;
+    try {
+      const { error } = await supabase.from('rooms').delete().eq('id', roomId);
+      if (error) throw error;
+      toast({ title: 'ルームを削除しました' });
+      setDeletingRoomId(null);
+      // refresh list
+      setLoading(true);
+      const { data, error: fetchError } = await supabase
+        .from('room_members')
+        .select('room_id,role,rooms(*)')
+        .eq('user_id', myId)
+        .order('created_at', { ascending: false });
+      setLoading(false);
+      if (fetchError) throw fetchError;
+      setRooms((data as any) || []);
+    } catch (e: any) {
+      toast({ title: 'ルーム削除に失敗しました', description: String(e?.message || e), variant: 'destructive' });
+    }
+  };
+
   const signOut = async () => {
     await supabase.auth.signOut();
     navigate('/login', { replace: true });
@@ -122,17 +199,72 @@ export default function DashboardPage() {
           <CardHeader>
             <CardTitle className="text-base">ルーム作成</CardTitle>
           </CardHeader>
-          <CardContent className="flex items-center gap-2">
-            <Input
-              value={roomName}
-              onChange={(e) => setRoomName(e.target.value)}
-              placeholder="ルーム名"
-              className="bg-input border-border"
-            />
-            <Button onClick={createRoom} disabled={creating}>
-              <Plus className="w-4 h-4 mr-2" />
-              作成
-            </Button>
+          <CardContent className="space-y-3">
+            <div className="flex items-center gap-2">
+              <Input
+                value={roomName}
+                onChange={(e) => setRoomName(e.target.value)}
+                placeholder="ルーム名"
+                className="bg-input border-border"
+              />
+              <Button onClick={createRoom} disabled={creating}>
+                <Plus className="w-4 h-4 mr-2" />
+                作成
+              </Button>
+            </div>
+            <div className="flex items-center gap-2">
+              <Input
+                value={joinRoomId}
+                onChange={(e) => setJoinRoomId(e.target.value)}
+                placeholder="ルームIDで参加"
+                className="bg-input border-border"
+              />
+              <Button variant="outline" onClick={joinRoom} disabled={joining}>
+                参加
+              </Button>
+            </div>
+          </CardContent>
+        </Card>
+
+        <Card className="bg-card border-border">
+          <CardHeader>
+            <CardTitle className="text-base">作成したルーム</CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-2">
+            {loading ? (
+              <div className="text-muted-foreground text-sm">読み込み中...</div>
+            ) : createdRooms.length === 0 ? (
+              <div className="text-muted-foreground text-sm">作成したルームはありません</div>
+            ) : (
+              createdRooms.map((r) => (
+                <div
+                  key={r.id}
+                  className="flex items-center justify-between gap-3 rounded-md border border-border/50 p-3"
+                >
+                  <div className="min-w-0">
+                    <div className="font-medium truncate">{r.name}</div>
+                    <div className="text-xs text-muted-foreground">権限: GM</div>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <Button variant="outline" onClick={() => navigate(`/room/${r.id}`)}>
+                      開く
+                    </Button>
+                    <Button
+                      variant="destructive"
+                      onClick={() => {
+                        const ok = window.confirm('本当にルームを削除しますか？（元に戻せません）');
+                        if (!ok) return;
+                        setDeletingRoomId(r.id);
+                        void deleteRoom(r.id);
+                      }}
+                      disabled={deletingRoomId === r.id}
+                    >
+                      削除
+                    </Button>
+                  </div>
+                </div>
+              ))
+            )}
           </CardContent>
         </Card>
 
@@ -143,10 +275,10 @@ export default function DashboardPage() {
           <CardContent className="space-y-2">
             {loading ? (
               <div className="text-muted-foreground text-sm">読み込み中...</div>
-            ) : roomCards.length === 0 ? (
+            ) : joinedRooms.length === 0 ? (
               <div className="text-muted-foreground text-sm">参加中のルームはありません</div>
             ) : (
-              roomCards.map((r) => (
+              joinedRooms.map((r) => (
                 <div
                   key={r.id}
                   className="flex items-center justify-between gap-3 rounded-md border border-border/50 p-3"
