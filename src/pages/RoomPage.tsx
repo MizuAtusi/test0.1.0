@@ -14,6 +14,8 @@ import { getPortraitTransform } from '@/lib/portraitTransforms';
 import { getCharacterAvatarUrl } from '@/lib/characterAvatar';
 import { getPortraitTransformRel } from '@/lib/portraitTransformsShared';
 import type { Room } from '@/types/trpg';
+import { useAuth } from '@/hooks/useAuth';
+import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 
 const SIDE_PANEL_WIDTH_STORAGE_KEY = 'trpg:sidePanelWidth';
 const SIDE_PANEL_COLLAPSED_STORAGE_KEY = 'trpg:sidePanelCollapsed';
@@ -75,10 +77,13 @@ export default function RoomPage() {
   const stageAreaAspect = stageColumnWidth > 0 ? (availableStageHeightOverlay / stageColumnWidth) : 0;
   const isStackedLayout = stageColumnWidth > 0 && stageAreaAspect >= STAGE_STACKED_ASPECT_THRESHOLD;
   const resizeStateRef = useRef<{ startX: number; startWidth: number } | null>(null);
+  const [joiningRoom, setJoiningRoom] = useState(false);
   
   const {
     room,
     participant,
+    member,
+    needsJoin,
     participants,
     messages,
     stageState,
@@ -87,15 +92,19 @@ export default function RoomPage() {
     se,
     loading,
     isGM,
+    joinRoom,
     sendMessage,
     updateStageState,
     updateRoom,
     refreshCharacters,
   } = useRoom(roomId || null);
+  const { user } = useAuth();
 
   // Get current player's character (if any)
-  const myCharacter = participant
-    ? characters.find(c => c.owner_participant_id === participant.id) ?? null
+  const myUserId = user?.id || participant?.user_id || null;
+  const myCharacter = myUserId
+    ? characters.find(c => c.owner_user_id === myUserId) ??
+      (participant ? (characters.find(c => c.owner_participant_id === participant.id) ?? null) : null)
     : null;
 
   const [speakerValue, setSpeakerValue] = useState<string>('participant'); // 'participant' | characterId
@@ -104,17 +113,9 @@ export default function RoomPage() {
     setSpeakerValue(prev => {
       if (prev !== 'participant') return prev;
       if (myCharacter?.id) return myCharacter.id;
-      return participant.role === 'GM' ? 'gm' : 'participant';
+      return isGM ? 'gm' : 'participant';
     });
-  }, [participant, myCharacter?.id]);
-
-  // Check if user has joined
-  useEffect(() => {
-    if (!loading && room && !participant) {
-      // User hasn't joined this room, redirect to lobby
-      navigate('/');
-    }
-  }, [loading, room, participant, navigate]);
+  }, [participant, myCharacter?.id, isGM]);
 
   const handleCopyRoomId = () => {
     if (roomId) {
@@ -137,7 +138,9 @@ export default function RoomPage() {
         ? characters.find(c => c.id === requestedSpeakerValue) ?? null
         : null;
     const canUseCharacter = requestedCharacter
-      ? (isGM || requestedCharacter.owner_participant_id === participant.id)
+      ? (isGM ||
+          (!!myUserId && requestedCharacter.owner_user_id === myUserId) ||
+          requestedCharacter.owner_participant_id === participant.id)
       : false;
     const speakerCharacter = canUseCharacter ? requestedCharacter : null;
     const speakerName = isGmSpeaker ? 'GM' : (speakerCharacter?.name || myCharacter?.name || participant.name);
@@ -428,6 +431,48 @@ export default function RoomPage() {
     );
   }
 
+  if (needsJoin) {
+    return (
+      <div className="h-screen flex flex-col bg-background overflow-hidden">
+        <header className="h-12 border-b border-border bg-card flex items-center justify-between px-4 shrink-0">
+          <div className="flex items-center gap-4">
+            <Button variant="ghost" size="sm" onClick={() => navigate('/')}>
+              <ArrowLeft className="w-4 h-4 mr-2" />
+              戻る
+            </Button>
+            <div className="h-4 w-px bg-border" />
+            <h1 className="font-display text-lg text-foreground">{room.name}</h1>
+          </div>
+        </header>
+
+        <Dialog open>
+          <DialogContent>
+            <DialogHeader>
+              <DialogTitle>このルームに参加しますか？</DialogTitle>
+            </DialogHeader>
+            <div className="text-sm text-muted-foreground">
+              参加すると、このルームのステージやログを閲覧・操作できるようになります。
+            </div>
+            <DialogFooter className="gap-2">
+              <Button variant="outline" onClick={() => navigate('/')}>いいえ</Button>
+              <Button
+                onClick={async () => {
+                  setJoiningRoom(true);
+                  const ok = await joinRoom();
+                  setJoiningRoom(false);
+                  if (ok) toast({ title: 'ルームに参加しました' });
+                }}
+                disabled={joiningRoom}
+              >
+                はい
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+      </div>
+    );
+  }
+
   return (
     <div className="h-screen flex flex-col bg-background overflow-hidden">
       {/* Header */}
@@ -535,9 +580,9 @@ export default function RoomPage() {
             showGmOption={isGM}
             disabled={isExcludedFromSecret}
             disabledReason="秘匿モード中は閲覧できません"
-            characters={isGM
+                  characters={isGM
               ? characters
-              : characters.filter(c => c.owner_participant_id === participant?.id)}
+              : characters.filter(c => (myUserId ? c.owner_user_id === myUserId : c.owner_participant_id === participant?.id))}
             currentCharacter={speakerValue !== 'participant'
               && speakerValue !== 'gm'
               ? characters.find(c => c.id === speakerValue) ?? null

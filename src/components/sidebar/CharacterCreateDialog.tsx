@@ -18,6 +18,7 @@ interface CharacterCreateDialogProps {
   onOpenChange: (open: boolean) => void;
   roomId: string;
   participantId?: string;
+  ownerUserId?: string | null;
   isGM: boolean;
   onCreated: () => void;
 }
@@ -27,6 +28,7 @@ export function CharacterCreateDialog({
   onOpenChange,
   roomId,
   participantId,
+  ownerUserId = null,
   isGM,
   onCreated,
 }: CharacterCreateDialogProps) {
@@ -243,6 +245,7 @@ export function CharacterCreateDialog({
       room_id: roomId,
       // Ownership is used for edit permissions; NPCs are owned by the creator too.
       owner_participant_id: participantId,
+      owner_user_id: ownerUserId,
       name: name.trim(),
       is_npc: isNpc,
       stats,
@@ -485,6 +488,7 @@ export function CharacterCreateDialog({
             room_id: roomId,
             // Ownership is used for edit permissions; NPCs are owned by the creator too.
             owner_participant_id: participantId,
+            owner_user_id: ownerUserId,
             name: charName,
             is_npc: isNpc,
             stats,
@@ -508,6 +512,7 @@ export function CharacterCreateDialog({
             .insert({
               room_id: roomId,
               owner_participant_id: participantId,
+              owner_user_id: ownerUserId,
               name: charName,
               is_npc: isNpc,
               stats,

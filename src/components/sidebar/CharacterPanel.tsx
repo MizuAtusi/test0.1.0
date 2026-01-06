@@ -380,6 +380,8 @@ export function CharacterPanel({
   };
 
   const canEdit = (char: Character) => {
+    const myUserId = (participant as any)?.user_id as string | undefined;
+    if (myUserId && (char as any).owner_user_id) return (char as any).owner_user_id === myUserId;
     return participant?.id === char.owner_participant_id;
   };
 
@@ -516,6 +518,7 @@ export function CharacterPanel({
         onOpenChange={setShowCreateDialog}
         roomId={roomId}
         participantId={participant?.id}
+        ownerUserId={(participant as any)?.user_id ?? null}
         isGM={isGM}
         onCreated={onRefresh}
       />
