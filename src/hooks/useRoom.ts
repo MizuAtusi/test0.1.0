@@ -319,6 +319,13 @@ export function useRoom(roomId: string | null) {
     }
 
     setParticipant(part as any);
+    // Refresh room state now that membership/presence exists
+    await Promise.all([
+      fetchParticipants(),
+      fetchMessages(),
+      fetchStageState(),
+      fetchCharacters(),
+    ]);
     return part as any;
   };
 
@@ -629,7 +636,6 @@ export function useRoom(roomId: string | null) {
   }, [
     roomId,
     user?.id,
-    needsJoin,
     fetchRoom,
     fetchMembership,
     fetchParticipants,
@@ -650,10 +656,11 @@ export function useRoom(roomId: string | null) {
           event: '*',
           schema: 'public',
           table: 'room_members',
-          filter: `room_id=eq.${roomId},user_id=eq.${user.id}`,
+          filter: `room_id=eq.${roomId}`,
         },
-        () => {
-          void fetchMembership();
+        (payload: any) => {
+          const nextUserId = payload?.new?.user_id ?? payload?.old?.user_id ?? null;
+          if (nextUserId === user.id) void fetchMembership();
         }
       )
       .subscribe();
