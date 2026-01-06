@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { LogOut, Plus } from 'lucide-react';
 import { supabase } from '@/integrations/supabase/client';
@@ -27,25 +27,28 @@ export default function DashboardPage() {
 
   const myId = user?.id ?? '';
 
-  const loadRooms = useCallback(async () => {
-    if (!myId) return;
-    setLoading(true);
-    const { data, error } = await supabase
-      .from('room_members')
-      .select('room_id,role,rooms(*)')
-      .eq('user_id', myId)
-      .order('created_at', { ascending: false });
-    setLoading(false);
-    if (error) {
-      toast({ title: 'ルーム一覧の取得に失敗しました', description: error.message, variant: 'destructive' });
-      return;
-    }
-    setRooms((data as any) || []);
-  }, [myId, toast]);
-
   useEffect(() => {
-    void loadRooms();
-  }, [loadRooms]);
+    if (!myId) return;
+    let canceled = false;
+    (async () => {
+      setLoading(true);
+      const { data, error } = await supabase
+        .from('room_members')
+        .select('room_id,role,rooms(*)')
+        .eq('user_id', myId)
+        .order('created_at', { ascending: false });
+      if (canceled) return;
+      setLoading(false);
+      if (error) {
+        toast({ title: 'ルーム一覧の取得に失敗しました', description: error.message, variant: 'destructive' });
+        return;
+      }
+      setRooms((data as any) || []);
+    })();
+    return () => {
+      canceled = true;
+    };
+  }, [myId]);
 
   const roomCards = useMemo(() => {
     return rooms
@@ -164,4 +167,3 @@ export default function DashboardPage() {
     </div>
   );
 }
-
