@@ -48,6 +48,9 @@ export default function MyPage() {
   const [friendsById, setFriendsById] = useState<Record<string, Profile>>({});
   const [showFriends, setShowFriends] = useState(false);
   const [showFriendSearch, setShowFriendSearch] = useState(false);
+  const [friendSearchOpen, setFriendSearchOpen] = useState(false);
+  const [friendSearchResult, setFriendSearchResult] = useState<Profile | null>(null);
+  const [friendSearchLoading, setFriendSearchLoading] = useState(false);
 
   const resetProfileInputs = (source: Profile | null) => {
     setDisplayName(source?.display_name || '');
@@ -182,6 +185,18 @@ export default function MyPage() {
       if (r.requester_user_id) relatedIds.add(r.requester_user_id);
       if (r.receiver_user_id) relatedIds.add(r.receiver_user_id);
     });
+    const allIds = Array.from(relatedIds);
+    if (allIds.length > 0) {
+      const { data: relatedProfiles } = await supabase
+        .from('profiles')
+        .select('id,display_name,handle,avatar_url,bio,created_at')
+        .in('id', allIds);
+      const map: Record<string, Profile> = {};
+      (relatedProfiles as any[] | null)?.forEach((p) => {
+        if (p?.id) map[p.id] = p as Profile;
+      });
+      setProfilesById((prev) => ({ ...prev, ...map }));
+    }
     const accepted = rows.filter((r) => r.status === 'accepted');
     const friendIds = Array.from(
       new Set(
@@ -201,19 +216,6 @@ export default function MyPage() {
       if (p?.id) map[p.id] = p as Profile;
     });
     setFriendsById(map);
-
-    const allIds = Array.from(relatedIds);
-    if (allIds.length > 0) {
-      const { data: relatedProfiles } = await supabase
-        .from('profiles')
-        .select('id,display_name,handle,avatar_url,bio,created_at')
-        .in('id', allIds);
-      const map: Record<string, Profile> = {};
-      (relatedProfiles as any[] | null)?.forEach((p) => {
-        if (p?.id) map[p.id] = p as Profile;
-      });
-      setProfilesById((prev) => ({ ...prev, ...map }));
-    }
   };
 
   const handleSaveProfile = async () => {
@@ -410,7 +412,7 @@ export default function MyPage() {
     }
   };
 
-  const handleSendFriendRequest = async () => {
+  const handleSearchFriend = async () => {
     if (!user?.id) return;
     const targetHandle = friendHandle.trim().toLowerCase();
     if (!targetHandle) {
@@ -421,18 +423,30 @@ export default function MyPage() {
       toast({ title: '自分自身には送信できません', variant: 'destructive' });
       return;
     }
+    setFriendSearchLoading(true);
     const { data: target } = await supabase
       .from('profiles')
-      .select('id,handle,display_name')
+      .select('id,handle,display_name,avatar_url,bio,created_at')
       .eq('handle', targetHandle)
       .maybeSingle();
+    setFriendSearchLoading(false);
     if (!target?.id) {
       toast({ title: 'ユーザーが見つかりません', variant: 'destructive' });
       return;
     }
+    setFriendSearchResult(target as any);
+    setFriendSearchOpen(true);
+  };
+
+  const handleSendFriendRequest = async () => {
+    if (!user?.id || !friendSearchResult?.id) return;
+    if (friendSearchResult.id === user.id) {
+      toast({ title: '自分自身には送信できません', variant: 'destructive' });
+      return;
+    }
     const { error } = await supabase.from('friend_requests').insert({
       requester_user_id: user.id,
-      receiver_user_id: target.id,
+      receiver_user_id: friendSearchResult.id,
       status: 'pending',
     } as any);
     if (error) {
@@ -440,6 +454,8 @@ export default function MyPage() {
       return;
     }
     setFriendHandle('');
+    setFriendSearchOpen(false);
+    setFriendSearchResult(null);
     toast({ title: 'フレンド申請を送信しました' });
     void loadFriends();
   };
@@ -655,6 +671,41 @@ export default function MyPage() {
           </DialogContent>
         </Dialog>
 
+        <Dialog open={friendSearchOpen} onOpenChange={setFriendSearchOpen}>
+          <DialogContent className="max-w-md">
+            <DialogHeader>
+              <DialogTitle>このプレイヤーにフレンド申請を送りますか？</DialogTitle>
+            </DialogHeader>
+            <div className="space-y-2">
+              {friendSearchResult ? (
+                <div className="space-y-1">
+                  <button
+                    type="button"
+                    className="text-base font-semibold hover:underline text-left"
+                    onClick={() => {
+                      navigate(`/users/${friendSearchResult.id}`);
+                      setFriendSearchOpen(false);
+                    }}
+                  >
+                    {friendSearchResult.display_name || 'ユーザー'}
+                  </button>
+                  <div className="text-sm text-muted-foreground">@{friendSearchResult.handle || 'id'}</div>
+                </div>
+              ) : (
+                <div className="text-sm text-muted-foreground">該当ユーザーが見つかりません</div>
+              )}
+            </div>
+            <DialogFooter className="gap-2">
+              <Button variant="outline" onClick={() => setFriendSearchOpen(false)}>
+                いいえ
+              </Button>
+              <Button onClick={handleSendFriendRequest} disabled={!friendSearchResult}>
+                申請
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+
         <Card className="bg-card border-border">
           <CardHeader className="flex flex-row items-center justify-between">
             <CardTitle className="text-base">フレンド</CardTitle>
@@ -692,7 +743,9 @@ export default function MyPage() {
                         placeholder="相手のIDで検索"
                         className="bg-input border-border"
                       />
-                      <Button onClick={handleSendFriendRequest}>申請</Button>
+                      <Button onClick={handleSearchFriend} disabled={friendSearchLoading}>
+                        検索
+                      </Button>
                     </>
                   )}
                 </div>
@@ -707,7 +760,13 @@ export default function MyPage() {
                       return (
                         <div key={r.id} className="flex items-center justify-between gap-2 border border-border/50 rounded-md p-2">
                           <div className="min-w-0">
-                            <div className="text-sm font-medium truncate">{p?.display_name || 'ユーザー'}</div>
+                            <button
+                              type="button"
+                              className="text-sm font-medium truncate text-left hover:underline"
+                              onClick={() => p?.id && navigate(`/users/${p.id}`)}
+                            >
+                              {p?.display_name || 'ユーザー'}
+                            </button>
                             <div className="text-xs text-muted-foreground">@{p?.handle || 'id'}</div>
                           </div>
                           <div className="flex gap-2">
@@ -730,7 +789,13 @@ export default function MyPage() {
                       return (
                         <div key={r.id} className="flex items-center justify-between gap-2 border border-border/50 rounded-md p-2">
                           <div className="min-w-0">
-                            <div className="text-sm font-medium truncate">{p?.display_name || 'ユーザー'}</div>
+                            <button
+                              type="button"
+                              className="text-sm font-medium truncate text-left hover:underline"
+                              onClick={() => p?.id && navigate(`/users/${p.id}`)}
+                            >
+                              {p?.display_name || 'ユーザー'}
+                            </button>
                             <div className="text-xs text-muted-foreground">@{p?.handle || 'id'}</div>
                           </div>
                           <Button size="sm" variant="outline" onClick={() => handleCancelFriend(r)}>取り消し</Button>
