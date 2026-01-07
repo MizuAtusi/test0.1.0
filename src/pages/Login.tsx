@@ -20,6 +20,7 @@ export default function LoginPage() {
   const [password, setPassword] = useState('');
   const [displayName, setDisplayName] = useState('');
   const [busy, setBusy] = useState(false);
+  const allowDevAuth = import.meta.env.VITE_ALLOW_TEST_LOGIN === 'true';
 
   const from = typeof location?.state?.from === 'string' ? location.state.from : '/';
 
@@ -32,6 +33,16 @@ export default function LoginPage() {
   const signIn = async () => {
     if (!email.trim() || !password) {
       toast({ title: 'メールアドレスとパスワードを入力してください', variant: 'destructive' });
+      return;
+    }
+    if (allowDevAuth && email.trim() === 'test' && password === 'test') {
+      try {
+        localStorage.setItem('trpg:devAuth', '1');
+      } catch {
+        // ignore
+      }
+      toast({ title: 'テストログインしました（開発用）' });
+      navigate(from, { replace: true });
       return;
     }
     setBusy(true);
@@ -134,6 +145,11 @@ export default function LoginPage() {
                 <Button className="w-full" variant="outline" onClick={signInWithX} disabled={busy}>
                   Xでログイン
                 </Button>
+                {allowDevAuth && (
+                  <div className="text-xs text-muted-foreground">
+                    テストログイン: メール/パスワードに「test」を入力
+                  </div>
+                )}
               </TabsContent>
 
               <TabsContent value="signup" className="mt-4 space-y-4">
@@ -161,4 +177,3 @@ export default function LoginPage() {
     </div>
   );
 }
-

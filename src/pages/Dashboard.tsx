@@ -16,7 +16,7 @@ type JoinedRoom = {
 };
 
 export default function DashboardPage() {
-  const { user } = useAuth();
+  const { user, isDevAuth } = useAuth();
   const navigate = useNavigate();
   const { toast } = useToast();
 
@@ -31,7 +31,13 @@ export default function DashboardPage() {
   const myId = user?.id ?? '';
 
   useEffect(() => {
-    if (!myId) return;
+    if (!myId || isDevAuth) {
+      if (isDevAuth) {
+        setRooms([]);
+        setLoading(false);
+      }
+      return;
+    }
     let canceled = false;
     (async () => {
       setLoading(true);
@@ -51,7 +57,7 @@ export default function DashboardPage() {
     return () => {
       canceled = true;
     };
-  }, [myId]);
+  }, [myId, isDevAuth]);
 
   const roomCards = useMemo(() => {
     return rooms
@@ -80,6 +86,10 @@ export default function DashboardPage() {
 
   const createRoom = async () => {
     if (!myId) return;
+    if (isDevAuth) {
+      toast({ title: 'テストログイン中は作成できません', variant: 'destructive' });
+      return;
+    }
     if (!roomName.trim()) {
       toast({ title: 'ルーム名を入力してください', variant: 'destructive' });
       return;
@@ -121,6 +131,10 @@ export default function DashboardPage() {
 
   const joinRoom = async () => {
     if (!myId) return;
+    if (isDevAuth) {
+      toast({ title: 'テストログイン中は参加できません', variant: 'destructive' });
+      return;
+    }
     if (!joinRoomId.trim()) {
       toast({ title: 'ルームIDを入力してください', variant: 'destructive' });
       return;
@@ -159,6 +173,10 @@ export default function DashboardPage() {
 
   const deleteRoom = async (roomId: string) => {
     if (!myId) return;
+    if (isDevAuth) {
+      toast({ title: 'テストログイン中は削除できません', variant: 'destructive' });
+      return;
+    }
     try {
       const { error } = await supabase.from('rooms').delete().eq('id', roomId);
       if (error) throw error;
@@ -180,6 +198,15 @@ export default function DashboardPage() {
   };
 
   const signOut = async () => {
+    if (isDevAuth) {
+      try {
+        localStorage.removeItem('trpg:devAuth');
+      } catch {
+        // ignore
+      }
+      navigate('/login', { replace: true });
+      return;
+    }
     await supabase.auth.signOut();
     navigate('/login', { replace: true });
   };
