@@ -14,7 +14,7 @@ import { useNavigate } from 'react-router-dom';
 import type { Profile, ProfilePost, ProfileReply, FriendRequest } from '@/types/trpg';
 
 export default function MyPage() {
-  const { user } = useAuth();
+  const { user, isDevAuth } = useAuth();
   const { toast } = useToast();
   const navigate = useNavigate();
   const [profile, setProfile] = useState<Profile | null>(null);
@@ -29,6 +29,7 @@ export default function MyPage() {
   const [editingProfile, setEditingProfile] = useState(false);
   const [idEditConfirmOpen, setIdEditConfirmOpen] = useState(false);
   const [idEditUnlocked, setIdEditUnlocked] = useState(false);
+  const [idEditVerifying, setIdEditVerifying] = useState(false);
 
   const [posts, setPosts] = useState<ProfilePost[]>([]);
   const [replies, setReplies] = useState<ProfileReply[]>([]);
@@ -365,6 +366,10 @@ export default function MyPage() {
       return;
     }
     if (!editingProfile) return;
+    if (!idEditUnlocked) {
+      toast({ title: 'IDの編集を開始してください', variant: 'destructive' });
+      return;
+    }
     const next = handleInput.trim().toLowerCase();
     if (!next) {
       toast({ title: 'IDを入力してください', variant: 'destructive' });
@@ -389,23 +394,13 @@ export default function MyPage() {
         return;
       }
     }
-    if (!handlePassword) {
-      toast({ title: 'パスワードを入力してください', variant: 'destructive' });
-      return;
-    }
     setUpdatingHandle(true);
     try {
-      const { error: authError } = await supabase.auth.signInWithPassword({
-        email: user.email,
-        password: handlePassword,
-      });
-      if (authError) throw authError;
       const { error } = await supabase.from('profiles').update({ handle: next } as any).eq('id', user.id);
       if (error) throw error;
       setHandle(next);
       setProfile((p) => (p ? { ...p, handle: next } : p));
       setHandleInput('');
-      setHandlePassword('');
       setIdEditUnlocked(false);
       toast({ title: 'IDを更新しました' });
     } catch (e: any) {
@@ -479,6 +474,39 @@ export default function MyPage() {
     }
     await supabase.auth.signOut();
     navigate('/login', { replace: true });
+  };
+
+  const handleConfirmIdEdit = async () => {
+    if (!handlePassword) {
+      toast({ title: 'パスワードを入力してください', variant: 'destructive' });
+      return;
+    }
+    if (!user?.id || !user.email) {
+      toast({ title: 'ID変更にはメールログインが必要です', variant: 'destructive' });
+      return;
+    }
+    setIdEditVerifying(true);
+    try {
+      if (isDevAuth) {
+        if (handlePassword !== 'test') {
+          toast({ title: 'パスワードが違います', variant: 'destructive' });
+          return;
+        }
+      } else {
+        const { error: authError } = await supabase.auth.signInWithPassword({
+          email: user.email,
+          password: handlePassword,
+        });
+        if (authError) throw authError;
+      }
+      setHandleInput(handle);
+      setIdEditUnlocked(true);
+      setIdEditConfirmOpen(false);
+    } catch (e: any) {
+      toast({ title: 'パスワード確認に失敗しました', description: String(e?.message || e), variant: 'destructive' });
+    } finally {
+      setIdEditVerifying(false);
+    }
   };
 
   const incomingRequests = friendRequests.filter((r) => r.status === 'pending' && r.receiver_user_id === user?.id);
@@ -618,15 +646,8 @@ export default function MyPage() {
                 いいえ
               </Button>
               <Button
-                onClick={() => {
-                  if (!handlePassword) {
-                    toast({ title: 'パスワードを入力してください', variant: 'destructive' });
-                    return;
-                  }
-                  setHandleInput(handle);
-                  setIdEditUnlocked(true);
-                  setIdEditConfirmOpen(false);
-                }}
+                onClick={handleConfirmIdEdit}
+                disabled={idEditVerifying}
               >
                 はい
               </Button>
