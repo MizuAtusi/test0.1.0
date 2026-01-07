@@ -86,7 +86,7 @@ export default function LoginPage() {
       toast({ title: '登録に失敗しました', description: error.message, variant: 'destructive' });
       return;
     }
-    toast({ title: '登録しました（ログインしてください）' });
+    toast({ title: '認証メールを送信しました。メールが届かない場合、もう一度登録ボタンを押してみてください。' });
   };
 
   const signInWithX = async () => {

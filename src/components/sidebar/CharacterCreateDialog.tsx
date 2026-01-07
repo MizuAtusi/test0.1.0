@@ -678,7 +678,7 @@ export function CharacterCreateDialog({
 
           <TabsContent value="import" className="space-y-4 mt-4">
             <div className="space-y-2">
-              <Label>いあきゃら JSON / チャットパレット</Label>
+              <Label>ココフォリアコマ / チャットパレット</Label>
               <Input
                 value={name}
                 onChange={(e) => setName(e.target.value)}
@@ -687,7 +687,7 @@ export function CharacterCreateDialog({
               <Textarea
                 value={importText}
                 onChange={(e) => setImportText(e.target.value)}
-                placeholder="キャラクターシートのJSON、またはチャットパレット出力を貼り付け..."
+                placeholder="ココフォリアコマ、またはチャットパレット出力を貼り付け..."
                 className="min-h-[200px] font-mono text-xs"
               />
             </div>
