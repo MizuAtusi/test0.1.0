@@ -26,7 +26,6 @@ export default function MyPage() {
   const [handlePassword, setHandlePassword] = useState('');
   const [updatingHandle, setUpdatingHandle] = useState(false);
   const [editingProfile, setEditingProfile] = useState(false);
-  const [editingId, setEditingId] = useState(false);
 
   const [posts, setPosts] = useState<ProfilePost[]>([]);
   const [replies, setReplies] = useState<ProfileReply[]>([]);
@@ -250,6 +249,8 @@ export default function MyPage() {
 
   const handleCancelProfileEdit = () => {
     resetProfileInputs(profile);
+    setHandleInput('');
+    setHandlePassword('');
     setEditingProfile(false);
   };
 
@@ -359,7 +360,7 @@ export default function MyPage() {
       toast({ title: 'ID変更にはメールログインが必要です', variant: 'destructive' });
       return;
     }
-    if (!editingId) return;
+    if (!editingProfile) return;
     const next = handleInput.trim().toLowerCase();
     if (!next) {
       toast({ title: 'IDを入力してください', variant: 'destructive' });
@@ -386,7 +387,6 @@ export default function MyPage() {
       setProfile((p) => (p ? { ...p, handle: next } : p));
       setHandleInput('');
       setHandlePassword('');
-      setEditingId(false);
       toast({ title: 'IDを更新しました' });
     } catch (e: any) {
       toast({ title: 'ID更新に失敗しました', description: String(e?.message || e), variant: 'destructive' });
@@ -492,7 +492,13 @@ export default function MyPage() {
                 </Button>
               </div>
             ) : (
-              <Button variant="outline" onClick={() => setEditingProfile(true)}>
+              <Button
+                variant="outline"
+                onClick={() => {
+                  setEditingProfile(true);
+                  setHandleInput(handle);
+                }}
+              >
                 プロフィールを編集
               </Button>
             )}
@@ -523,70 +529,40 @@ export default function MyPage() {
                   disabled={!editingProfile}
                 />
                 {editingProfile && (
-                  <Input
-                    type="file"
-                    accept="image/*"
-                    onChange={(e) => setAvatarFile(e.target.files?.[0] ?? null)}
-                  />
+                  <div className="space-y-2">
+                    <Input
+                      type="file"
+                      accept="image/*"
+                      onChange={(e) => setAvatarFile(e.target.files?.[0] ?? null)}
+                    />
+                    <div className="space-y-1">
+                      <div className="text-xs text-muted-foreground">ID（英数字と_のみ）</div>
+                      <Input
+                        value={handleInput}
+                        onChange={(e) => setHandleInput(e.target.value)}
+                        placeholder="新しいID"
+                        className="bg-input border-border"
+                      />
+                    </div>
+                    <div className="space-y-1">
+                      <div className="text-xs text-muted-foreground">ID変更用パスワード</div>
+                      <div className="flex gap-2">
+                        <Input
+                          type="password"
+                          value={handlePassword}
+                          onChange={(e) => setHandlePassword(e.target.value)}
+                          placeholder="パスワード"
+                          className="bg-input border-border"
+                        />
+                        <Button onClick={handleUpdateHandle} disabled={updatingHandle}>
+                          IDを更新
+                        </Button>
+                      </div>
+                    </div>
+                  </div>
                 )}
               </div>
             </div>
-          </CardContent>
-        </Card>
-
-        <Card className="bg-card border-border">
-          <CardHeader className="flex flex-row items-center justify-between">
-            <CardTitle className="text-base">ID</CardTitle>
-            {editingId ? (
-              <div className="flex items-center gap-2">
-                <Button onClick={handleUpdateHandle} disabled={updatingHandle}>
-                  保存
-                </Button>
-                <Button
-                  variant="outline"
-                  onClick={() => {
-                    setEditingId(false);
-                    setHandleInput('');
-                    setHandlePassword('');
-                  }}
-                  disabled={updatingHandle}
-                >
-                  キャンセル
-                </Button>
-              </div>
-            ) : (
-              <Button
-                variant="outline"
-                onClick={() => {
-                  setEditingId(true);
-                  setHandleInput(handle);
-                }}
-              >
-                IDを編集
-              </Button>
-            )}
-          </CardHeader>
-          <CardContent className="space-y-2">
-            <div className="text-xs text-muted-foreground">英数字と_のみ。変更時にパスワード確認が必要です。</div>
-            {editingId ? (
-              <div className="flex flex-col gap-2">
-                <Input
-                  value={handleInput}
-                  onChange={(e) => setHandleInput(e.target.value)}
-                  placeholder="新しいID"
-                  className="bg-input border-border"
-                />
-                <Input
-                  type="password"
-                  value={handlePassword}
-                  onChange={(e) => setHandlePassword(e.target.value)}
-                  placeholder="パスワード"
-                  className="bg-input border-border"
-                />
-              </div>
-            ) : (
-              <div className="text-sm font-medium">@{handle || 'id'}</div>
-            )}
           </CardContent>
         </Card>
 
