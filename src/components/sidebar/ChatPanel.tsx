@@ -3,12 +3,13 @@ import { Send } from 'lucide-react';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { ScrollArea } from '@/components/ui/scroll-area';
+import { parseDiceCommand, formatDiceResult } from '@/lib/dice';
 import type { Message, Participant } from '@/types/trpg';
 
 interface ChatPanelProps {
   messages: Message[];
   participant: Participant | null;
-  onSendMessage: (text: string) => void;
+  onSendMessage: (text: string, options?: { dicePayload?: any }) => void;
 }
 
 export function ChatPanel({ messages, participant, onSendMessage }: ChatPanelProps) {
@@ -22,7 +23,14 @@ export function ChatPanel({ messages, participant, onSendMessage }: ChatPanelPro
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (!input.trim() || !participant) return;
-    onSendMessage(input.trim());
+    const trimmed = input.trim();
+    const diceResult = parseDiceCommand(trimmed);
+    if (diceResult) {
+      const formattedText = formatDiceResult(diceResult);
+      onSendMessage(formattedText, { dicePayload: diceResult });
+    } else {
+      onSendMessage(trimmed);
+    }
     setInput('');
   };
 

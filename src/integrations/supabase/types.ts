@@ -360,6 +360,7 @@ export type Database = {
       }
       room_public_settings: {
         Row: {
+          allow_copy: boolean
           description: string
           is_public: boolean
           owner_user_id: string
@@ -373,6 +374,7 @@ export type Database = {
           updated_at: string
         }
         Insert: {
+          allow_copy?: boolean
           description?: string
           is_public?: boolean
           owner_user_id: string
@@ -386,6 +388,7 @@ export type Database = {
           updated_at?: string
         }
         Update: {
+          allow_copy?: boolean
           description?: string
           is_public?: boolean
           owner_user_id?: string
@@ -451,6 +454,7 @@ export type Database = {
           content: string
           created_at: string
           id: string
+          quoted_post_id: string | null
           room_id: string | null
           thumbnail_url: string | null
           user_id: string
@@ -459,6 +463,7 @@ export type Database = {
           content?: string
           created_at?: string
           id?: string
+          quoted_post_id?: string | null
           room_id?: string | null
           thumbnail_url?: string | null
           user_id: string
@@ -467,6 +472,7 @@ export type Database = {
           content?: string
           created_at?: string
           id?: string
+          quoted_post_id?: string | null
           room_id?: string | null
           thumbnail_url?: string | null
           user_id?: string
@@ -477,6 +483,35 @@ export type Database = {
             columns: ["room_id"]
             isOneToOne: false
             referencedRelation: "rooms"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      profile_post_likes: {
+        Row: {
+          created_at: string
+          id: string
+          post_id: string
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          post_id: string
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          post_id?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "profile_post_likes_post_id_fkey"
+            columns: ["post_id"]
+            isOneToOne: false
+            referencedRelation: "profile_posts"
             referencedColumns: ["id"]
           },
         ]

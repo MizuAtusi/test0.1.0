@@ -108,9 +108,13 @@ export function SidePanel({
             <ChatPanel
               messages={chatMessages}
               participant={participant}
-              onSendMessage={(text) => {
+              onSendMessage={(text, options) => {
                 if (participant) {
-                  onSendMessage('speech', text, participant.name, { channel: 'chat' });
+                  if (options?.dicePayload) {
+                    onSendMessage('dice', text, participant.name, { channel: 'chat', dicePayload: options.dicePayload });
+                  } else {
+                    onSendMessage('speech', text, participant.name, { channel: 'chat' });
+                  }
                 }
               }}
             />

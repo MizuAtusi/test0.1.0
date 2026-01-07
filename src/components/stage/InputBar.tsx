@@ -132,10 +132,13 @@ export function InputBar({
   }, [input, mode, onSendMessage, diceSkills]);
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
-    if (e.key === 'Enter' && e.ctrlKey) {
+    if (e.key !== 'Enter') return;
+    if (e.ctrlKey || e.metaKey) {
       e.preventDefault();
       handleSubmit(e);
+      return;
     }
+    e.preventDefault();
   };
 
   return (

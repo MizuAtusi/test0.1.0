@@ -178,6 +178,7 @@ export interface RoomPublicSettings {
   room_id: string;
   owner_user_id: string;
   is_public: boolean;
+  allow_copy?: boolean;
   public_scope?: 'overview' | 'read_only';
   title: string;
   description: string;
@@ -212,6 +213,7 @@ export interface ProfilePost {
   user_id: string;
   content: string;
   thumbnail_url?: string | null;
+  quoted_post_id?: string | null;
   room_id?: string | null;
   created_at: string;
 }

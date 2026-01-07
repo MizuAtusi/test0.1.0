@@ -25,6 +25,8 @@ export default function MyPage() {
   const [handleInput, setHandleInput] = useState('');
   const [handlePassword, setHandlePassword] = useState('');
   const [updatingHandle, setUpdatingHandle] = useState(false);
+  const [editingProfile, setEditingProfile] = useState(false);
+  const [editingId, setEditingId] = useState(false);
 
   const [posts, setPosts] = useState<ProfilePost[]>([]);
   const [replies, setReplies] = useState<ProfileReply[]>([]);
@@ -33,9 +35,22 @@ export default function MyPage() {
   const [newThumbnail, setNewThumbnail] = useState<File | null>(null);
   const [posting, setPosting] = useState(false);
   const [replyDrafts, setReplyDrafts] = useState<Record<string, string>>({});
+  const [likesByPost, setLikesByPost] = useState<Record<string, number>>({});
+  const [likedByMe, setLikedByMe] = useState<Record<string, boolean>>({});
+  const [quoteDraft, setQuoteDraft] = useState('');
+  const [quoteTargetId, setQuoteTargetId] = useState<string | null>(null);
+  const [quotedPostsById, setQuotedPostsById] = useState<Record<string, ProfilePost>>({});
   const [friendHandle, setFriendHandle] = useState('');
   const [friendRequests, setFriendRequests] = useState<FriendRequest[]>([]);
   const [friendsById, setFriendsById] = useState<Record<string, Profile>>({});
+  const [showFriends, setShowFriends] = useState(false);
+  const [showFriendSearch, setShowFriendSearch] = useState(false);
+
+  const resetProfileInputs = (source: Profile | null) => {
+    setDisplayName(source?.display_name || '');
+    setBio(source?.bio || '');
+    setAvatarFile(null);
+  };
 
   useEffect(() => {
     if (!user?.id) return;
@@ -65,11 +80,15 @@ export default function MyPage() {
       .eq('user_id', user.id)
       .order('created_at', { ascending: false });
     if (postError) return;
-    setPosts((postData as any) || []);
+    const postRows = (postData as any[]) || [];
+    setPosts(postRows);
 
-    const postIds = (postData as any[] | null)?.map((p) => p.id) ?? [];
+    const postIds = postRows.map((p) => p.id);
     if (postIds.length === 0) {
       setReplies([]);
+      setLikesByPost({});
+      setLikedByMe({});
+      setQuotedPostsById({});
       return;
     }
     const { data: replyData } = await supabase
@@ -79,11 +98,44 @@ export default function MyPage() {
       .order('created_at', { ascending: true });
     setReplies((replyData as any) || []);
 
+    const quotedIds = Array.from(
+      new Set(postRows.map((p) => p.quoted_post_id).filter(Boolean))
+    ) as string[];
+    let quotedMap: Record<string, ProfilePost> = {};
+    if (quotedIds.length > 0) {
+      const { data: quotedRows } = await supabase
+        .from('profile_posts')
+        .select('*')
+        .in('id', quotedIds);
+      (quotedRows as any[] | null)?.forEach((row) => {
+        if (row?.id) quotedMap[row.id] = row as ProfilePost;
+      });
+      setQuotedPostsById(quotedMap);
+    } else {
+      setQuotedPostsById({});
+    }
+
+    const { data: likeRows } = await supabase
+      .from('profile_post_likes')
+      .select('post_id,user_id')
+      .in('post_id', postIds);
+    const likeCounts: Record<string, number> = {};
+    const likedMap: Record<string, boolean> = {};
+    (likeRows as any[] | null)?.forEach((row) => {
+      if (!row?.post_id) return;
+      likeCounts[row.post_id] = (likeCounts[row.post_id] || 0) + 1;
+      if (row.user_id === user.id) likedMap[row.post_id] = true;
+    });
+    setLikesByPost(likeCounts);
+    setLikedByMe(likedMap);
+
     const profileIds = new Set<string>();
     profileIds.add(user.id);
     (replyData as any[] | null)?.forEach((r) => {
       if (r?.user_id) profileIds.add(r.user_id);
     });
+    const quotedPostUsers = Object.values(quotedMap).map((p) => p.user_id);
+    quotedPostUsers.forEach((id) => profileIds.add(id));
     const ids = Array.from(profileIds);
     if (ids.length > 0) {
       const { data: profileRows } = await supabase
@@ -94,7 +146,7 @@ export default function MyPage() {
       (profileRows as any[] | null)?.forEach((p) => {
         if (p?.id) map[p.id] = p as Profile;
       });
-      setProfilesById(map);
+      setProfilesById((prev) => ({ ...prev, ...map }));
     }
   };
 
@@ -163,6 +215,7 @@ export default function MyPage() {
 
   const handleSaveProfile = async () => {
     if (!user?.id) return;
+    if (!editingProfile) return;
     if (!displayName.trim()) {
       toast({ title: 'ユーザー名を入力してください', variant: 'destructive' });
       return;
@@ -187,11 +240,17 @@ export default function MyPage() {
       toast({ title: 'プロフィールを更新しました' });
       setAvatarFile(null);
       setProfile((p) => (p ? { ...p, display_name: displayName.trim(), bio: bio.trim(), avatar_url: avatarUrl } : p));
+      setEditingProfile(false);
     } catch (e: any) {
       toast({ title: '更新に失敗しました', description: String(e?.message || e), variant: 'destructive' });
     } finally {
       setSaving(false);
     }
+  };
+
+  const handleCancelProfileEdit = () => {
+    resetProfileInputs(profile);
+    setEditingProfile(false);
   };
 
   const handleCreatePost = async () => {
@@ -240,11 +299,67 @@ export default function MyPage() {
     }
   };
 
+  const handleToggleLike = async (postId: string) => {
+    if (!user?.id) return;
+    const already = !!likedByMe[postId];
+    if (already) {
+      const { error } = await supabase
+        .from('profile_post_likes')
+        .delete()
+        .eq('post_id', postId)
+        .eq('user_id', user.id);
+      if (error) {
+        toast({ title: 'いいねの解除に失敗しました', description: error.message, variant: 'destructive' });
+        return;
+      }
+      setLikedByMe((prev) => ({ ...prev, [postId]: false }));
+      setLikesByPost((prev) => ({ ...prev, [postId]: Math.max(0, (prev[postId] || 1) - 1) }));
+      return;
+    }
+    const { error } = await supabase.from('profile_post_likes').insert({
+      post_id: postId,
+      user_id: user.id,
+    } as any);
+    if (error) {
+      toast({ title: 'いいねに失敗しました', description: error.message, variant: 'destructive' });
+      return;
+    }
+    setLikedByMe((prev) => ({ ...prev, [postId]: true }));
+    setLikesByPost((prev) => ({ ...prev, [postId]: (prev[postId] || 0) + 1 }));
+  };
+
+  const handleOpenQuote = (postId: string) => {
+    setQuoteTargetId((prev) => (prev === postId ? null : postId));
+    setQuoteDraft('');
+  };
+
+  const handleSubmitQuote = async () => {
+    if (!user?.id || !quoteTargetId) return;
+    setPosting(true);
+    try {
+      const { error } = await supabase.from('profile_posts').insert({
+        user_id: user.id,
+        content: quoteDraft.trim(),
+        quoted_post_id: quoteTargetId,
+      } as any);
+      if (error) throw error;
+      setQuoteDraft('');
+      setQuoteTargetId(null);
+      await loadPosts();
+      toast({ title: '引用投稿しました' });
+    } catch (e: any) {
+      toast({ title: '引用投稿に失敗しました', description: String(e?.message || e), variant: 'destructive' });
+    } finally {
+      setPosting(false);
+    }
+  };
+
   const handleUpdateHandle = async () => {
     if (!user?.id || !user.email) {
       toast({ title: 'ID変更にはメールログインが必要です', variant: 'destructive' });
       return;
     }
+    if (!editingId) return;
     const next = handleInput.trim().toLowerCase();
     if (!next) {
       toast({ title: 'IDを入力してください', variant: 'destructive' });
@@ -271,6 +386,7 @@ export default function MyPage() {
       setProfile((p) => (p ? { ...p, handle: next } : p));
       setHandleInput('');
       setHandlePassword('');
+      setEditingId(false);
       toast({ title: 'IDを更新しました' });
     } catch (e: any) {
       toast({ title: 'ID更新に失敗しました', description: String(e?.message || e), variant: 'destructive' });
@@ -345,6 +461,10 @@ export default function MyPage() {
     navigate('/login', { replace: true });
   };
 
+  const incomingRequests = friendRequests.filter((r) => r.status === 'pending' && r.receiver_user_id === user?.id);
+  const outgoingRequests = friendRequests.filter((r) => r.status === 'pending' && r.requester_user_id === user?.id);
+  const friendsList = Object.values(friendsById);
+
   return (
     <div className="min-h-screen bg-background p-4">
       <div className="mx-auto w-full max-w-5xl space-y-4">
@@ -360,7 +480,24 @@ export default function MyPage() {
         </div>
 
         <Card className="bg-card border-border">
-          <CardContent className="pt-6 space-y-4">
+          <CardHeader className="flex flex-row items-center justify-between">
+            <CardTitle className="text-base">プロフィール</CardTitle>
+            {editingProfile ? (
+              <div className="flex items-center gap-2">
+                <Button onClick={handleSaveProfile} disabled={saving}>
+                  保存
+                </Button>
+                <Button variant="outline" onClick={handleCancelProfileEdit} disabled={saving}>
+                  キャンセル
+                </Button>
+              </div>
+            ) : (
+              <Button variant="outline" onClick={() => setEditingProfile(true)}>
+                プロフィールを編集
+              </Button>
+            )}
+          </CardHeader>
+          <CardContent className="space-y-4">
             <div className="flex items-start gap-4">
               <div className="h-20 w-20 rounded-full bg-secondary/60 overflow-hidden flex items-center justify-center shrink-0">
                 {profile?.avatar_url ? (
@@ -375,147 +512,198 @@ export default function MyPage() {
                   onChange={(e) => setDisplayName(e.target.value)}
                   placeholder="ユーザー名"
                   className="bg-input border-border"
+                  disabled={!editingProfile}
                 />
-                <div className="text-sm text-muted-foreground">
-                  @{handle || 'id'}
-                </div>
+                <div className="text-sm text-muted-foreground">@{handle || 'id'}</div>
                 <Textarea
                   value={bio}
                   onChange={(e) => setBio(e.target.value)}
                   placeholder="一言メッセージ"
                   className="bg-input border-border min-h-[90px]"
+                  disabled={!editingProfile}
                 />
-                <div className="flex items-center gap-2">
+                {editingProfile && (
                   <Input
                     type="file"
                     accept="image/*"
                     onChange={(e) => setAvatarFile(e.target.files?.[0] ?? null)}
                   />
-                  <Button onClick={handleSaveProfile} disabled={saving}>
-                    保存
-                  </Button>
-                </div>
+                )}
               </div>
             </div>
           </CardContent>
         </Card>
 
         <Card className="bg-card border-border">
-          <CardHeader>
-            <CardTitle className="text-base">IDの変更</CardTitle>
+          <CardHeader className="flex flex-row items-center justify-between">
+            <CardTitle className="text-base">ID</CardTitle>
+            {editingId ? (
+              <div className="flex items-center gap-2">
+                <Button onClick={handleUpdateHandle} disabled={updatingHandle}>
+                  保存
+                </Button>
+                <Button
+                  variant="outline"
+                  onClick={() => {
+                    setEditingId(false);
+                    setHandleInput('');
+                    setHandlePassword('');
+                  }}
+                  disabled={updatingHandle}
+                >
+                  キャンセル
+                </Button>
+              </div>
+            ) : (
+              <Button
+                variant="outline"
+                onClick={() => {
+                  setEditingId(true);
+                  setHandleInput(handle);
+                }}
+              >
+                IDを編集
+              </Button>
+            )}
           </CardHeader>
           <CardContent className="space-y-2">
             <div className="text-xs text-muted-foreground">英数字と_のみ。変更時にパスワード確認が必要です。</div>
-            <div className="flex gap-2">
-              <Input
-                value={handleInput}
-                onChange={(e) => setHandleInput(e.target.value)}
-                placeholder="新しいID"
-                className="bg-input border-border"
-              />
-              <Input
-                type="password"
-                value={handlePassword}
-                onChange={(e) => setHandlePassword(e.target.value)}
-                placeholder="パスワード"
-                className="bg-input border-border"
-              />
-              <Button onClick={handleUpdateHandle} disabled={updatingHandle}>
-                変更
-              </Button>
-            </div>
+            {editingId ? (
+              <div className="flex flex-col gap-2">
+                <Input
+                  value={handleInput}
+                  onChange={(e) => setHandleInput(e.target.value)}
+                  placeholder="新しいID"
+                  className="bg-input border-border"
+                />
+                <Input
+                  type="password"
+                  value={handlePassword}
+                  onChange={(e) => setHandlePassword(e.target.value)}
+                  placeholder="パスワード"
+                  className="bg-input border-border"
+                />
+              </div>
+            ) : (
+              <div className="text-sm font-medium">@{handle || 'id'}</div>
+            )}
           </CardContent>
         </Card>
 
         <Card className="bg-card border-border">
-          <CardHeader>
+          <CardHeader className="flex flex-row items-center justify-between">
             <CardTitle className="text-base">フレンド</CardTitle>
+            <Button
+              variant="outline"
+              onClick={() =>
+                setShowFriends((prev) => {
+                  if (prev) setShowFriendSearch(false);
+                  return !prev;
+                })
+              }
+            >
+              {showFriends ? '閉じる' : 'フレンド一覧を開く'}
+            </Button>
           </CardHeader>
           <CardContent className="space-y-3">
-            <div className="flex items-center gap-2">
-              <Input
-                value={friendHandle}
-                onChange={(e) => setFriendHandle(e.target.value)}
-                placeholder="相手のIDで検索"
-                className="bg-input border-border"
-              />
-              <Button onClick={handleSendFriendRequest}>申請</Button>
-            </div>
-
-            <div className="space-y-2">
-              <div className="text-xs text-muted-foreground">承認待ち（あなた宛）</div>
-              {friendRequests.filter((r) => r.status === 'pending' && r.receiver_user_id === user?.id).length === 0 ? (
-                <div className="text-xs text-muted-foreground">ありません</div>
-              ) : (
-                friendRequests
-                  .filter((r) => r.status === 'pending' && r.receiver_user_id === user?.id)
-                  .map((r) => {
-                    const p = profilesById[r.requester_user_id];
-                    return (
-                      <div key={r.id} className="flex items-center justify-between gap-2 border border-border/50 rounded-md p-2">
-                        <div className="min-w-0">
-                          <div className="text-sm font-medium truncate">{p?.display_name || 'ユーザー'}</div>
-                          <div className="text-xs text-muted-foreground">@{p?.handle || 'id'}</div>
-                        </div>
-                        <div className="flex gap-2">
-                          <Button size="sm" onClick={() => handleRespondFriend(r, 'accepted')}>承認</Button>
-                          <Button size="sm" variant="outline" onClick={() => handleRespondFriend(r, 'rejected')}>拒否</Button>
-                        </div>
-                      </div>
-                    );
-                  })
-              )}
-            </div>
-
-            <div className="space-y-2">
-              <div className="text-xs text-muted-foreground">申請中</div>
-              {friendRequests.filter((r) => r.status === 'pending' && r.requester_user_id === user?.id).length === 0 ? (
-                <div className="text-xs text-muted-foreground">ありません</div>
-              ) : (
-                friendRequests
-                  .filter((r) => r.status === 'pending' && r.requester_user_id === user?.id)
-                  .map((r) => {
-                    const p = profilesById[r.receiver_user_id];
-                    return (
-                      <div key={r.id} className="flex items-center justify-between gap-2 border border-border/50 rounded-md p-2">
-                        <div className="min-w-0">
-                          <div className="text-sm font-medium truncate">{p?.display_name || 'ユーザー'}</div>
-                          <div className="text-xs text-muted-foreground">@{p?.handle || 'id'}</div>
-                        </div>
-                        <Button size="sm" variant="outline" onClick={() => handleCancelFriend(r)}>取り消し</Button>
-                      </div>
-                    );
-                  })
-              )}
-            </div>
-
-            <div className="space-y-2">
-              <div className="text-xs text-muted-foreground">フレンド一覧</div>
-              {Object.keys(friendsById).length === 0 ? (
-                <div className="text-xs text-muted-foreground">まだフレンドがいません</div>
-              ) : (
-                Object.values(friendsById).map((p) => (
-                  <button
-                    key={p.id}
-                    type="button"
-                    className="w-full flex items-center gap-3 border border-border/50 rounded-md p-2 text-left hover:bg-secondary/30"
-                    onClick={() => navigate(`/users/${p.id}`)}
+            {!showFriends ? (
+              <div className="text-xs text-muted-foreground">
+                フレンド {friendsList.length} / 承認待ち {incomingRequests.length}
+              </div>
+            ) : (
+              <>
+                <div className="flex items-center gap-2">
+                  <Button
+                    variant="secondary"
+                    onClick={() => setShowFriendSearch((prev) => !prev)}
                   >
-                    <div className="h-10 w-10 rounded-full bg-secondary/60 overflow-hidden flex items-center justify-center shrink-0">
-                      {p.avatar_url ? (
-                        <img src={p.avatar_url} alt="" className="h-full w-full object-cover" />
-                      ) : (
-                        <ImagePlus className="w-4 h-4 text-muted-foreground" />
-                      )}
-                    </div>
-                    <div className="min-w-0">
-                      <div className="text-sm font-medium truncate">{p.display_name}</div>
-                      <div className="text-xs text-muted-foreground">@{p.handle}</div>
-                    </div>
-                  </button>
-                ))
-              )}
-            </div>
+                    フレンドを探す
+                  </Button>
+                  {showFriendSearch && (
+                    <>
+                      <Input
+                        value={friendHandle}
+                        onChange={(e) => setFriendHandle(e.target.value)}
+                        placeholder="相手のIDで検索"
+                        className="bg-input border-border"
+                      />
+                      <Button onClick={handleSendFriendRequest}>申請</Button>
+                    </>
+                  )}
+                </div>
+
+                <div className="space-y-2">
+                  <div className="text-xs text-muted-foreground">承認待ち（あなた宛）</div>
+                  {incomingRequests.length === 0 ? (
+                    <div className="text-xs text-muted-foreground">ありません</div>
+                  ) : (
+                    incomingRequests.map((r) => {
+                      const p = profilesById[r.requester_user_id];
+                      return (
+                        <div key={r.id} className="flex items-center justify-between gap-2 border border-border/50 rounded-md p-2">
+                          <div className="min-w-0">
+                            <div className="text-sm font-medium truncate">{p?.display_name || 'ユーザー'}</div>
+                            <div className="text-xs text-muted-foreground">@{p?.handle || 'id'}</div>
+                          </div>
+                          <div className="flex gap-2">
+                            <Button size="sm" onClick={() => handleRespondFriend(r, 'accepted')}>承認</Button>
+                            <Button size="sm" variant="outline" onClick={() => handleRespondFriend(r, 'rejected')}>拒否</Button>
+                          </div>
+                        </div>
+                      );
+                    })
+                  )}
+                </div>
+
+                <div className="space-y-2">
+                  <div className="text-xs text-muted-foreground">申請中</div>
+                  {outgoingRequests.length === 0 ? (
+                    <div className="text-xs text-muted-foreground">ありません</div>
+                  ) : (
+                    outgoingRequests.map((r) => {
+                      const p = profilesById[r.receiver_user_id];
+                      return (
+                        <div key={r.id} className="flex items-center justify-between gap-2 border border-border/50 rounded-md p-2">
+                          <div className="min-w-0">
+                            <div className="text-sm font-medium truncate">{p?.display_name || 'ユーザー'}</div>
+                            <div className="text-xs text-muted-foreground">@{p?.handle || 'id'}</div>
+                          </div>
+                          <Button size="sm" variant="outline" onClick={() => handleCancelFriend(r)}>取り消し</Button>
+                        </div>
+                      );
+                    })
+                  )}
+                </div>
+
+                <div className="space-y-2">
+                  <div className="text-xs text-muted-foreground">フレンド一覧</div>
+                  {friendsList.length === 0 ? (
+                    <div className="text-xs text-muted-foreground">まだフレンドがいません</div>
+                  ) : (
+                    friendsList.map((p) => (
+                      <button
+                        key={p.id}
+                        type="button"
+                        className="w-full flex items-center gap-3 border border-border/50 rounded-md p-2 text-left hover:bg-secondary/30"
+                        onClick={() => navigate(`/users/${p.id}`)}
+                      >
+                        <div className="h-10 w-10 rounded-full bg-secondary/60 overflow-hidden flex items-center justify-center shrink-0">
+                          {p.avatar_url ? (
+                            <img src={p.avatar_url} alt="" className="h-full w-full object-cover" />
+                          ) : (
+                            <ImagePlus className="w-4 h-4 text-muted-foreground" />
+                          )}
+                        </div>
+                        <div className="min-w-0">
+                          <div className="text-sm font-medium truncate">{p.display_name}</div>
+                          <div className="text-xs text-muted-foreground">@{p.handle}</div>
+                        </div>
+                      </button>
+                    ))
+                  )}
+                </div>
+              </>
+            )}
           </CardContent>
         </Card>
 
@@ -547,6 +735,8 @@ export default function MyPage() {
             ) : (
               posts.map((p) => {
                 const author = profilesById[p.user_id] || profile;
+                const quoted = p.quoted_post_id ? quotedPostsById[p.quoted_post_id] : null;
+                const quotedAuthor = quoted ? profilesById[quoted.user_id] : null;
                 return (
                   <div key={p.id} className="rounded-md border border-border/50 p-4 space-y-3">
                     <div className="flex items-start gap-3">
@@ -569,33 +759,87 @@ export default function MyPage() {
                         {p.thumbnail_url && (
                           <img src={p.thumbnail_url} alt="" className="w-full max-h-64 object-cover rounded mt-3" />
                         )}
+                        {quoted && (
+                          <div className="mt-3 rounded-md border border-border/60 bg-secondary/20 p-3 text-sm">
+                            <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                              <span className="font-semibold text-foreground/80">{quotedAuthor?.display_name || 'ユーザー'}</span>
+                              <span>@{quotedAuthor?.handle || 'id'}</span>
+                              <span>{new Date(quoted.created_at).toLocaleDateString()}</span>
+                            </div>
+                            <div className="mt-2 whitespace-pre-wrap">{quoted.content}</div>
+                            {quoted.thumbnail_url && (
+                              <img src={quoted.thumbnail_url} alt="" className="w-full max-h-56 object-cover rounded mt-2" />
+                            )}
+                          </div>
+                        )}
+                        <div className="mt-3 flex items-center gap-2 text-xs">
+                          <Button
+                            type="button"
+                            size="sm"
+                            variant="ghost"
+                            className={likedByMe[p.id] ? 'text-primary' : 'text-muted-foreground'}
+                            onClick={() => handleToggleLike(p.id)}
+                          >
+                            いいね {likesByPost[p.id] || 0}
+                          </Button>
+                          <Button
+                            type="button"
+                            size="sm"
+                            variant="ghost"
+                            className="text-muted-foreground"
+                            onClick={() => handleOpenQuote(p.id)}
+                          >
+                            引用投稿
+                          </Button>
+                        </div>
                       </div>
                     </div>
                     <div className="space-y-2 pt-2">
-                      {(repliesByPost.get(p.id) || []).map((r) => {
-                        const replyAuthor = profilesById[r.user_id];
-                        return (
-                          <div key={r.id} className="flex items-start gap-3 border-t border-border/40 pt-3">
-                            <div className="h-8 w-8 rounded-full bg-secondary/60 overflow-hidden flex items-center justify-center shrink-0">
-                              {replyAuthor?.avatar_url ? (
-                                <img src={replyAuthor.avatar_url} alt="" className="h-full w-full object-cover" />
-                              ) : (
-                                <ImagePlus className="w-3 h-3 text-muted-foreground" />
-                              )}
-                            </div>
-                            <div className="min-w-0 flex-1">
-                              <div className="flex items-center gap-2 text-xs">
-                                <span className="font-semibold truncate">{replyAuthor?.display_name || 'ユーザー'}</span>
-                                <span className="text-muted-foreground">@{replyAuthor?.handle || 'id'}</span>
-                                <span className="text-xs text-muted-foreground">
-                                  {new Date(r.created_at).toLocaleString()}
-                                </span>
+                      <div className="text-xs text-muted-foreground">返信</div>
+                      <div className="space-y-3 border-l border-border/40 pl-4">
+                        {(repliesByPost.get(p.id) || []).map((r) => {
+                          const replyAuthor = profilesById[r.user_id];
+                          return (
+                            <div key={r.id} className="flex items-start gap-3">
+                              <div className="h-8 w-8 rounded-full bg-secondary/60 overflow-hidden flex items-center justify-center shrink-0">
+                                {replyAuthor?.avatar_url ? (
+                                  <img src={replyAuthor.avatar_url} alt="" className="h-full w-full object-cover" />
+                                ) : (
+                                  <ImagePlus className="w-3 h-3 text-muted-foreground" />
+                                )}
                               </div>
-                              <div className="text-sm mt-1 whitespace-pre-wrap">{r.content}</div>
+                              <div className="min-w-0 flex-1">
+                                <div className="flex items-center gap-2 text-xs">
+                                  <span className="font-semibold truncate">{replyAuthor?.display_name || 'ユーザー'}</span>
+                                  <span className="text-muted-foreground">@{replyAuthor?.handle || 'id'}</span>
+                                  <span className="text-xs text-muted-foreground">
+                                    {new Date(r.created_at).toLocaleString()}
+                                  </span>
+                                </div>
+                                <div className="text-sm mt-1 whitespace-pre-wrap">{r.content}</div>
+                              </div>
                             </div>
+                          );
+                        })}
+                      </div>
+                      {quoteTargetId === p.id && (
+                        <div className="rounded-md border border-border/60 bg-secondary/20 p-3 space-y-2">
+                          <Textarea
+                            value={quoteDraft}
+                            onChange={(e) => setQuoteDraft(e.target.value)}
+                            placeholder="引用投稿にコメント（任意）"
+                            className="bg-input border-border min-h-[80px]"
+                          />
+                          <div className="flex gap-2">
+                            <Button onClick={handleSubmitQuote} disabled={posting}>
+                              引用して投稿
+                            </Button>
+                            <Button variant="outline" onClick={() => handleOpenQuote(p.id)} disabled={posting}>
+                              キャンセル
+                            </Button>
                           </div>
-                        );
-                      })}
+                        </div>
+                      )}
                       <div className="flex items-center gap-2">
                         <Input
                           value={replyDrafts[p.id] || ''}

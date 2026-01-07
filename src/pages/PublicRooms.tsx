@@ -63,6 +63,10 @@ export default function PublicRoomsPage() {
 
   const copyToMyRoom = async (r: RoomPublicSettings) => {
     if (!user?.id) return;
+    if (!r.allow_copy) {
+      toast({ title: 'このルームは保存できません', description: 'GMがテンプレート頒布を許可していません。', variant: 'destructive' });
+      return;
+    }
     setCopyingId(r.room_id);
     try {
       const snapshot = r.snapshot || {};
@@ -185,6 +189,7 @@ export default function PublicRoomsPage() {
                       <span>
                         {r.public_scope === 'read_only' ? '閲覧専用' : '概要のみ'}
                       </span>
+                      <span>{r.allow_copy ? '頒布OK' : '頒布不可'}</span>
                     </div>
                     {r.description && (
                       <div className="text-xs text-muted-foreground line-clamp-2">{r.description}</div>
@@ -203,7 +208,7 @@ export default function PublicRoomsPage() {
                     <Button variant="outline" onClick={() => navigate(`/room/${r.room_id}`)}>
                       詳細
                     </Button>
-                    <Button onClick={() => copyToMyRoom(r)} disabled={copyingId === r.room_id}>
+                    <Button onClick={() => copyToMyRoom(r)} disabled={!r.allow_copy || copyingId === r.room_id}>
                       <Copy className="w-4 h-4 mr-2" />
                       保存
                     </Button>

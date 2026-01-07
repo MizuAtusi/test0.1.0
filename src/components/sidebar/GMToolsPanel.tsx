@@ -93,6 +93,7 @@ export function GMToolsPanel({
   const [publicTags, setPublicTags] = useState('');
   const [publicScope, setPublicScope] = useState<'overview' | 'read_only'>('overview');
   const [isPublic, setIsPublic] = useState(false);
+  const [publicAllowCopy, setPublicAllowCopy] = useState(false);
   const [publicThumbnailFile, setPublicThumbnailFile] = useState<File | null>(null);
   const [publicThumbnailUrl, setPublicThumbnailUrl] = useState<string | null>(null);
   const [savingPublic, setSavingPublic] = useState(false);
@@ -142,6 +143,7 @@ export function GMToolsPanel({
       setPublicTags((next?.tags || []).join(', '));
       setPublicScope((next?.public_scope || 'overview') as any);
       setIsPublic(!!next?.is_public);
+      setPublicAllowCopy(!!next?.allow_copy);
       setPublicThumbnailUrl(next?.thumbnail_url || null);
     })();
     return () => {
@@ -1417,6 +1419,7 @@ export function GMToolsPanel({
         room_id: roomId,
         owner_user_id: room?.owner_user_id || user.id,
         is_public: isPublic,
+        allow_copy: publicAllowCopy,
         public_scope: publicScope,
         title: publicTitle.trim(),
         description: publicDescription.trim(),
@@ -1795,7 +1798,7 @@ export function GMToolsPanel({
             <CollapsibleTrigger asChild>
               <Button variant="ghost" className="w-full justify-start">
                 <Settings className="w-4 h-4 mr-2" />
-                公開設定
+                公開/頒布設定
               </Button>
             </CollapsibleTrigger>
             <CollapsibleContent className="pt-2 space-y-3">
@@ -1822,6 +1825,17 @@ export function GMToolsPanel({
                     <SelectItem value="read_only">閲覧専用（中身を閲覧）</SelectItem>
                   </SelectContent>
                 </Select>
+              </div>
+              <div className="flex items-center justify-between">
+                <div className="space-y-1">
+                  <Label>テンプレートとして頒布</Label>
+                  <div className="text-xs text-muted-foreground">他ユーザーが自分のルームとして保存できます</div>
+                </div>
+                <Switch
+                  checked={publicAllowCopy}
+                  onCheckedChange={setPublicAllowCopy}
+                  disabled={!canManagePublic}
+                />
               </div>
               <div className="space-y-1">
                 <Label className="text-xs text-muted-foreground">タイトル</Label>

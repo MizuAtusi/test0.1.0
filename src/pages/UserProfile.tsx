@@ -7,6 +7,7 @@ import { useToast } from '@/hooks/use-toast';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
+import { Textarea } from '@/components/ui/textarea';
 import { MainNav } from '@/components/navigation/MainNav';
 import type { Profile, ProfilePost, ProfileReply, FriendRequest } from '@/types/trpg';
 
@@ -19,6 +20,11 @@ export default function UserProfilePage() {
   const [posts, setPosts] = useState<ProfilePost[]>([]);
   const [replies, setReplies] = useState<ProfileReply[]>([]);
   const [profilesById, setProfilesById] = useState<Record<string, Profile>>({});
+  const [likesByPost, setLikesByPost] = useState<Record<string, number>>({});
+  const [likedByMe, setLikedByMe] = useState<Record<string, boolean>>({});
+  const [quoteDraft, setQuoteDraft] = useState('');
+  const [quoteTargetId, setQuoteTargetId] = useState<string | null>(null);
+  const [quotedPostsById, setQuotedPostsById] = useState<Record<string, ProfilePost>>({});
   const [friendStatus, setFriendStatus] = useState<FriendRequest | null>(null);
   const [friendsById, setFriendsById] = useState<Record<string, Profile>>({});
   const [replyDrafts, setReplyDrafts] = useState<Record<string, string>>({});
@@ -48,11 +54,15 @@ export default function UserProfilePage() {
       .eq('user_id', userId)
       .order('created_at', { ascending: false });
     if (postError) return;
-    setPosts((postData as any) || []);
+    const postRows = (postData as any[]) || [];
+    setPosts(postRows);
 
-    const postIds = (postData as any[] | null)?.map((p) => p.id) ?? [];
+    const postIds = postRows.map((p) => p.id);
     if (postIds.length === 0) {
       setReplies([]);
+      setLikesByPost({});
+      setLikedByMe({});
+      setQuotedPostsById({});
       return;
     }
     const { data: replyData } = await supabase
@@ -62,11 +72,44 @@ export default function UserProfilePage() {
       .order('created_at', { ascending: true });
     setReplies((replyData as any) || []);
 
+    const quotedIds = Array.from(
+      new Set(postRows.map((p) => p.quoted_post_id).filter(Boolean))
+    ) as string[];
+    let quotedMap: Record<string, ProfilePost> = {};
+    if (quotedIds.length > 0) {
+      const { data: quotedRows } = await supabase
+        .from('profile_posts')
+        .select('*')
+        .in('id', quotedIds);
+      (quotedRows as any[] | null)?.forEach((row) => {
+        if (row?.id) quotedMap[row.id] = row as ProfilePost;
+      });
+      setQuotedPostsById(quotedMap);
+    } else {
+      setQuotedPostsById({});
+    }
+
+    const { data: likeRows } = await supabase
+      .from('profile_post_likes')
+      .select('post_id,user_id')
+      .in('post_id', postIds);
+    const likeCounts: Record<string, number> = {};
+    const likedMap: Record<string, boolean> = {};
+    (likeRows as any[] | null)?.forEach((row) => {
+      if (!row?.post_id) return;
+      likeCounts[row.post_id] = (likeCounts[row.post_id] || 0) + 1;
+      if (row.user_id === user?.id) likedMap[row.post_id] = true;
+    });
+    setLikesByPost(likeCounts);
+    setLikedByMe(likedMap);
+
     const profileIds = new Set<string>();
     profileIds.add(userId);
     (replyData as any[] | null)?.forEach((r) => {
       if (r?.user_id) profileIds.add(r.user_id);
     });
+    const quotedPostUsers = Object.values(quotedMap).map((p) => p.user_id);
+    quotedPostUsers.forEach((id) => profileIds.add(id));
     const ids = Array.from(profileIds);
     if (ids.length > 0) {
       const { data: profileRows } = await supabase
@@ -77,13 +120,13 @@ export default function UserProfilePage() {
       (profileRows as any[] | null)?.forEach((p) => {
         if (p?.id) map[p.id] = p as Profile;
       });
-      setProfilesById(map);
+      setProfilesById((prev) => ({ ...prev, ...map }));
     }
   };
 
   useEffect(() => {
     void loadPosts();
-  }, [userId]);
+  }, [userId, user?.id]);
 
   useEffect(() => {
     void loadFriendStatus();
@@ -150,6 +193,58 @@ export default function UserProfilePage() {
     if (!error) {
       setReplyDrafts((prev) => ({ ...prev, [postId]: '' }));
       await loadPosts();
+    }
+  };
+
+  const handleToggleLike = async (postId: string) => {
+    if (!user?.id) return;
+    const already = !!likedByMe[postId];
+    if (already) {
+      const { error } = await supabase
+        .from('profile_post_likes')
+        .delete()
+        .eq('post_id', postId)
+        .eq('user_id', user.id);
+      if (error) {
+        toast({ title: 'いいねの解除に失敗しました', description: error.message, variant: 'destructive' });
+        return;
+      }
+      setLikedByMe((prev) => ({ ...prev, [postId]: false }));
+      setLikesByPost((prev) => ({ ...prev, [postId]: Math.max(0, (prev[postId] || 1) - 1) }));
+      return;
+    }
+    const { error } = await supabase.from('profile_post_likes').insert({
+      post_id: postId,
+      user_id: user.id,
+    } as any);
+    if (error) {
+      toast({ title: 'いいねに失敗しました', description: error.message, variant: 'destructive' });
+      return;
+    }
+    setLikedByMe((prev) => ({ ...prev, [postId]: true }));
+    setLikesByPost((prev) => ({ ...prev, [postId]: (prev[postId] || 0) + 1 }));
+  };
+
+  const handleOpenQuote = (postId: string) => {
+    setQuoteTargetId((prev) => (prev === postId ? null : postId));
+    setQuoteDraft('');
+  };
+
+  const handleSubmitQuote = async () => {
+    if (!user?.id || !quoteTargetId) return;
+    try {
+      const { error } = await supabase.from('profile_posts').insert({
+        user_id: user.id,
+        content: quoteDraft.trim(),
+        quoted_post_id: quoteTargetId,
+      } as any);
+      if (error) throw error;
+      setQuoteDraft('');
+      setQuoteTargetId(null);
+      await loadPosts();
+      toast({ title: '引用投稿しました' });
+    } catch (e: any) {
+      toast({ title: '引用投稿に失敗しました', description: String(e?.message || e), variant: 'destructive' });
     }
   };
 
@@ -253,6 +348,8 @@ export default function UserProfilePage() {
             ) : (
               posts.map((p) => {
                 const author = profilesById[p.user_id] || profile;
+                const quoted = p.quoted_post_id ? quotedPostsById[p.quoted_post_id] : null;
+                const quotedAuthor = quoted ? profilesById[quoted.user_id] : null;
                 return (
                   <div key={p.id} className="rounded-md border border-border/50 p-4 space-y-3">
                     <div className="flex items-start gap-3">
@@ -275,33 +372,87 @@ export default function UserProfilePage() {
                         {p.thumbnail_url && (
                           <img src={p.thumbnail_url} alt="" className="w-full max-h-64 object-cover rounded mt-3" />
                         )}
+                        {quoted && (
+                          <div className="mt-3 rounded-md border border-border/60 bg-secondary/20 p-3 text-sm">
+                            <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                              <span className="font-semibold text-foreground/80">{quotedAuthor?.display_name || 'ユーザー'}</span>
+                              <span>@{quotedAuthor?.handle || 'id'}</span>
+                              <span>{new Date(quoted.created_at).toLocaleDateString()}</span>
+                            </div>
+                            <div className="mt-2 whitespace-pre-wrap">{quoted.content}</div>
+                            {quoted.thumbnail_url && (
+                              <img src={quoted.thumbnail_url} alt="" className="w-full max-h-56 object-cover rounded mt-2" />
+                            )}
+                          </div>
+                        )}
+                        <div className="mt-3 flex items-center gap-2 text-xs">
+                          <Button
+                            type="button"
+                            size="sm"
+                            variant="ghost"
+                            className={likedByMe[p.id] ? 'text-primary' : 'text-muted-foreground'}
+                            onClick={() => handleToggleLike(p.id)}
+                            disabled={!user?.id}
+                          >
+                            いいね {likesByPost[p.id] || 0}
+                          </Button>
+                          <Button
+                            type="button"
+                            size="sm"
+                            variant="ghost"
+                            className="text-muted-foreground"
+                            onClick={() => handleOpenQuote(p.id)}
+                            disabled={!user?.id}
+                          >
+                            引用投稿
+                          </Button>
+                        </div>
                       </div>
                     </div>
                     <div className="space-y-2 pt-2">
-                      {(repliesByPost.get(p.id) || []).map((r) => {
-                        const replyAuthor = profilesById[r.user_id];
-                        return (
-                          <div key={r.id} className="flex items-start gap-3 border-t border-border/40 pt-3">
-                            <div className="h-8 w-8 rounded-full bg-secondary/60 overflow-hidden flex items-center justify-center shrink-0">
-                              {replyAuthor?.avatar_url ? (
-                                <img src={replyAuthor.avatar_url} alt="" className="h-full w-full object-cover" />
-                              ) : (
-                                <ImagePlus className="w-3 h-3 text-muted-foreground" />
-                              )}
-                            </div>
-                            <div className="min-w-0 flex-1">
-                              <div className="flex items-center gap-2 text-xs">
-                                <span className="font-semibold truncate">{replyAuthor?.display_name || 'ユーザー'}</span>
-                                <span className="text-muted-foreground">@{replyAuthor?.handle || 'id'}</span>
-                                <span className="text-xs text-muted-foreground">
-                                  {new Date(r.created_at).toLocaleString()}
-                                </span>
+                      <div className="text-xs text-muted-foreground">返信</div>
+                      <div className="space-y-3 border-l border-border/40 pl-4">
+                        {(repliesByPost.get(p.id) || []).map((r) => {
+                          const replyAuthor = profilesById[r.user_id];
+                          return (
+                            <div key={r.id} className="flex items-start gap-3">
+                              <div className="h-8 w-8 rounded-full bg-secondary/60 overflow-hidden flex items-center justify-center shrink-0">
+                                {replyAuthor?.avatar_url ? (
+                                  <img src={replyAuthor.avatar_url} alt="" className="h-full w-full object-cover" />
+                                ) : (
+                                  <ImagePlus className="w-3 h-3 text-muted-foreground" />
+                                )}
                               </div>
-                              <div className="text-sm mt-1 whitespace-pre-wrap">{r.content}</div>
+                              <div className="min-w-0 flex-1">
+                                <div className="flex items-center gap-2 text-xs">
+                                  <span className="font-semibold truncate">{replyAuthor?.display_name || 'ユーザー'}</span>
+                                  <span className="text-muted-foreground">@{replyAuthor?.handle || 'id'}</span>
+                                  <span className="text-xs text-muted-foreground">
+                                    {new Date(r.created_at).toLocaleString()}
+                                  </span>
+                                </div>
+                                <div className="text-sm mt-1 whitespace-pre-wrap">{r.content}</div>
+                              </div>
                             </div>
+                          );
+                        })}
+                      </div>
+                      {quoteTargetId === p.id && (
+                        <div className="rounded-md border border-border/60 bg-secondary/20 p-3 space-y-2">
+                          <Textarea
+                            value={quoteDraft}
+                            onChange={(e) => setQuoteDraft(e.target.value)}
+                            placeholder="引用投稿にコメント（任意）"
+                            className="bg-input border-border min-h-[80px]"
+                          />
+                          <div className="flex gap-2">
+                            <Button onClick={handleSubmitQuote}>引用して投稿</Button>
+                            <Button variant="outline" onClick={() => handleOpenQuote(p.id)}>
+                              キャンセル
+                            </Button>
                           </div>
-                        );
-                      })}
+                        </div>
+                      )}
                       <div className="flex items-center gap-2">
                         <Input
                           value={replyDrafts[p.id] || ''}
