@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { Plus, Image, FileText, Eye, EyeOff, Send, Trash2, Palette, Upload, GripVertical, Music, Settings, Edit2, RotateCcw } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -19,7 +20,7 @@ import { EffectsEditorDialog } from './EffectsEditorDialog';
 import { OtherEffectsEditorDialog } from './OtherEffectsEditorDialog';
 import { getDisplayText } from '@/lib/expressionTag';
 import { getPortraitTransformRel } from '@/lib/portraitTransformsShared';
-import type { Participant, Character, StageState, Macro, Room, Asset, ActivePortrait } from '@/types/trpg';
+import type { Participant, Character, StageState, Macro, Room, Asset, ActivePortrait, RoomPublicSettings, RoomJoinRequest, Profile } from '@/types/trpg';
 import { useAuth } from '@/hooks/useAuth';
 
 interface GMToolsPanelProps {
@@ -51,6 +52,7 @@ export function GMToolsPanel({
   onUpdateRoom,
 }: GMToolsPanelProps) {
   const { user } = useAuth();
+  const navigate = useNavigate();
   type MacroAssetSource = 'upload' | 'select' | null;
   const SENT_MACROS_STORAGE_KEY = `trpg:sentMacros:${roomId}`;
   const SENT_MACROS_COLLAPSED_STORAGE_KEY = `trpg:sentMacrosCollapsed:${roomId}`;
@@ -84,6 +86,18 @@ export function GMToolsPanel({
   const [roomMembers, setRoomMembers] = useState<Array<{ room_id: string; user_id: string; role: 'PL' | 'GM'; created_at: string }>>([]);
   const [promoteTarget, setPromoteTarget] = useState<{ userId: string; name: string } | null>(null);
   const isOwner = !!(room?.owner_user_id && user?.id && room.owner_user_id === user.id);
+  const isGmUser = !!participants.find(p => p.user_id === user?.id && p.role === 'GM');
+  const [publicSettings, setPublicSettings] = useState<RoomPublicSettings | null>(null);
+  const [publicTitle, setPublicTitle] = useState('');
+  const [publicDescription, setPublicDescription] = useState('');
+  const [publicTags, setPublicTags] = useState('');
+  const [publicScope, setPublicScope] = useState<'overview' | 'read_only'>('overview');
+  const [isPublic, setIsPublic] = useState(false);
+  const [publicThumbnailFile, setPublicThumbnailFile] = useState<File | null>(null);
+  const [publicThumbnailUrl, setPublicThumbnailUrl] = useState<string | null>(null);
+  const [savingPublic, setSavingPublic] = useState(false);
+  const [joinRequests, setJoinRequests] = useState<RoomJoinRequest[]>([]);
+  const [joinRequestProfiles, setJoinRequestProfiles] = useState<Record<string, Profile>>({});
 
   const fetchRoomMembers = useCallback(async () => {
     const { data, error } = await supabase
@@ -109,6 +123,74 @@ export function GMToolsPanel({
       supabase.removeChannel(channel);
     };
   }, [roomId, fetchRoomMembers]);
+
+  useEffect(() => {
+    if (!roomId || !user?.id || !isGmUser) return;
+    let canceled = false;
+    (async () => {
+      const { data, error } = await supabase
+        .from('room_public_settings')
+        .select('*')
+        .eq('room_id', roomId)
+        .maybeSingle();
+      if (canceled) return;
+      if (error) return;
+      const next = (data as any) || null;
+      setPublicSettings(next);
+      setPublicTitle(next?.title || '');
+      setPublicDescription(next?.description || '');
+      setPublicTags((next?.tags || []).join(', '));
+      setPublicScope((next?.public_scope || 'overview') as any);
+      setIsPublic(!!next?.is_public);
+      setPublicThumbnailUrl(next?.thumbnail_url || null);
+    })();
+    return () => {
+      canceled = true;
+    };
+  }, [roomId, user?.id, isGmUser]);
+
+  const fetchJoinRequests = useCallback(async () => {
+    if (!roomId || !user?.id || !isGmUser) return;
+    const { data, error } = await supabase
+      .from('room_join_requests')
+      .select('*')
+      .eq('room_id', roomId)
+      .order('created_at', { ascending: true });
+    if (error) return;
+    const rows = (data as any[]) || [];
+    setJoinRequests(rows as RoomJoinRequest[]);
+
+    const ids = Array.from(new Set(rows.map((r) => r.requester_user_id)));
+    if (ids.length === 0) {
+      setJoinRequestProfiles({});
+      return;
+    }
+    const { data: profiles } = await supabase
+      .from('profiles')
+      .select('id,display_name,avatar_url')
+      .in('id', ids);
+    const map: Record<string, Profile> = {};
+    (profiles as any[] | null)?.forEach((p) => {
+      if (p?.id) map[p.id] = p as Profile;
+    });
+    setJoinRequestProfiles(map);
+  }, [roomId, user?.id, isGmUser]);
+
+  useEffect(() => {
+    void fetchJoinRequests();
+    if (!roomId || !isGmUser) return;
+    const channel = supabase
+      .channel(`room_join_requests:${roomId}`)
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'room_join_requests', filter: `room_id=eq.${roomId}` },
+        () => void fetchJoinRequests()
+      )
+      .subscribe();
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [roomId, isGmUser, fetchJoinRequests]);
   const [newMacroBgmSource, setNewMacroBgmSource] = useState<MacroAssetSource>(null);
   const [newMacroBgmAssetId, setNewMacroBgmAssetId] = useState<string | null>(null);
   const [newMacroSeSource, setNewMacroSeSource] = useState<MacroAssetSource>(null);
@@ -1284,6 +1366,96 @@ export function GMToolsPanel({
   const seAssets = assets.filter(isSeAsset);
   const bgAssets = assets.filter(isBackgroundAsset);
   const bgmAssets = assets.filter(isBgmAsset);
+  const canManagePublic = isGmUser;
+
+  const buildPublicSnapshot = () => {
+    return {
+      room: {
+        name: room?.name ?? '',
+        theme: room?.theme ?? null,
+        effects: room?.effects ?? null,
+        house_rules: room?.house_rules ?? null,
+        current_background_url: room?.current_background_url ?? null,
+      },
+      assets: assets.map((a, idx) => ({
+        kind: a.kind,
+        url: a.url,
+        label: a.label,
+        tag: a.tag,
+        is_default: a.is_default,
+        layer_order: typeof a.layer_order === 'number' ? a.layer_order : idx,
+      })),
+      macros: macros.map((m) => ({
+        title: m.title,
+        text: m.text,
+        scope: m.scope,
+      })),
+    };
+  };
+
+  const handleSavePublicSettings = async () => {
+    if (!roomId || !user?.id || !canManagePublic) return;
+    setSavingPublic(true);
+    try {
+      let thumbnailUrl = publicThumbnailUrl;
+      if (publicThumbnailFile) {
+        const url = await uploadFile(publicThumbnailFile, `public-rooms/${roomId}`);
+        if (!url) throw new Error('サムネイルのアップロードに失敗しました');
+        thumbnailUrl = url;
+      }
+
+      const tags = publicTags
+        .split(',')
+        .map((t) => t.trim())
+        .filter(Boolean);
+
+      const publishedAt = isPublic
+        ? (publicSettings?.published_at || new Date().toISOString())
+        : null;
+
+      const payload = {
+        room_id: roomId,
+        owner_user_id: room?.owner_user_id || user.id,
+        is_public: isPublic,
+        public_scope: publicScope,
+        title: publicTitle.trim(),
+        description: publicDescription.trim(),
+        tags,
+        thumbnail_url: thumbnailUrl,
+        snapshot: buildPublicSnapshot(),
+        published_at: publishedAt,
+        updated_at: new Date().toISOString(),
+      } as any;
+
+      const { data, error } = await supabase
+        .from('room_public_settings')
+        .upsert(payload)
+        .select('*')
+        .maybeSingle();
+      if (error) throw error;
+      setPublicSettings((data as any) || payload);
+      setPublicThumbnailFile(null);
+      toast({ title: '公開設定を保存しました' });
+    } catch (e: any) {
+      toast({ title: '公開設定の保存に失敗しました', description: String(e?.message || e), variant: 'destructive' });
+    } finally {
+      setSavingPublic(false);
+    }
+  };
+
+  const updateJoinRequestStatus = async (req: RoomJoinRequest, status: 'approved' | 'rejected') => {
+    if (!roomId || !user?.id || !canManagePublic) return;
+    const { error } = await supabase
+      .from('room_join_requests')
+      .update({ status, updated_at: new Date().toISOString() } as any)
+      .eq('id', req.id);
+    if (error) {
+      toast({ title: '更新に失敗しました', description: error.message, variant: 'destructive' });
+      return;
+    }
+    toast({ title: status === 'approved' ? '参加申請を承認しました' : '参加申請を拒否しました' });
+    void fetchJoinRequests();
+  };
 
   return (
     <>
@@ -1618,11 +1790,136 @@ export function GMToolsPanel({
             </div>
           </div>
 
-	          {/* Macros (Text Templates) */}
-	          <div className="space-y-3">
-	            <h3 className="text-sm font-semibold text-muted-foreground uppercase tracking-wider flex items-center gap-2">
-	              <FileText className="w-4 h-4" />
-	              定型文ストック
+          {/* Public Settings */}
+          <Collapsible>
+            <CollapsibleTrigger asChild>
+              <Button variant="ghost" className="w-full justify-start">
+                <Settings className="w-4 h-4 mr-2" />
+                公開設定
+              </Button>
+            </CollapsibleTrigger>
+            <CollapsibleContent className="pt-2 space-y-3">
+              <div className="flex items-center justify-between">
+                <Label>公開する</Label>
+                <Switch
+                  checked={isPublic}
+                  onCheckedChange={setIsPublic}
+                  disabled={!canManagePublic}
+                />
+              </div>
+              <div className="space-y-1">
+                <Label className="text-xs text-muted-foreground">公開範囲</Label>
+                <Select
+                  value={publicScope}
+                  onValueChange={(v) => setPublicScope(v as any)}
+                  disabled={!canManagePublic}
+                >
+                  <SelectTrigger className="bg-sidebar-accent border-sidebar-border text-xs">
+                    <SelectValue placeholder="公開範囲を選択" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="overview">概要のみ</SelectItem>
+                    <SelectItem value="read_only">閲覧専用（中身を閲覧）</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-1">
+                <Label className="text-xs text-muted-foreground">タイトル</Label>
+                <Input
+                  value={publicTitle}
+                  onChange={(e) => setPublicTitle(e.target.value)}
+                  placeholder="公開ページのタイトル"
+                  disabled={!canManagePublic}
+                />
+              </div>
+              <div className="space-y-1">
+                <Label className="text-xs text-muted-foreground">タグ（カンマ区切り）</Label>
+                <Input
+                  value={publicTags}
+                  onChange={(e) => setPublicTags(e.target.value)}
+                  placeholder="例：シティ,探索,初心者向け"
+                  disabled={!canManagePublic}
+                />
+              </div>
+              <div className="space-y-1">
+                <Label className="text-xs text-muted-foreground">説明</Label>
+                <Textarea
+                  value={publicDescription}
+                  onChange={(e) => setPublicDescription(e.target.value)}
+                  placeholder="概要・注意点など"
+                  className="bg-sidebar-accent border-sidebar-border min-h-[90px]"
+                  disabled={!canManagePublic}
+                />
+              </div>
+              <div className="space-y-1">
+                <Label className="text-xs text-muted-foreground">サムネイル</Label>
+                <Input
+                  type="file"
+                  accept="image/*"
+                  onChange={(e) => setPublicThumbnailFile(e.target.files?.[0] ?? null)}
+                  disabled={!canManagePublic}
+                />
+                {publicThumbnailUrl && (
+                  <div className="h-24 rounded-lg bg-cover bg-center border border-border" style={{ backgroundImage: `url(${publicThumbnailUrl})` }} />
+                )}
+              </div>
+              <Button onClick={handleSavePublicSettings} disabled={!canManagePublic || savingPublic}>
+                保存
+              </Button>
+            </CollapsibleContent>
+          </Collapsible>
+
+          {/* Join Requests */}
+          {canManagePublic && (
+            <div className="space-y-2">
+              <h3 className="text-sm font-semibold text-muted-foreground uppercase tracking-wider">
+                参加申請
+              </h3>
+              {joinRequests.length === 0 ? (
+                <div className="text-xs text-muted-foreground">申請はありません</div>
+              ) : (
+                joinRequests.map((req) => {
+                  const profile = joinRequestProfiles[req.requester_user_id];
+                  const name = profile?.display_name || `${req.requester_user_id.slice(0, 8)}...`;
+                  return (
+                    <div key={req.id} className="rounded-md border border-border/50 p-3 space-y-2">
+                      <div className="flex items-center justify-between gap-2">
+                        <button
+                          type="button"
+                          className="text-sm font-medium truncate hover:underline"
+                          onClick={() => navigate(`/users/${req.requester_user_id}`)}
+                        >
+                          {name}
+                        </button>
+                        <span className="text-xs text-muted-foreground">{req.status}</span>
+                      </div>
+                      {req.message && (
+                        <div className="text-xs text-muted-foreground whitespace-pre-wrap">
+                          {req.message}
+                        </div>
+                      )}
+                      {req.status === 'pending' && (
+                        <div className="flex gap-2">
+                          <Button size="sm" onClick={() => updateJoinRequestStatus(req, 'approved')}>
+                            承認
+                          </Button>
+                          <Button size="sm" variant="outline" onClick={() => updateJoinRequestStatus(req, 'rejected')}>
+                            拒否
+                          </Button>
+                        </div>
+                      )}
+                    </div>
+                  );
+                })
+              )}
+            </div>
+          )}
+
+          {/* Macros (Text Templates) */}
+          <div className="space-y-3">
+            <h3 className="text-sm font-semibold text-muted-foreground uppercase tracking-wider flex items-center gap-2">
+              <FileText className="w-4 h-4" />
+              定型文ストック
 	              <span className="text-xs font-normal">(Ctrl+Shift+J / Cmd+Shift+Jで送信)</span>
 	            </h3>
 	

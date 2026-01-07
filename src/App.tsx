@@ -8,6 +8,9 @@ import { RequireAuth } from "@/components/auth/RequireAuth";
 import Index from "./pages/Index";
 import RoomPage from "./pages/RoomPage";
 import LoginPage from "./pages/Login";
+import PublicRoomsPage from "./pages/PublicRooms";
+import MyPage from "./pages/MyPage";
+import UserProfilePage from "./pages/UserProfile";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
@@ -26,6 +29,30 @@ const App = () => (
               element={
                 <RequireAuth>
                   <Index />
+                </RequireAuth>
+              }
+            />
+            <Route
+              path="/rooms"
+              element={
+                <RequireAuth>
+                  <PublicRoomsPage />
+                </RequireAuth>
+              }
+            />
+            <Route
+              path="/me"
+              element={
+                <RequireAuth>
+                  <MyPage />
+                </RequireAuth>
+              }
+            />
+            <Route
+              path="/users/:userId"
+              element={
+                <RequireAuth>
+                  <UserProfilePage />
                 </RequireAuth>
               }
             />

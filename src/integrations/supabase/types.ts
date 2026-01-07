@@ -305,16 +305,22 @@ export type Database = {
       profiles: {
         Row: {
           created_at: string
+          bio: string | null
+          avatar_url: string | null
           display_name: string
           id: string
         }
         Insert: {
           created_at?: string
+          bio?: string | null
+          avatar_url?: string | null
           display_name: string
           id: string
         }
         Update: {
           created_at?: string
+          bio?: string | null
+          avatar_url?: string | null
           display_name?: string
           id?: string
         }
@@ -345,6 +351,161 @@ export type Database = {
             columns: ["room_id"]
             isOneToOne: false
             referencedRelation: "rooms"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      room_public_settings: {
+        Row: {
+          description: string
+          is_public: boolean
+          owner_user_id: string
+          public_scope: string
+          published_at: string | null
+          room_id: string
+          snapshot: Json | null
+          tags: string[]
+          thumbnail_url: string | null
+          title: string
+          updated_at: string
+        }
+        Insert: {
+          description?: string
+          is_public?: boolean
+          owner_user_id: string
+          public_scope?: string
+          published_at?: string | null
+          room_id: string
+          snapshot?: Json | null
+          tags?: string[]
+          thumbnail_url?: string | null
+          title?: string
+          updated_at?: string
+        }
+        Update: {
+          description?: string
+          is_public?: boolean
+          owner_user_id?: string
+          public_scope?: string
+          published_at?: string | null
+          room_id?: string
+          snapshot?: Json | null
+          tags?: string[]
+          thumbnail_url?: string | null
+          title?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "room_public_settings_room_id_fkey"
+            columns: ["room_id"]
+            isOneToOne: true
+            referencedRelation: "rooms"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      room_join_requests: {
+        Row: {
+          created_at: string
+          id: string
+          message: string
+          requester_user_id: string
+          room_id: string
+          status: string
+          updated_at: string
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          message?: string
+          requester_user_id: string
+          room_id: string
+          status?: string
+          updated_at?: string
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          message?: string
+          requester_user_id?: string
+          room_id?: string
+          status?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "room_join_requests_room_id_fkey"
+            columns: ["room_id"]
+            isOneToOne: false
+            referencedRelation: "rooms"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      profile_posts: {
+        Row: {
+          content: string
+          created_at: string
+          id: string
+          room_id: string | null
+          thumbnail_url: string | null
+          user_id: string
+        }
+        Insert: {
+          content?: string
+          created_at?: string
+          id?: string
+          room_id?: string | null
+          thumbnail_url?: string | null
+          user_id: string
+        }
+        Update: {
+          content?: string
+          created_at?: string
+          id?: string
+          room_id?: string | null
+          thumbnail_url?: string | null
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "profile_posts_room_id_fkey"
+            columns: ["room_id"]
+            isOneToOne: false
+            referencedRelation: "rooms"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      profile_replies: {
+        Row: {
+          content: string
+          created_at: string
+          id: string
+          post_id: string
+          user_id: string
+        }
+        Insert: {
+          content?: string
+          created_at?: string
+          id?: string
+          post_id: string
+          user_id: string
+        }
+        Update: {
+          content?: string
+          created_at?: string
+          id?: string
+          post_id?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "profile_replies_post_id_fkey"
+            columns: ["post_id"]
+            isOneToOne: false
+            referencedRelation: "profile_posts"
             referencedColumns: ["id"]
           },
         ]

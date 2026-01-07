@@ -174,6 +174,55 @@ export interface RoomMember {
   created_at: string;
 }
 
+export interface RoomPublicSettings {
+  room_id: string;
+  owner_user_id: string;
+  is_public: boolean;
+  public_scope?: 'overview' | 'read_only';
+  title: string;
+  description: string;
+  tags: string[];
+  thumbnail_url?: string | null;
+  snapshot?: any;
+  published_at?: string | null;
+  updated_at: string;
+}
+
+export interface RoomJoinRequest {
+  id: string;
+  room_id: string;
+  requester_user_id: string;
+  message: string;
+  status: 'pending' | 'approved' | 'rejected';
+  created_at: string;
+  updated_at: string;
+}
+
+export interface Profile {
+  id: string;
+  display_name: string;
+  bio?: string | null;
+  avatar_url?: string | null;
+  created_at: string;
+}
+
+export interface ProfilePost {
+  id: string;
+  user_id: string;
+  content: string;
+  thumbnail_url?: string | null;
+  room_id?: string | null;
+  created_at: string;
+}
+
+export interface ProfileReply {
+  id: string;
+  post_id: string;
+  user_id: string;
+  content: string;
+  created_at: string;
+}
+
 // Replay export types
 export interface ReplayEvent {
   timestamp: string;

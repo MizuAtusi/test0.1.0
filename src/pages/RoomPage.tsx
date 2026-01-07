@@ -16,6 +16,7 @@ import { getPortraitTransformRel } from '@/lib/portraitTransformsShared';
 import type { Room } from '@/types/trpg';
 import { useAuth } from '@/hooks/useAuth';
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { Textarea } from '@/components/ui/textarea';
 
 const SIDE_PANEL_WIDTH_STORAGE_KEY = 'trpg:sidePanelWidth';
 const SIDE_PANEL_COLLAPSED_STORAGE_KEY = 'trpg:sidePanelCollapsed';
@@ -68,22 +69,13 @@ export default function RoomPage() {
     return () => window.removeEventListener('resize', handler);
   }, []);
 
-  const effectiveSidePanelWidth = sidePanelCollapsed ? SIDE_PANEL_COLLAPSED_WIDTH : sidePanelWidth;
-  const stageColumnWidth = Math.max(0, windowSize.width - effectiveSidePanelWidth);
-  const availableStageHeightOverlay = Math.max(
-    0,
-    windowSize.height - ROOM_HEADER_HEIGHT_PX - INPUT_BAR_HEIGHT_PX - STAGE_AREA_PADDING_Y_PX,
-  );
-  const stageAreaAspect = stageColumnWidth > 0 ? (availableStageHeightOverlay / stageColumnWidth) : 0;
-  const isStackedLayout = stageColumnWidth > 0 && stageAreaAspect >= STAGE_STACKED_ASPECT_THRESHOLD;
-  const resizeStateRef = useRef<{ startX: number; startWidth: number } | null>(null);
-  const [joiningRoom, setJoiningRoom] = useState(false);
-  
+  const [joinDialogOpen, setJoinDialogOpen] = useState(false);
   const {
     room,
     participant,
-    member,
     needsJoin,
+    publicSettings,
+    isReadOnlyViewer,
     participants,
     messages,
     stageState,
@@ -99,6 +91,25 @@ export default function RoomPage() {
     refreshCharacters,
   } = useRoom(roomId || null);
   const { user } = useAuth();
+
+  const hasSidePanel = !isReadOnlyViewer;
+  const effectiveSidePanelWidth = hasSidePanel
+    ? (sidePanelCollapsed ? SIDE_PANEL_COLLAPSED_WIDTH : sidePanelWidth)
+    : 0;
+  const stageColumnWidth = Math.max(0, windowSize.width - effectiveSidePanelWidth);
+  const inputBarHeight = isReadOnlyViewer ? 0 : INPUT_BAR_HEIGHT_PX;
+  const availableStageHeightOverlay = Math.max(
+    0,
+    windowSize.height - ROOM_HEADER_HEIGHT_PX - inputBarHeight - STAGE_AREA_PADDING_Y_PX,
+  );
+  const stageAreaAspect = stageColumnWidth > 0 ? (availableStageHeightOverlay / stageColumnWidth) : 0;
+  const isStackedLayout = stageColumnWidth > 0 && stageAreaAspect >= STAGE_STACKED_ASPECT_THRESHOLD;
+  const resizeStateRef = useRef<{ startX: number; startWidth: number } | null>(null);
+  const [joiningRoom, setJoiningRoom] = useState(false);
+  const [joinRequest, setJoinRequest] = useState<any>(null);
+  const [joinMessage, setJoinMessage] = useState('');
+  const [joinLoading, setJoinLoading] = useState(false);
+  const [joinReady, setJoinReady] = useState(false);
 
   // Get current player's character (if any)
   const myUserId = user?.id || participant?.user_id || null;
@@ -399,8 +410,27 @@ export default function RoomPage() {
     localStorage.setItem(SIDE_PANEL_WIDTH_STORAGE_KEY, String(sidePanelWidth));
   }, [sidePanelWidth]);
 
+  useEffect(() => {
+    if (!needsJoin || !roomId || !user?.id) return;
+    let canceled = false;
+    (async () => {
+      const { data: req } = await supabase
+        .from('room_join_requests')
+        .select('*')
+        .eq('room_id', roomId)
+        .eq('requester_user_id', user.id)
+        .maybeSingle();
+      if (canceled) return;
+      setJoinRequest(req);
+      setJoinReady(true);
+    })();
+    return () => {
+      canceled = true;
+    };
+  }, [needsJoin, roomId, user?.id]);
+
   // Determine if current user can view secret content
-  const canViewSecret = isGM || (
+  const canViewSecret = isReadOnlyViewer || isGM || (
     participant && 
     stageState?.secret_allow_list?.includes(participant.id)
   );
@@ -431,7 +461,7 @@ export default function RoomPage() {
     );
   }
 
-  if (needsJoin) {
+  if (needsJoin && !isReadOnlyViewer) {
     return (
       <div className="h-screen flex flex-col bg-background overflow-hidden">
         <header className="h-12 border-b border-border bg-card flex items-center justify-between px-4 shrink-0">
@@ -448,24 +478,94 @@ export default function RoomPage() {
         <Dialog open>
           <DialogContent>
             <DialogHeader>
-              <DialogTitle>このルームに参加しますか？</DialogTitle>
-            </DialogHeader>
+            <DialogTitle>ルーム情報</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-3">
             <div className="text-sm text-muted-foreground">
-              参加すると、このルームのステージやログを閲覧・操作できるようになります。
+              {publicSettings?.is_public
+                ? (publicSettings?.public_scope === 'read_only'
+                    ? 'このルームは閲覧専用で公開されています。参加にはGMの承認が必要です。'
+                    : 'このルームは公開されています。参加申請を送ることができます。')
+                : 'このルームは非公開です。参加にはGMの承認が必要です。'}
+            </div>
+            {publicSettings?.title && (
+              <div className="text-base font-semibold">{publicSettings.title}</div>
+            )}
+              {publicSettings?.description && (
+                <div className="text-sm text-muted-foreground whitespace-pre-wrap">{publicSettings.description}</div>
+              )}
+              {publicSettings?.tags?.length > 0 && (
+                <div className="flex flex-wrap gap-1">
+                  {publicSettings.tags.map((t: string) => (
+                    <span key={t} className="text-xs px-2 py-0.5 rounded bg-secondary/60">
+                      {t}
+                    </span>
+                  ))}
+                </div>
+              )}
+              {joinRequest?.status === 'pending' && (
+                <div className="text-sm text-muted-foreground">参加申請済み（承認待ち）</div>
+              )}
+              {joinRequest?.status === 'approved' && (
+                <div className="text-sm text-muted-foreground">承認済み。参加できます。</div>
+              )}
+              {joinRequest?.status === 'rejected' && (
+                <div className="text-sm text-muted-foreground">申請が拒否されました。</div>
+              )}
+              {!joinRequest && (
+                <Textarea
+                  value={joinMessage}
+                  onChange={(e) => setJoinMessage(e.target.value)}
+                  placeholder="GMへのコメント（任意）"
+                  className="bg-input border-border min-h-[90px]"
+                />
+              )}
             </div>
             <DialogFooter className="gap-2">
               <Button variant="outline" onClick={() => navigate('/')}>いいえ</Button>
-              <Button
-                onClick={async () => {
-                  setJoiningRoom(true);
-                  const ok = await joinRoom();
-                  setJoiningRoom(false);
-                  if (ok) toast({ title: 'ルームに参加しました' });
-                }}
-                disabled={joiningRoom}
-              >
-                はい
-              </Button>
+              {!joinRequest && (
+                <Button
+                  onClick={async () => {
+                    if (!user?.id || !roomId) return;
+                    setJoinLoading(true);
+                    const { error } = await supabase.from('room_join_requests').insert({
+                      room_id: roomId,
+                      requester_user_id: user.id,
+                      message: joinMessage.trim(),
+                      status: 'pending',
+                    } as any);
+                    setJoinLoading(false);
+                    if (error) {
+                      toast({ title: '参加申請に失敗しました', description: error.message, variant: 'destructive' });
+                      return;
+                    }
+                    toast({ title: '参加申請を送信しました' });
+                    const { data: req } = await supabase
+                      .from('room_join_requests')
+                      .select('*')
+                      .eq('room_id', roomId)
+                      .eq('requester_user_id', user.id)
+                      .maybeSingle();
+                    setJoinRequest(req);
+                  }}
+                  disabled={joinLoading}
+                >
+                  申請する
+                </Button>
+              )}
+              {joinRequest?.status === 'approved' && (
+                <Button
+                  onClick={async () => {
+                    setJoiningRoom(true);
+                    const ok = await joinRoom();
+                    setJoiningRoom(false);
+                    if (ok) toast({ title: 'ルームに参加しました' });
+                  }}
+                  disabled={joiningRoom}
+                >
+                  参加する
+                </Button>
+              )}
             </DialogFooter>
           </DialogContent>
         </Dialog>
@@ -489,6 +589,11 @@ export default function RoomPage() {
               GM
             </span>
           )}
+          {isReadOnlyViewer && (
+            <span className="text-xs bg-secondary text-secondary-foreground px-2 py-0.5 rounded">
+              閲覧専用
+            </span>
+          )}
         </div>
 
         <div className="flex items-center gap-3">
@@ -507,6 +612,41 @@ export default function RoomPage() {
           </Button>
         </div>
       </header>
+
+      {isReadOnlyViewer && (
+        <div className="border-b border-border bg-card px-4 py-2 text-sm flex items-center justify-between gap-3">
+          <div className="text-muted-foreground">
+            閲覧専用モードです。参加するにはGMの承認が必要です。
+          </div>
+          <div className="flex items-center gap-2">
+            {joinRequest?.status === 'pending' && (
+              <span className="text-xs text-muted-foreground">申請済み（承認待ち）</span>
+            )}
+            {joinRequest?.status === 'approved' && (
+              <Button
+                size="sm"
+                onClick={async () => {
+                  setJoiningRoom(true);
+                  const ok = await joinRoom();
+                  setJoiningRoom(false);
+                  if (ok) toast({ title: 'ルームに参加しました' });
+                }}
+                disabled={joiningRoom}
+              >
+                参加する
+              </Button>
+            )}
+            {joinRequest?.status === 'rejected' && (
+              <span className="text-xs text-muted-foreground">申請が拒否されました</span>
+            )}
+            {!joinRequest && (
+              <Button size="sm" onClick={() => setJoinDialogOpen(true)} disabled={!joinReady}>
+                参加申請
+              </Button>
+            )}
+          </div>
+        </div>
+      )}
 
       {/* Main Content */}
       <div className="flex-1 flex min-h-0">
@@ -570,106 +710,156 @@ export default function RoomPage() {
             </div>
           )}
 
-          <InputBar
-            participantName={participant?.name || ''}
-            roomId={roomId || undefined}
-            speakerValue={speakerValue}
-            onSpeakerValueChange={setSpeakerValue}
-            onSendMessage={(type, text, options) => handleSendMessage(type, text, { ...options, speakerValue })}
-            layout={isStackedLayout ? 'stacked' : 'single'}
-            showGmOption={isGM}
-            disabled={isExcludedFromSecret}
-            disabledReason="秘匿モード中は閲覧できません"
-                  characters={isGM
-              ? characters
-              : characters.filter(c => (myUserId ? c.owner_user_id === myUserId : c.owner_participant_id === participant?.id))}
-            currentCharacter={speakerValue !== 'participant'
-              && speakerValue !== 'gm'
-              ? characters.find(c => c.id === speakerValue) ?? null
-              : null}
-          />
+          {!isReadOnlyViewer && (
+            <InputBar
+              participantName={participant?.name || ''}
+              roomId={roomId || undefined}
+              speakerValue={speakerValue}
+              onSpeakerValueChange={setSpeakerValue}
+              onSendMessage={(type, text, options) => handleSendMessage(type, text, { ...options, speakerValue })}
+              layout={isStackedLayout ? 'stacked' : 'single'}
+              showGmOption={isGM}
+              disabled={isExcludedFromSecret}
+              disabledReason="秘匿モード中は閲覧できません"
+              characters={isGM
+                ? characters
+                : characters.filter(c => (myUserId ? c.owner_user_id === myUserId : c.owner_participant_id === participant?.id))}
+              currentCharacter={speakerValue !== 'participant'
+                && speakerValue !== 'gm'
+                ? characters.find(c => c.id === speakerValue) ?? null
+                : null}
+            />
+          )}
         </div>
 
         {/* Side Panel (Right 1/4) */}
-        <div
-          className="shrink-0 relative"
-          style={{ width: sidePanelCollapsed ? SIDE_PANEL_COLLAPSED_WIDTH : sidePanelWidth }}
-        >
+        {hasSidePanel && (
           <div
-            className="absolute left-0 top-0 bottom-0 w-3 -translate-x-1.5 cursor-col-resize hidden md:block"
-            onMouseDown={(e) => {
-              if (sidePanelCollapsed) return;
-              e.preventDefault();
-              resizeStateRef.current = { startX: e.clientX, startWidth: sidePanelWidth };
-
-              const body = document.body;
-              const prevCursor = body.style.cursor;
-              const prevUserSelect = body.style.userSelect;
-              body.style.cursor = 'col-resize';
-              body.style.userSelect = 'none';
-
-              const handleMove = (ev: MouseEvent) => {
-                const state = resizeStateRef.current;
-                if (!state) return;
-                const delta = state.startX - ev.clientX;
-                const next = Math.min(
-                  MAX_SIDE_PANEL_WIDTH,
-                  Math.max(MIN_SIDE_PANEL_WIDTH, state.startWidth + delta),
-                );
-                setSidePanelWidth(next);
-              };
-
-              const handleUp = () => {
-                resizeStateRef.current = null;
-                body.style.cursor = prevCursor;
-                body.style.userSelect = prevUserSelect;
-                window.removeEventListener('mousemove', handleMove);
-                window.removeEventListener('mouseup', handleUp);
-              };
-
-              window.addEventListener('mousemove', handleMove);
-              window.addEventListener('mouseup', handleUp);
-            }}
-            title="ドラッグして幅を調節"
-            aria-label="サイドメニュー幅調節"
+            className="shrink-0 relative"
+            style={{ width: sidePanelCollapsed ? SIDE_PANEL_COLLAPSED_WIDTH : sidePanelWidth }}
           >
-            <div className="h-full w-px bg-border/50 mx-auto opacity-0 hover:opacity-100 transition-opacity" />
-          </div>
+            <div
+              className="absolute left-0 top-0 bottom-0 w-3 -translate-x-1.5 cursor-col-resize hidden md:block"
+              onMouseDown={(e) => {
+                if (sidePanelCollapsed) return;
+                e.preventDefault();
+                resizeStateRef.current = { startX: e.clientX, startWidth: sidePanelWidth };
 
-          {sidePanelCollapsed ? (
-            <div className="h-full flex flex-col items-center justify-start bg-sidebar border-l border-sidebar-border">
-              <Button
-                type="button"
-                variant="ghost"
-                size="icon"
-                className="mt-2"
-                onClick={() => setSidePanelCollapsed(false)}
-                title="サイドパネルを開く"
-              >
-                <ChevronLeft className="w-5 h-5" />
-              </Button>
+                const body = document.body;
+                const prevCursor = body.style.cursor;
+                const prevUserSelect = body.style.userSelect;
+                body.style.cursor = 'col-resize';
+                body.style.userSelect = 'none';
+
+                const handleMove = (ev: MouseEvent) => {
+                  const state = resizeStateRef.current;
+                  if (!state) return;
+                  const delta = state.startX - ev.clientX;
+                  const next = Math.min(
+                    MAX_SIDE_PANEL_WIDTH,
+                    Math.max(MIN_SIDE_PANEL_WIDTH, state.startWidth + delta),
+                  );
+                  setSidePanelWidth(next);
+                };
+
+                const handleUp = () => {
+                  resizeStateRef.current = null;
+                  body.style.cursor = prevCursor;
+                  body.style.userSelect = prevUserSelect;
+                  window.removeEventListener('mousemove', handleMove);
+                  window.removeEventListener('mouseup', handleUp);
+                };
+
+                window.addEventListener('mousemove', handleMove);
+                window.addEventListener('mouseup', handleUp);
+              }}
+              title="ドラッグして幅を調節"
+              aria-label="サイドメニュー幅調節"
+            >
+              <div className="h-full w-px bg-border/50 mx-auto opacity-0 hover:opacity-100 transition-opacity" />
             </div>
-          ) : (
-            <div className="h-full pl-0 md:pl-1">
-              <SidePanel
-                roomId={roomId || ''}
-                room={room}
-                participant={participant}
-                participants={participants}
-                characters={characters}
-                messages={messages}
-                stageState={stageState}
-                isGM={isGM}
-                onRefreshCharacters={refreshCharacters}
-                onSendMessage={handleSendMessageFull}
-                onUpdateStage={updateStageState}
-                onUpdateRoom={handleUpdateRoom}
-                onCollapse={() => setSidePanelCollapsed(true)}
-              />
-            </div>
-          )}
-        </div>
+
+            {sidePanelCollapsed ? (
+              <div className="h-full flex flex-col items-center justify-start bg-sidebar border-l border-sidebar-border">
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="icon"
+                  className="mt-2"
+                  onClick={() => setSidePanelCollapsed(false)}
+                  title="サイドパネルを開く"
+                >
+                  <ChevronLeft className="w-5 h-5" />
+                </Button>
+              </div>
+            ) : (
+              <div className="h-full pl-0 md:pl-1">
+                <SidePanel
+                  roomId={roomId || ''}
+                  room={room}
+                  participant={participant}
+                  participants={participants}
+                  characters={characters}
+                  messages={messages}
+                  stageState={stageState}
+                  isGM={isGM}
+                  onRefreshCharacters={refreshCharacters}
+                  onSendMessage={handleSendMessageFull}
+                  onUpdateStage={updateStageState}
+                  onUpdateRoom={handleUpdateRoom}
+                  onCollapse={() => setSidePanelCollapsed(true)}
+                />
+              </div>
+            )}
+          </div>
+        )}
       </div>
+
+      <Dialog open={joinDialogOpen} onOpenChange={setJoinDialogOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>参加申請</DialogTitle>
+          </DialogHeader>
+          <Textarea
+            value={joinMessage}
+            onChange={(e) => setJoinMessage(e.target.value)}
+            placeholder="GMへのコメント（任意）"
+            className="bg-input border-border min-h-[90px]"
+          />
+          <DialogFooter className="gap-2">
+            <Button variant="outline" onClick={() => setJoinDialogOpen(false)}>閉じる</Button>
+            <Button
+              onClick={async () => {
+                if (!user?.id || !roomId) return;
+                setJoinLoading(true);
+                const { error } = await supabase.from('room_join_requests').insert({
+                  room_id: roomId,
+                  requester_user_id: user.id,
+                  message: joinMessage.trim(),
+                  status: 'pending',
+                } as any);
+                setJoinLoading(false);
+                if (error) {
+                  toast({ title: '参加申請に失敗しました', description: error.message, variant: 'destructive' });
+                  return;
+                }
+                toast({ title: '参加申請を送信しました' });
+                const { data: req } = await supabase
+                  .from('room_join_requests')
+                  .select('*')
+                  .eq('room_id', roomId)
+                  .eq('requester_user_id', user.id)
+                  .maybeSingle();
+                setJoinRequest(req);
+                setJoinDialogOpen(false);
+              }}
+              disabled={joinLoading}
+            >
+              申請する
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

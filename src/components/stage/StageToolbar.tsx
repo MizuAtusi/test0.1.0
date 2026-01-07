@@ -16,6 +16,7 @@ interface StageToolbarProps {
   participants: Participant[];
   participant: Participant | null;
   isGM: boolean;
+  canViewSecret?: boolean;
   characters: Character[];
   onUpdateRoom: (updates: Partial<Room>) => void;
 }
@@ -27,6 +28,7 @@ export function StageToolbar({
   participants,
   participant,
   isGM,
+  canViewSecret = false,
   characters,
   onUpdateRoom,
 }: StageToolbarProps) {
@@ -40,7 +42,7 @@ export function StageToolbar({
   const logMessages = messages.filter((msg) => {
     if (msg.channel === 'chat') return false;
     if (msg.channel !== 'secret') return true;
-    if (isGM) return true;
+    if (isGM || canViewSecret) return true;
     if (!participant) return false;
     const allowList = Array.isArray(msg.secret_allow_list) ? msg.secret_allow_list : [];
     return allowList.includes(participant.id);

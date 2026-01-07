@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { getSession } from '@/lib/session';
-import type { Room, Participant, Message, StageState, Character, RoomMember } from '@/types/trpg';
+import type { Room, Participant, Message, StageState, Character, RoomMember, RoomPublicSettings } from '@/types/trpg';
 import { useToast } from '@/hooks/use-toast';
 import { getCharacterAvatarUrl } from '@/lib/characterAvatar';
 import { appendLocalStageEvent } from '@/lib/localStageEvents';
@@ -11,11 +11,13 @@ import { applyPortraitTransformCommandsFromText } from '@/lib/portraitTransforms
 import { useAuth } from '@/hooks/useAuth';
 
 export function useRoom(roomId: string | null) {
-  const { user } = useAuth();
+  const { user, isDevAuth } = useAuth();
   const [room, setRoom] = useState<Room | null>(null);
   const [participant, setParticipant] = useState<Participant | null>(null);
   const [member, setMember] = useState<RoomMember | null>(null);
   const [needsJoin, setNeedsJoin] = useState(false);
+  const [publicSettings, setPublicSettings] = useState<RoomPublicSettings | null>(null);
+  const [isReadOnlyViewer, setIsReadOnlyViewer] = useState(false);
   const [participants, setParticipants] = useState<Participant[]>([]);
   const [messages, setMessages] = useState<Message[]>([]);
   const [stageState, setStageState] = useState<StageState | null>(null);
@@ -54,7 +56,7 @@ export function useRoom(roomId: string | null) {
 
   // Fetch room data
   const fetchRoom = useCallback(async () => {
-    if (!roomId) return;
+    if (!roomId || isDevAuth) return;
     
     const { data, error } = await supabase
       .from('rooms')
@@ -71,7 +73,7 @@ export function useRoom(roomId: string | null) {
   }, [roomId]);
 
   const fetchMembership = useCallback(async (): Promise<RoomMember | null> => {
-    if (!roomId || !user?.id) return null;
+    if (!roomId || !user?.id || isDevAuth) return null;
     const { data, error } = await supabase
       .from('room_members')
       .select('*')
@@ -90,6 +92,7 @@ export function useRoom(roomId: string | null) {
         return next;
       });
       setNeedsJoin((prev) => (prev ? false : prev));
+      setIsReadOnlyViewer(false);
       return next as RoomMember;
     } else {
       setMember((prev) => (prev ? null : prev));
@@ -98,9 +101,28 @@ export function useRoom(roomId: string | null) {
     }
   }, [roomId, user?.id]);
 
+  const fetchPublicSettings = useCallback(async (): Promise<RoomPublicSettings | null> => {
+    if (!roomId || !user?.id || isDevAuth) {
+      setPublicSettings(null);
+      return null;
+    }
+    const { data, error } = await supabase
+      .from('room_public_settings')
+      .select('*')
+      .eq('room_id', roomId)
+      .maybeSingle();
+    if (error) {
+      console.error('Error fetching public settings:', error);
+      return null;
+    }
+    const next = (data as any) || null;
+    setPublicSettings(next);
+    return next as RoomPublicSettings | null;
+  }, [roomId, user?.id]);
+
   // Fetch participants
   const fetchParticipants = useCallback(async () => {
-    if (!roomId || !user?.id) return;
+    if (!roomId || !user?.id || isDevAuth) return;
     
     const { data, error } = await supabase
       .from('participants')
@@ -124,7 +146,7 @@ export function useRoom(roomId: string | null) {
 
   // Fetch messages
   const fetchMessages = useCallback(async () => {
-    if (!roomId) return;
+    if (!roomId || isDevAuth) return;
     
     const { data, error } = await supabase
       .from('messages')
@@ -155,7 +177,7 @@ export function useRoom(roomId: string | null) {
 
   // Fetch stage state
   const fetchStageState = useCallback(async () => {
-    if (!roomId) return;
+    if (!roomId || isDevAuth) return;
     
     const { data, error } = await supabase
       .from('stage_states')
@@ -176,7 +198,7 @@ export function useRoom(roomId: string | null) {
 
   // Fetch characters
   const fetchCharacters = useCallback(async () => {
-    if (!roomId) return;
+    if (!roomId || isDevAuth) return;
     
     const { data, error } = await supabase
       .from('characters')
@@ -230,7 +252,7 @@ export function useRoom(roomId: string | null) {
   }, [roomId]);
 
   const getMyDisplayName = async (): Promise<string> => {
-    if (!user?.id) return 'user';
+    if (!user?.id || isDevAuth) return 'user';
     try {
       const metaName =
         (user.user_metadata as any)?.display_name ||
@@ -248,7 +270,7 @@ export function useRoom(roomId: string | null) {
 
   // Join room as the authenticated user (PL by default)
   const joinRoom = async () => {
-    if (!roomId || !user?.id) return null;
+    if (!roomId || !user?.id || isDevAuth) return null;
 
     const name = await getMyDisplayName();
 
@@ -336,7 +358,7 @@ export function useRoom(roomId: string | null) {
 
   // Ensure participant presence exists when already a member
   const ensurePresence = useCallback(async () => {
-    if (!roomId || !user?.id || !member) return;
+    if (!roomId || !user?.id || !member || isDevAuth) return;
     const session = getSession();
     const { data: existing } = await supabase
       .from('participants')
@@ -376,7 +398,7 @@ export function useRoom(roomId: string | null) {
       portraitUrl?: string;
     }
   ) => {
-    if (!roomId) return null;
+    if (!roomId || isDevAuth) return null;
     
     const { data, error } = await supabase
       .from('messages')
@@ -422,7 +444,7 @@ export function useRoom(roomId: string | null) {
 
   // Update stage state
   const updateStageState = async (updates: Partial<StageState>) => {
-    if (!roomId) return;
+    if (!roomId || isDevAuth) return;
     
     const updateData: any = {
       room_id: roomId,
@@ -474,7 +496,7 @@ export function useRoom(roomId: string | null) {
 
   // Update room
   const updateRoom = async (updates: Partial<Room>) => {
-    if (!roomId) return;
+    if (!roomId || isDevAuth) return;
     
     const { error } = await supabase
       .from('rooms')
@@ -490,7 +512,7 @@ export function useRoom(roomId: string | null) {
 
   // Real-time subscriptions
   useEffect(() => {
-    if (!roomId) return;
+    if (!roomId || isDevAuth) return;
 
     // Subscribe to room updates (theme/effects/etc)
     const roomChannel = supabase
@@ -584,34 +606,39 @@ export function useRoom(roomId: string | null) {
       )
       .subscribe();
 
-    // Subscribe to participants
-    const participantsChannel = supabase
-      .channel(`participants:${roomId}`)
-      .on(
-        'postgres_changes',
-        {
-          event: '*',
-          schema: 'public',
-          table: 'participants',
-          filter: `room_id=eq.${roomId}`,
-        },
-        () => {
-          fetchParticipants();
-        }
-      )
-      .subscribe();
+    const participantsChannel = member
+      ? supabase
+          .channel(`participants:${roomId}`)
+          .on(
+            'postgres_changes',
+            {
+              event: '*',
+              schema: 'public',
+              table: 'participants',
+              filter: `room_id=eq.${roomId}`,
+            },
+            () => {
+              fetchParticipants();
+            }
+          )
+          .subscribe()
+      : null;
 
     return () => {
       supabase.removeChannel(roomChannel);
       supabase.removeChannel(messagesChannel);
       supabase.removeChannel(stageChannel);
-      supabase.removeChannel(participantsChannel);
+      if (participantsChannel) supabase.removeChannel(participantsChannel);
     };
-  }, [roomId, fetchParticipants, applyAudioCommandsFromText]);
+  }, [roomId, fetchParticipants, applyAudioCommandsFromText, member, isDevAuth]);
 
   // Initial fetch
   useEffect(() => {
     if (!roomId) {
+      setLoading(false);
+      return;
+    }
+    if (isDevAuth) {
       setLoading(false);
       return;
     }
@@ -620,47 +647,52 @@ export function useRoom(roomId: string | null) {
       setLoading(true);
       await fetchRoom();
       const membership = await fetchMembership();
+      const pub = await fetchPublicSettings();
       if (!user?.id) {
         setLoading(false);
         return;
       }
-      // Only load room content after join
-      if (membership) {
+      const canReadOnly = !!(pub?.is_public && pub.public_scope === 'read_only');
+      setIsReadOnlyViewer(!membership && canReadOnly);
+      // Load room content after join or in read-only mode
+      if (membership || canReadOnly) {
         await Promise.all([
-          fetchParticipants(),
+          membership ? fetchParticipants() : Promise.resolve(),
           fetchMessages(),
           fetchStageState(),
           fetchCharacters(),
         ]);
-        // Ensure presence row for this browser session exists (do not depend on member state identity)
-        try {
-          const session = getSession();
-          const { data: existing } = await supabase
-            .from('participants')
-            .select('*')
-            .eq('room_id', roomId)
-            .eq('user_id', user.id)
-            .eq('session_id', session.sessionId)
-            .maybeSingle();
-          if (existing) {
-            setParticipant(existing as any);
-          } else {
-            const name = await getMyDisplayName();
-            const { data: part } = await supabase
+        if (membership) {
+          // Ensure presence row for this browser session exists (do not depend on member state identity)
+          try {
+            const session = getSession();
+            const { data: existing } = await supabase
               .from('participants')
-              .insert({
-                room_id: roomId,
-                user_id: user.id,
-                name,
-                role: membership.role,
-                session_id: session.sessionId,
-              } as any)
               .select('*')
-              .single();
-            if (part) setParticipant(part as any);
+              .eq('room_id', roomId)
+              .eq('user_id', user.id)
+              .eq('session_id', session.sessionId)
+              .maybeSingle();
+            if (existing) {
+              setParticipant(existing as any);
+            } else {
+              const name = await getMyDisplayName();
+              const { data: part } = await supabase
+                .from('participants')
+                .insert({
+                  room_id: roomId,
+                  user_id: user.id,
+                  name,
+                  role: membership.role,
+                  session_id: session.sessionId,
+                } as any)
+                .select('*')
+                .single();
+              if (part) setParticipant(part as any);
+            }
+          } catch {
+            // ignore
           }
-        } catch {
-          // ignore
         }
       }
       setLoading(false);
@@ -676,11 +708,13 @@ export function useRoom(roomId: string | null) {
     fetchMessages,
     fetchStageState,
     fetchCharacters,
+    fetchPublicSettings,
+    isDevAuth,
   ]);
 
   // React to role changes (e.g., owner promotes a member to GM)
   useEffect(() => {
-    if (!roomId || !user?.id) return;
+    if (!roomId || !user?.id || isDevAuth) return;
     const channel = supabase
       .channel(`room_members:${roomId}:${user.id}`)
       .on(
@@ -701,13 +735,15 @@ export function useRoom(roomId: string | null) {
     return () => {
       supabase.removeChannel(channel);
     };
-  }, [roomId, user?.id, fetchMembership]);
+  }, [roomId, user?.id, fetchMembership, isDevAuth]);
 
   return {
     room,
     participant,
     member,
     needsJoin,
+    publicSettings,
+    isReadOnlyViewer,
     participants,
     messages,
     stageState,

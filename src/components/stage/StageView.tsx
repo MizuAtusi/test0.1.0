@@ -218,8 +218,9 @@ export function StageView({
   const visibleMessages = messages.filter(msg => {
     if (msg.channel === 'public') return true;
     if (msg.channel === 'secret') {
+      if (canViewSecret) return true;
       if (!participant) return false;
-      return canViewSecret || msg.secret_allow_list.includes(participant.id);
+      return msg.secret_allow_list.includes(participant.id);
     }
     return true;
   });
@@ -527,6 +528,7 @@ export function StageView({
           participants={participants}
           participant={participant}
           isGM={isGM}
+          canViewSecret={canViewSecret}
           characters={characters}
           onUpdateRoom={onUpdateRoom}
         />
