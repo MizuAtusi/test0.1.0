@@ -5,6 +5,7 @@ import { supabase } from '@/integrations/supabase/client';
 import { uploadFile } from '@/lib/upload';
 import { useToast } from '@/hooks/use-toast';
 import { Button } from '@/components/ui/button';
+import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
@@ -26,6 +27,8 @@ export default function MyPage() {
   const [handlePassword, setHandlePassword] = useState('');
   const [updatingHandle, setUpdatingHandle] = useState(false);
   const [editingProfile, setEditingProfile] = useState(false);
+  const [idEditConfirmOpen, setIdEditConfirmOpen] = useState(false);
+  const [idEditUnlocked, setIdEditUnlocked] = useState(false);
 
   const [posts, setPosts] = useState<ProfilePost[]>([]);
   const [replies, setReplies] = useState<ProfileReply[]>([]);
@@ -251,6 +254,7 @@ export default function MyPage() {
     resetProfileInputs(profile);
     setHandleInput('');
     setHandlePassword('');
+    setIdEditUnlocked(false);
     setEditingProfile(false);
   };
 
@@ -370,6 +374,21 @@ export default function MyPage() {
       toast({ title: 'IDは英数字と_のみ利用できます', variant: 'destructive' });
       return;
     }
+    if (next !== handle) {
+      const { data: existing, error: checkError } = await supabase
+        .from('profiles')
+        .select('id')
+        .eq('handle', next)
+        .maybeSingle();
+      if (checkError) {
+        toast({ title: 'IDの確認に失敗しました', description: checkError.message, variant: 'destructive' });
+        return;
+      }
+      if (existing?.id && existing.id !== user.id) {
+        toast({ title: 'そのIDはすでに使われています', variant: 'destructive' });
+        return;
+      }
+    }
     if (!handlePassword) {
       toast({ title: 'パスワードを入力してください', variant: 'destructive' });
       return;
@@ -387,6 +406,7 @@ export default function MyPage() {
       setProfile((p) => (p ? { ...p, handle: next } : p));
       setHandleInput('');
       setHandlePassword('');
+      setIdEditUnlocked(false);
       toast({ title: 'IDを更新しました' });
     } catch (e: any) {
       toast({ title: 'ID更新に失敗しました', description: String(e?.message || e), variant: 'destructive' });
@@ -520,7 +540,20 @@ export default function MyPage() {
                   className="bg-input border-border"
                   disabled={!editingProfile}
                 />
-                <div className="text-sm text-muted-foreground">@{handle || 'id'}</div>
+                <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                  <span>@{handle || 'id'}</span>
+                  {editingProfile && (
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="outline"
+                      className="h-6 px-2 text-xs"
+                      onClick={() => setIdEditConfirmOpen(true)}
+                    >
+                      IDを編集
+                    </Button>
+                  )}
+                </div>
                 <Textarea
                   value={bio}
                   onChange={(e) => setBio(e.target.value)}
@@ -535,36 +568,71 @@ export default function MyPage() {
                       accept="image/*"
                       onChange={(e) => setAvatarFile(e.target.files?.[0] ?? null)}
                     />
-                    <div className="space-y-1">
-                      <div className="text-xs text-muted-foreground">ID（英数字と_のみ）</div>
-                      <Input
-                        value={handleInput}
-                        onChange={(e) => setHandleInput(e.target.value)}
-                        placeholder="新しいID"
-                        className="bg-input border-border"
-                      />
-                    </div>
-                    <div className="space-y-1">
-                      <div className="text-xs text-muted-foreground">ID変更用パスワード</div>
-                      <div className="flex gap-2">
-                        <Input
-                          type="password"
-                          value={handlePassword}
-                          onChange={(e) => setHandlePassword(e.target.value)}
-                          placeholder="パスワード"
-                          className="bg-input border-border"
-                        />
-                        <Button onClick={handleUpdateHandle} disabled={updatingHandle}>
-                          IDを更新
-                        </Button>
+                    {idEditUnlocked && (
+                      <div className="space-y-1">
+                        <div className="text-xs text-muted-foreground">新しいID（英数字と_のみ）</div>
+                        <div className="flex gap-2">
+                          <Input
+                            value={handleInput}
+                            onChange={(e) => setHandleInput(e.target.value)}
+                            placeholder="新しいID"
+                            className="bg-input border-border"
+                          />
+                          <Button onClick={handleUpdateHandle} disabled={updatingHandle}>
+                            IDを更新
+                          </Button>
+                        </div>
                       </div>
-                    </div>
+                    )}
                   </div>
                 )}
               </div>
             </div>
           </CardContent>
         </Card>
+
+        <Dialog open={idEditConfirmOpen} onOpenChange={setIdEditConfirmOpen}>
+          <DialogContent className="max-w-md">
+            <DialogHeader>
+              <DialogTitle>IDを編集しますか？</DialogTitle>
+            </DialogHeader>
+            <div className="space-y-2">
+              <div className="text-sm text-muted-foreground">
+                IDの変更にはパスワード確認が必要です。
+              </div>
+              <Input
+                type="password"
+                value={handlePassword}
+                onChange={(e) => setHandlePassword(e.target.value)}
+                placeholder="パスワード"
+                className="bg-input border-border"
+              />
+            </div>
+            <DialogFooter className="gap-2">
+              <Button
+                variant="outline"
+                onClick={() => {
+                  setIdEditConfirmOpen(false);
+                }}
+              >
+                いいえ
+              </Button>
+              <Button
+                onClick={() => {
+                  if (!handlePassword) {
+                    toast({ title: 'パスワードを入力してください', variant: 'destructive' });
+                    return;
+                  }
+                  setHandleInput(handle);
+                  setIdEditUnlocked(true);
+                  setIdEditConfirmOpen(false);
+                }}
+              >
+                はい
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
 
         <Card className="bg-card border-border">
           <CardHeader className="flex flex-row items-center justify-between">
