@@ -308,6 +308,7 @@ export type Database = {
           bio: string | null
           avatar_url: string | null
           display_name: string
+          handle: string
           id: string
         }
         Insert: {
@@ -315,6 +316,7 @@ export type Database = {
           bio?: string | null
           avatar_url?: string | null
           display_name: string
+          handle: string
           id: string
         }
         Update: {
@@ -322,6 +324,7 @@ export type Database = {
           bio?: string | null
           avatar_url?: string | null
           display_name?: string
+          handle?: string
           id?: string
         }
         Relationships: []
@@ -509,6 +512,33 @@ export type Database = {
             referencedColumns: ["id"]
           },
         ]
+      }
+      friend_requests: {
+        Row: {
+          created_at: string
+          id: string
+          receiver_user_id: string
+          requester_user_id: string
+          status: string
+          updated_at: string
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          receiver_user_id: string
+          requester_user_id: string
+          status?: string
+          updated_at?: string
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          receiver_user_id?: string
+          requester_user_id?: string
+          status?: string
+          updated_at?: string
+        }
+        Relationships: []
       }
       stage_states: {
         Row: {

@@ -201,6 +201,7 @@ export interface RoomJoinRequest {
 export interface Profile {
   id: string;
   display_name: string;
+  handle: string;
   bio?: string | null;
   avatar_url?: string | null;
   created_at: string;
@@ -221,6 +222,15 @@ export interface ProfileReply {
   user_id: string;
   content: string;
   created_at: string;
+}
+
+export interface FriendRequest {
+  id: string;
+  requester_user_id: string;
+  receiver_user_id: string;
+  status: 'pending' | 'accepted' | 'rejected';
+  created_at: string;
+  updated_at: string;
 }
 
 // Replay export types
