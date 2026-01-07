@@ -12,7 +12,7 @@ import type { Profile, ProfilePost, ProfileReply } from '@/types/trpg';
 
 export default function UserProfilePage() {
   const { userId } = useParams<{ userId: string }>();
-  const { user, isDevAuth } = useAuth();
+  const { user } = useAuth();
   const { toast } = useToast();
   const [profile, setProfile] = useState<Profile | null>(null);
   const [posts, setPosts] = useState<ProfilePost[]>([]);
@@ -20,7 +20,6 @@ export default function UserProfilePage() {
   const [replyDrafts, setReplyDrafts] = useState<Record<string, string>>({});
 
   useEffect(() => {
-    if (isDevAuth) return;
     if (!userId) return;
     let canceled = false;
     (async () => {
@@ -35,7 +34,7 @@ export default function UserProfilePage() {
     return () => {
       canceled = true;
     };
-  }, [userId, isDevAuth]);
+  }, [userId]);
 
   const loadPosts = async () => {
     if (!userId) return;
@@ -61,9 +60,8 @@ export default function UserProfilePage() {
   };
 
   useEffect(() => {
-    if (isDevAuth) return;
     void loadPosts();
-  }, [userId, isDevAuth]);
+  }, [userId]);
 
   const repliesByPost = useMemo(() => {
     const map = new Map<string, ProfileReply[]>();
@@ -76,10 +74,6 @@ export default function UserProfilePage() {
   }, [replies]);
 
   const handleReply = async (postId: string) => {
-    if (isDevAuth) {
-      toast({ title: 'テストログイン中は返信できません', variant: 'destructive' });
-      return;
-    }
     if (!user?.id) return;
     const text = (replyDrafts[postId] || '').trim();
     if (!text) return;
@@ -93,24 +87,6 @@ export default function UserProfilePage() {
       await loadPosts();
     }
   };
-
-  if (isDevAuth) {
-    return (
-      <div className="min-h-screen bg-background p-4">
-        <div className="mx-auto w-full max-w-5xl space-y-4">
-          <div className="flex items-center justify-between gap-3">
-            <h1 className="font-display text-2xl text-foreground">ユーザーページ</h1>
-            <MainNav />
-          </div>
-          <Card className="bg-card border-border">
-            <CardContent className="pt-6 text-sm text-muted-foreground">
-              テストログイン中はユーザーページの閲覧ができません。
-            </CardContent>
-          </Card>
-        </div>
-      </div>
-    );
-  }
 
   return (
     <div className="min-h-screen bg-background p-4">

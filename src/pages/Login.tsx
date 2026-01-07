@@ -21,6 +21,7 @@ export default function LoginPage() {
   const [displayName, setDisplayName] = useState('');
   const [busy, setBusy] = useState(false);
   const allowDevAuth = import.meta.env.VITE_ALLOW_TEST_LOGIN === 'true';
+  const testLoginEmail = import.meta.env.VITE_TEST_LOGIN_EMAIL || 'test@example.com';
 
   const from = typeof location?.state?.from === 'string' ? location.state.from : '/';
 
@@ -36,12 +37,21 @@ export default function LoginPage() {
       return;
     }
     if (allowDevAuth && email.trim() === 'test' && password === 'test') {
-      try {
-        localStorage.setItem('trpg:devAuth', '1');
-      } catch {
-        // ignore
+      setBusy(true);
+      const { error } = await supabase.auth.signInWithPassword({
+        email: testLoginEmail,
+        password: 'test',
+      });
+      setBusy(false);
+      if (error) {
+        toast({
+          title: 'テストログインに失敗しました',
+          description: 'テスト用のアカウントがSupabaseに存在しません。',
+          variant: 'destructive',
+        });
+        return;
       }
-      toast({ title: 'テストログインしました（開発用）' });
+      toast({ title: 'テストユーザーでログインしました' });
       navigate(from, { replace: true });
       return;
     }
@@ -147,7 +157,7 @@ export default function LoginPage() {
                 </Button>
                 {allowDevAuth && (
                   <div className="text-xs text-muted-foreground">
-                    テストログイン: メール/パスワードに「test」を入力
+                    テストログイン: メール/パスワードに「test」を入力（テスト用アカウントでログイン）
                   </div>
                 )}
               </TabsContent>

@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Copy, Search } from 'lucide-react';
+import { Copy, Search, LogOut } from 'lucide-react';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/hooks/useAuth';
 import { useToast } from '@/hooks/use-toast';
@@ -11,7 +11,7 @@ import { MainNav } from '@/components/navigation/MainNav';
 import type { RoomPublicSettings } from '@/types/trpg';
 
 export default function PublicRoomsPage() {
-  const { user, isDevAuth } = useAuth();
+  const { user } = useAuth();
   const { toast } = useToast();
   const navigate = useNavigate();
   const [rooms, setRooms] = useState<RoomPublicSettings[]>([]);
@@ -20,10 +20,6 @@ export default function PublicRoomsPage() {
   const [copyingId, setCopyingId] = useState<string | null>(null);
 
   useEffect(() => {
-    if (isDevAuth) {
-      setLoading(false);
-      return;
-    }
     if (!user?.id) return;
     let canceled = false;
     (async () => {
@@ -44,7 +40,7 @@ export default function PublicRoomsPage() {
     return () => {
       canceled = true;
     };
-  }, [user?.id, isDevAuth]);
+  }, [user?.id]);
 
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
@@ -66,10 +62,6 @@ export default function PublicRoomsPage() {
   }, [rooms, query]);
 
   const copyToMyRoom = async (r: RoomPublicSettings) => {
-    if (isDevAuth) {
-      toast({ title: 'テストログイン中は利用できません', variant: 'destructive' });
-      return;
-    }
     if (!user?.id) return;
     setCopyingId(r.room_id);
     try {
@@ -137,30 +129,28 @@ export default function PublicRoomsPage() {
     }
   };
 
-  if (isDevAuth) {
-    return (
-      <div className="min-h-screen bg-background p-4">
-        <div className="mx-auto w-full max-w-5xl space-y-4">
-          <div className="flex items-center justify-between gap-3">
-            <h1 className="font-display text-2xl text-foreground">みんなのルーム</h1>
-            <MainNav />
-          </div>
-          <Card className="bg-card border-border">
-            <CardContent className="pt-6 text-sm text-muted-foreground">
-              テストログイン中は「みんなのルーム」は利用できません。
-            </CardContent>
-          </Card>
-        </div>
-      </div>
-    );
-  }
+  const signOut = async () => {
+    try {
+      localStorage.removeItem('trpg:devAuth');
+    } catch {
+      // ignore
+    }
+    await supabase.auth.signOut();
+    navigate('/login', { replace: true });
+  };
 
   return (
     <div className="min-h-screen bg-background p-4">
       <div className="mx-auto w-full max-w-5xl space-y-4">
         <div className="flex items-center justify-between gap-3">
           <h1 className="font-display text-2xl text-foreground">みんなのルーム</h1>
-          <MainNav />
+          <div className="flex items-center gap-3">
+            <MainNav />
+            <Button variant="outline" onClick={signOut}>
+              <LogOut className="w-4 h-4 mr-2" />
+              ログアウト
+            </Button>
+          </div>
         </div>
 
         <Card className="bg-card border-border">

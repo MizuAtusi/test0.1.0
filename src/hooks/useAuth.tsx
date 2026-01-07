@@ -12,6 +12,7 @@ type AuthState = {
 const AuthContext = createContext<AuthState | null>(null);
 const DEV_AUTH_KEY = 'trpg:devAuth';
 const ALLOW_DEV_AUTH = import.meta.env.VITE_ALLOW_TEST_LOGIN === 'true';
+const ALLOW_DEV_AUTH_LOCAL = import.meta.env.VITE_ALLOW_TEST_LOGIN_LOCAL === 'true';
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [session, setSession] = useState<Session | null>(null);
@@ -19,7 +20,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    if (ALLOW_DEV_AUTH) {
+    if (ALLOW_DEV_AUTH && ALLOW_DEV_AUTH_LOCAL) {
       try {
         const flag = localStorage.getItem(DEV_AUTH_KEY);
         if (flag === '1') {

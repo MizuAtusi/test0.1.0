@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { ImagePlus } from 'lucide-react';
+import { ImagePlus, LogOut } from 'lucide-react';
 import { useAuth } from '@/hooks/useAuth';
 import { supabase } from '@/integrations/supabase/client';
 import { uploadFile } from '@/lib/upload';
@@ -9,11 +9,13 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { MainNav } from '@/components/navigation/MainNav';
+import { useNavigate } from 'react-router-dom';
 import type { Profile, ProfilePost, ProfileReply } from '@/types/trpg';
 
 export default function MyPage() {
-  const { user, isDevAuth } = useAuth();
+  const { user } = useAuth();
   const { toast } = useToast();
+  const navigate = useNavigate();
   const [profile, setProfile] = useState<Profile | null>(null);
   const [displayName, setDisplayName] = useState('');
   const [bio, setBio] = useState('');
@@ -28,7 +30,6 @@ export default function MyPage() {
   const [replyDrafts, setReplyDrafts] = useState<Record<string, string>>({});
 
   useEffect(() => {
-    if (isDevAuth) return;
     if (!user?.id) return;
     let canceled = false;
     (async () => {
@@ -45,7 +46,7 @@ export default function MyPage() {
     return () => {
       canceled = true;
     };
-  }, [user?.id, isDevAuth]);
+  }, [user?.id]);
 
   const loadPosts = async () => {
     if (!user?.id) return;
@@ -71,9 +72,8 @@ export default function MyPage() {
   };
 
   useEffect(() => {
-    if (isDevAuth) return;
     void loadPosts();
-  }, [user?.id, isDevAuth]);
+  }, [user?.id]);
 
   const repliesByPost = useMemo(() => {
     const map = new Map<string, ProfileReply[]>();
@@ -86,10 +86,6 @@ export default function MyPage() {
   }, [replies]);
 
   const handleSaveProfile = async () => {
-    if (isDevAuth) {
-      toast({ title: 'テストログイン中は更新できません', variant: 'destructive' });
-      return;
-    }
     if (!user?.id) return;
     if (!displayName.trim()) {
       toast({ title: 'ユーザー名を入力してください', variant: 'destructive' });
@@ -123,10 +119,6 @@ export default function MyPage() {
   };
 
   const handleCreatePost = async () => {
-    if (isDevAuth) {
-      toast({ title: 'テストログイン中は投稿できません', variant: 'destructive' });
-      return;
-    }
     if (!user?.id) return;
     if (!newPost.trim()) {
       toast({ title: '投稿内容を入力してください', variant: 'destructive' });
@@ -158,10 +150,6 @@ export default function MyPage() {
   };
 
   const handleReply = async (postId: string) => {
-    if (isDevAuth) {
-      toast({ title: 'テストログイン中は返信できません', variant: 'destructive' });
-      return;
-    }
     if (!user?.id) return;
     const text = (replyDrafts[postId] || '').trim();
     if (!text) return;
@@ -176,30 +164,28 @@ export default function MyPage() {
     }
   };
 
-  if (isDevAuth) {
-    return (
-      <div className="min-h-screen bg-background p-4">
-        <div className="mx-auto w-full max-w-5xl space-y-4">
-          <div className="flex items-center justify-between gap-3">
-            <h1 className="font-display text-2xl text-foreground">マイページ</h1>
-            <MainNav />
-          </div>
-          <Card className="bg-card border-border">
-            <CardContent className="pt-6 text-sm text-muted-foreground">
-              テストログイン中はマイページ編集が利用できません。
-            </CardContent>
-          </Card>
-        </div>
-      </div>
-    );
-  }
+  const signOut = async () => {
+    try {
+      localStorage.removeItem('trpg:devAuth');
+    } catch {
+      // ignore
+    }
+    await supabase.auth.signOut();
+    navigate('/login', { replace: true });
+  };
 
   return (
     <div className="min-h-screen bg-background p-4">
       <div className="mx-auto w-full max-w-5xl space-y-4">
         <div className="flex items-center justify-between gap-3">
           <h1 className="font-display text-2xl text-foreground">マイページ</h1>
-          <MainNav />
+          <div className="flex items-center gap-3">
+            <MainNav />
+            <Button variant="outline" onClick={signOut}>
+              <LogOut className="w-4 h-4 mr-2" />
+              ログアウト
+            </Button>
+          </div>
         </div>
 
         <Card className="bg-card border-border">
