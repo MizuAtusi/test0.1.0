@@ -15,6 +15,7 @@ export default function PublicRoomsPage() {
   const { toast } = useToast();
   const navigate = useNavigate();
   const [rooms, setRooms] = useState<RoomPublicSettings[]>([]);
+  const [ownerProfiles, setOwnerProfiles] = useState<Record<string, { id: string; display_name: string; handle: string }>>({});
   const [query, setQuery] = useState('');
   const [loading, setLoading] = useState(true);
   const [copyingId, setCopyingId] = useState<string | null>(null);
@@ -36,6 +37,20 @@ export default function PublicRoomsPage() {
         return;
       }
       setRooms((data as any) || []);
+      const ownerIds = Array.from(new Set(((data as any[]) || []).map((r) => r.owner_user_id).filter(Boolean)));
+      if (ownerIds.length > 0) {
+        const { data: owners } = await supabase
+          .from('profiles')
+          .select('id,display_name,handle')
+          .in('id', ownerIds);
+        const map: Record<string, { id: string; display_name: string; handle: string }> = {};
+        (owners as any[] | null)?.forEach((o) => {
+          if (o?.id) map[o.id] = o;
+        });
+        setOwnerProfiles(map);
+      } else {
+        setOwnerProfiles({});
+      }
     })();
     return () => {
       canceled = true;
@@ -181,7 +196,9 @@ export default function PublicRoomsPage() {
             ) : filtered.length === 0 ? (
               <div className="text-muted-foreground text-sm">公開ルームはありません</div>
             ) : (
-              filtered.map((r) => (
+              filtered.map((r) => {
+                const owner = ownerProfiles[r.owner_user_id];
+                return (
                 <div key={r.room_id} className="flex items-center justify-between gap-3 rounded-md border border-border/50 p-3">
                   <div className="min-w-0 space-y-1">
                     <div className="font-medium truncate">{r.title || '(無題)'}</div>
@@ -191,6 +208,15 @@ export default function PublicRoomsPage() {
                       </span>
                       <span>{r.allow_copy ? '頒布OK' : '頒布不可'}</span>
                     </div>
+                    {owner && (
+                      <button
+                        type="button"
+                        className="text-xs text-muted-foreground underline text-left"
+                        onClick={() => navigate(`/users/${owner.id}`)}
+                      >
+                        作成者: {owner.display_name || 'ユーザー'} @{owner.handle || 'id'}
+                      </button>
+                    )}
                     {r.description && (
                       <div className="text-xs text-muted-foreground line-clamp-2">{r.description}</div>
                     )}
@@ -214,7 +240,7 @@ export default function PublicRoomsPage() {
                     </Button>
                   </div>
                 </div>
-              ))
+              )})
             )}
           </CardContent>
         </Card>

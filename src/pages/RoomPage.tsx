@@ -13,7 +13,7 @@ import { supabase } from '@/integrations/supabase/client';
 import { getPortraitTransform } from '@/lib/portraitTransforms';
 import { getCharacterAvatarUrl } from '@/lib/characterAvatar';
 import { getPortraitTransformRel } from '@/lib/portraitTransformsShared';
-import type { Room } from '@/types/trpg';
+import type { Room, Profile } from '@/types/trpg';
 import { useAuth } from '@/hooks/useAuth';
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Textarea } from '@/components/ui/textarea';
@@ -70,6 +70,7 @@ export default function RoomPage() {
   }, []);
 
   const [joinDialogOpen, setJoinDialogOpen] = useState(false);
+  const [publicOwnerProfile, setPublicOwnerProfile] = useState<Profile | null>(null);
   const {
     room,
     participant,
@@ -436,6 +437,27 @@ export default function RoomPage() {
   );
   const isExcludedFromSecret = !!(stageState?.is_secret && participant && !canViewSecret);
 
+  useEffect(() => {
+    if (!publicSettings?.owner_user_id) {
+      setPublicOwnerProfile(null);
+      return;
+    }
+    let canceled = false;
+    (async () => {
+      const { data, error } = await supabase
+        .from('profiles')
+        .select('id,display_name,handle,avatar_url,bio,created_at')
+        .eq('id', publicSettings.owner_user_id)
+        .maybeSingle();
+      if (canceled) return;
+      if (error) return;
+      setPublicOwnerProfile((data as any) || null);
+    })();
+    return () => {
+      canceled = true;
+    };
+  }, [publicSettings?.owner_user_id]);
+
   if (loading) {
     return (
       <div className="min-h-screen bg-background flex items-center justify-center">
@@ -475,7 +497,12 @@ export default function RoomPage() {
           </div>
         </header>
 
-        <Dialog open>
+        <Dialog
+          open
+          onOpenChange={(next) => {
+            if (!next) navigate('/');
+          }}
+        >
           <DialogContent>
             <DialogHeader>
             <DialogTitle>ルーム情報</DialogTitle>
@@ -488,8 +515,17 @@ export default function RoomPage() {
                     : 'このルームは公開されています。参加申請を送ることができます。')
                 : 'このルームは非公開です。参加にはGMの承認が必要です。'}
             </div>
-            {publicSettings?.title && (
+              {publicSettings?.title && (
               <div className="text-base font-semibold">{publicSettings.title}</div>
+            )}
+            {publicOwnerProfile && (
+              <button
+                type="button"
+                className="text-sm text-muted-foreground underline text-left"
+                onClick={() => navigate(`/users/${publicOwnerProfile.id}`)}
+              >
+                作成者: {publicOwnerProfile.display_name || 'ユーザー'} @{publicOwnerProfile.handle || 'id'}
+              </button>
             )}
               {publicSettings?.description && (
                 <div className="text-sm text-muted-foreground whitespace-pre-wrap">{publicSettings.description}</div>
