@@ -60,6 +60,8 @@ export function StageToolbar({
   const [noteText, setNoteText] = useState('');
   const [noteShared, setNoteShared] = useState(false);
   const [commentDrafts, setCommentDrafts] = useState<Record<string, string>>({});
+  const [noteEditOpenById, setNoteEditOpenById] = useState<Record<string, boolean>>({});
+  const [noteEditTextById, setNoteEditTextById] = useState<Record<string, string>>({});
   const [infoImageFiles, setInfoImageFiles] = useState<File[]>([]);
   const [infoImages, setInfoImages] = useState<any[]>([]);
   const [infoEditMode, setInfoEditMode] = useState(false);
@@ -154,6 +156,8 @@ export function StageToolbar({
     setSelectedInfoContent(null);
     setNotes([]);
     setNoteComments({});
+    setNoteEditOpenById({});
+    setNoteEditTextById({});
     setInfoImages([]);
     setInfoEditMode(false);
     setInfoEditImageFiles([]);
@@ -196,6 +200,21 @@ export function StageToolbar({
       setNoteComments(grouped);
     }
   };
+
+  useEffect(() => {
+    if (!notes.length) return;
+    setNoteEditTextById((prev) => {
+      const next = { ...prev };
+      let changed = false;
+      notes.forEach((note: any) => {
+        if (next[note.id] === undefined) {
+          next[note.id] = note.content;
+          changed = true;
+        }
+      });
+      return changed ? next : prev;
+    });
+  }, [notes]);
 
   const resetInfoCreate = () => {
     setInfoTitle('');
@@ -281,6 +300,45 @@ export function StageToolbar({
     setNoteText('');
     setNoteShared(false);
     await loadInfoDetail(selectedInfoId);
+  };
+
+  const handleUpdateNote = async (noteId: string, content: string) => {
+    if (!currentUserId || !content.trim()) return;
+    const { error } = await supabase
+      .from('session_info_notes')
+      .update({ content: content.trim(), updated_at: new Date().toISOString() } as any)
+      .eq('id', noteId)
+      .eq('author_user_id', currentUserId);
+    if (error) {
+      toast({ title: 'メモの更新に失敗しました', description: error.message, variant: 'destructive' });
+      return;
+    }
+    setNoteEditOpenById((prev) => ({ ...prev, [noteId]: false }));
+    await loadInfoDetail(selectedInfoId || '');
+  };
+
+  const handleDeleteNote = async (noteId: string) => {
+    if (!currentUserId) return;
+    const { error } = await supabase
+      .from('session_info_notes')
+      .delete()
+      .eq('id', noteId)
+      .eq('author_user_id', currentUserId);
+    if (error) {
+      toast({ title: 'メモの削除に失敗しました', description: error.message, variant: 'destructive' });
+      return;
+    }
+    setNoteEditOpenById((prev) => {
+      const next = { ...prev };
+      delete next[noteId];
+      return next;
+    });
+    setNoteEditTextById((prev) => {
+      const next = { ...prev };
+      delete next[noteId];
+      return next;
+    });
+    await loadInfoDetail(selectedInfoId || '');
   };
 
   const handleAddComment = async (noteId: string, comment: string) => {
@@ -541,7 +599,7 @@ export function StageToolbar({
 
       {/* Info Dialog */}
       <Dialog open={showInfo} onOpenChange={setShowInfo}>
-        <DialogContent className="max-w-2xl h-[80vh] flex flex-col overflow-hidden">
+        <DialogContent className="max-w-2xl h-[80vh] flex flex-col overflow-y-auto">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
               <Info className="w-5 h-5" />
@@ -627,7 +685,6 @@ export function StageToolbar({
                     </div>
                     {canViewInfoContent(infoById[selectedInfoId]) && infoImages.length > 0 && (
                       <div className="space-y-2">
-                        <div className="text-sm font-semibold">添付画像</div>
                         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                           {infoImages.map((img: any) => (
                             <div key={img.id} className="border rounded-md overflow-hidden bg-secondary/20 relative">
@@ -698,7 +755,7 @@ export function StageToolbar({
                         )}
                       </div>
                     )}
-                    {canViewInfoContent(infoById[selectedInfoId]) && (
+                    {!infoEditMode && canViewInfoContent(infoById[selectedInfoId]) && (
                       <div className="space-y-3">
                         <div className="text-sm font-semibold">メモ</div>
                         <div className="space-y-3">
@@ -706,6 +763,9 @@ export function StageToolbar({
                             const author = memberProfiles[note.author_user_id];
                             const comments = noteComments[note.id] || [];
                             const commentText = commentDrafts[note.id] || '';
+                            const isOwner = note.author_user_id === currentUserId;
+                            const noteEditOpen = !!noteEditOpenById[note.id];
+                            const noteEditText = noteEditTextById[note.id] ?? note.content;
                             return (
                               <div key={note.id} className="border rounded-md p-3 space-y-2">
                                 <div className="flex items-center justify-between text-xs text-muted-foreground">
@@ -723,9 +783,52 @@ export function StageToolbar({
                                         <Lock className="w-3 h-3" />非公開
                                       </span>
                                     )}
+                                    {isOwner && (
+                                      <>
+                                        <button
+                                          type="button"
+                                          className="text-xs hover:underline"
+                                          onClick={() =>
+                                            setNoteEditOpenById((prev) => ({
+                                              ...prev,
+                                              [note.id]: !prev[note.id],
+                                            }))
+                                          }
+                                        >
+                                          {noteEditOpen ? '閉じる' : '編集'}
+                                        </button>
+                                        <button
+                                          type="button"
+                                          className="text-xs text-destructive hover:underline"
+                                          onClick={() => handleDeleteNote(note.id)}
+                                        >
+                                          削除
+                                        </button>
+                                      </>
+                                    )}
                                   </div>
                                 </div>
-                                <div className="text-sm whitespace-pre-wrap">{note.content}</div>
+                                {noteEditOpen ? (
+                                  <div className="space-y-2">
+                                    <Textarea
+                                      value={noteEditText}
+                                      onChange={(e) =>
+                                        setNoteEditTextById((prev) => ({
+                                          ...prev,
+                                          [note.id]: e.target.value,
+                                        }))
+                                      }
+                                      className="min-h-[120px]"
+                                    />
+                                    <div className="flex justify-end">
+                                      <Button size="sm" onClick={() => handleUpdateNote(note.id, noteEditText)}>
+                                        保存
+                                      </Button>
+                                    </div>
+                                  </div>
+                                ) : (
+                                  <div className="text-sm whitespace-pre-wrap">{note.content}</div>
+                                )}
                                 {note.visibility === 'shared' && (
                                   <div className="space-y-2 pt-2 border-t">
                                     <div className="text-xs text-muted-foreground">コメント</div>
