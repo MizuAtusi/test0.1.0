@@ -8,6 +8,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 
 export default function LoginPage() {
@@ -17,9 +18,12 @@ export default function LoginPage() {
   const { toast } = useToast();
 
   const [email, setEmail] = useState('');
+  const [loginId, setLoginId] = useState('');
   const [password, setPassword] = useState('');
   const [displayName, setDisplayName] = useState('');
   const [busy, setBusy] = useState(false);
+  const [resetOpen, setResetOpen] = useState(false);
+  const [resetEmail, setResetEmail] = useState('');
   const allowDevAuth = import.meta.env.VITE_ALLOW_TEST_LOGIN === 'true';
   const testLoginEmail = import.meta.env.VITE_TEST_LOGIN_EMAIL || 'test@example.com';
   const basePath = import.meta.env.BASE_URL || '/';
@@ -33,11 +37,11 @@ export default function LoginPage() {
   }, [loading, user, from, navigate]);
 
   const signIn = async () => {
-    if (!email.trim() || !password) {
-      toast({ title: 'メールアドレスとパスワードを入力してください', variant: 'destructive' });
+    if (!loginId.trim() || !password) {
+      toast({ title: 'メールアドレスまたはIDとパスワードを入力してください', variant: 'destructive' });
       return;
     }
-    if (allowDevAuth && email.trim() === 'test' && password === 'test') {
+    if (allowDevAuth && loginId.trim() === 'test' && password === 'test') {
       setBusy(true);
       const { error } = await supabase.auth.signInWithPassword({
         email: testLoginEmail,
@@ -58,7 +62,7 @@ export default function LoginPage() {
     }
     setBusy(true);
     const { error } = await supabase.auth.signInWithPassword({
-      email: email.trim(),
+      email: loginId.trim(),
       password,
     });
     setBusy(false);
@@ -105,19 +109,20 @@ export default function LoginPage() {
   };
 
   const handleForgotPassword = async () => {
-    if (!email.trim()) {
+    if (!resetEmail.trim()) {
       toast({ title: 'メールアドレスを入力してください', variant: 'destructive' });
       return;
     }
     setBusy(true);
     const redirectTo = new URL(`${basePath}reset-password`, window.location.origin).toString();
-    const { error } = await supabase.auth.resetPasswordForEmail(email.trim(), { redirectTo });
+    const { error } = await supabase.auth.resetPasswordForEmail(resetEmail.trim(), { redirectTo });
     setBusy(false);
     if (error) {
       toast({ title: '送信に失敗しました', description: error.message, variant: 'destructive' });
       return;
     }
     toast({ title: '再設定用のメールを送信しました' });
+    setResetOpen(false);
   };
 
   return (
@@ -142,14 +147,14 @@ export default function LoginPage() {
 
               <div className="mt-4 space-y-4">
                 <div className="space-y-2">
-                  <Label htmlFor="email">メールアドレス</Label>
+                  <Label htmlFor="login-id">メールアドレスまたはID</Label>
                   <Input
-                    id="email"
-                    type="email"
-                    value={email}
-                    onChange={(e) => setEmail(e.target.value)}
+                    id="login-id"
+                    type="text"
+                    value={loginId}
+                    onChange={(e) => setLoginId(e.target.value)}
                     className="bg-input border-border"
-                    autoComplete="email"
+                    autoComplete="username"
                   />
                 </div>
                 <div className="space-y-2">
@@ -165,7 +170,10 @@ export default function LoginPage() {
                   <button
                     type="button"
                     className="text-xs text-muted-foreground hover:underline"
-                    onClick={handleForgotPassword}
+                    onClick={() => {
+                      setResetEmail('');
+                      setResetOpen(true);
+                    }}
                   >
                     パスワードを忘れてしまった場合
                   </button>
@@ -207,6 +215,32 @@ export default function LoginPage() {
             </Tabs>
           </CardContent>
         </Card>
+        <Dialog open={resetOpen} onOpenChange={setResetOpen}>
+          <DialogContent className="max-w-md">
+            <DialogHeader>
+              <DialogTitle>パスワード再設定</DialogTitle>
+            </DialogHeader>
+            <div className="space-y-2">
+              <Label htmlFor="reset-email">メールアドレス</Label>
+              <Input
+                id="reset-email"
+                type="email"
+                value={resetEmail}
+                onChange={(e) => setResetEmail(e.target.value)}
+                className="bg-input border-border"
+                autoComplete="email"
+              />
+            </div>
+            <DialogFooter className="gap-2">
+              <Button variant="outline" onClick={() => setResetOpen(false)}>
+                キャンセル
+              </Button>
+              <Button onClick={handleForgotPassword} disabled={busy}>
+                パスワードを再設定する
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
       </div>
     </div>
   );

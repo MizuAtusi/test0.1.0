@@ -70,6 +70,9 @@ export function StageToolbar({
   const [infoSaving, setInfoSaving] = useState(false);
   const [infoEditImageFiles, setInfoEditImageFiles] = useState<File[]>([]);
   const [infoRemovedImageIds, setInfoRemovedImageIds] = useState<string[]>([]);
+  const [infoEditVisibility, setInfoEditVisibility] = useState<'public' | 'restricted' | 'gm_only'>('public');
+  const [infoEditListVisibility, setInfoEditListVisibility] = useState<'hidden' | 'title'>('title');
+  const [infoEditAllowedUsers, setInfoEditAllowedUsers] = useState<string[]>([]);
   const { toast } = useToast();
 
   useEffect(() => {
@@ -172,6 +175,9 @@ export function StageToolbar({
     setSelectedInfoContent(contentRow?.content ?? '');
     setInfoEditTitle(info.title || '');
     setInfoEditContent(contentRow?.content ?? '');
+    setInfoEditVisibility(info.visibility || 'public');
+    setInfoEditListVisibility(info.list_visibility || 'title');
+    setInfoEditAllowedUsers(Array.isArray(info.allowed_user_ids) ? info.allowed_user_ids : []);
     const { data: imageRows } = await supabase
       .from('session_info_images')
       .select('*')
@@ -302,6 +308,20 @@ export function StageToolbar({
     await loadInfoDetail(selectedInfoId);
   };
 
+  const handleToggleNoteVisibility = async (noteId: string, visibility: 'private' | 'shared') => {
+    if (!currentUserId) return;
+    const { error } = await supabase
+      .from('session_info_notes')
+      .update({ visibility, updated_at: new Date().toISOString() } as any)
+      .eq('id', noteId)
+      .eq('author_user_id', currentUserId);
+    if (error) {
+      toast({ title: '公開設定の変更に失敗しました', description: error.message, variant: 'destructive' });
+      return;
+    }
+    await loadInfoDetail(selectedInfoId || '');
+  };
+
   const handleUpdateNote = async (noteId: string, content: string) => {
     if (!currentUserId || !content.trim()) return;
     const { error } = await supabase
@@ -364,6 +384,9 @@ export function StageToolbar({
     setInfoEditContent(selectedInfoContent ?? '');
     setInfoEditImageFiles([]);
     setInfoRemovedImageIds([]);
+    setInfoEditVisibility(info?.visibility || 'public');
+    setInfoEditListVisibility(info?.list_visibility || 'title');
+    setInfoEditAllowedUsers(Array.isArray(info?.allowed_user_ids) ? info.allowed_user_ids : []);
     setInfoEditMode(true);
   };
 
@@ -373,6 +396,9 @@ export function StageToolbar({
     setInfoEditContent(selectedInfoContent ?? '');
     setInfoEditImageFiles([]);
     setInfoRemovedImageIds([]);
+    setInfoEditVisibility(info?.visibility || 'public');
+    setInfoEditListVisibility(info?.list_visibility || 'title');
+    setInfoEditAllowedUsers(Array.isArray(info?.allowed_user_ids) ? info.allowed_user_ids : []);
     setInfoEditMode(false);
   };
 
@@ -385,7 +411,13 @@ export function StageToolbar({
     setInfoSaving(true);
     const { error: infoError } = await supabase
       .from('session_infos')
-      .update({ title: infoEditTitle.trim(), updated_at: new Date().toISOString() } as any)
+      .update({
+        title: infoEditTitle.trim(),
+        visibility: infoEditVisibility,
+        list_visibility: infoEditListVisibility,
+        allowed_user_ids: infoEditAllowedUsers,
+        updated_at: new Date().toISOString(),
+      } as any)
       .eq('id', selectedInfoId);
     const { error: contentError } = await supabase
       .from('session_info_contents')
@@ -670,11 +702,81 @@ export function StageToolbar({
                       {canViewInfoContent(infoById[selectedInfoId]) && (
                         <>
                           {infoEditMode ? (
-                            <Textarea
-                              value={infoEditContent}
-                              onChange={(e) => setInfoEditContent(e.target.value)}
-                              className="min-h-[180px] mt-3"
-                            />
+                            <div className="space-y-3 mt-3">
+                              <Textarea
+                                value={infoEditContent}
+                                onChange={(e) => setInfoEditContent(e.target.value)}
+                                className="min-h-[180px]"
+                              />
+                              <div className="space-y-2">
+                                <Label>公開範囲</Label>
+                                <div className="flex flex-wrap gap-2">
+                                  <Button
+                                    variant={infoEditVisibility === 'public' ? 'default' : 'outline'}
+                                    size="sm"
+                                    onClick={() => setInfoEditVisibility('public')}
+                                  >
+                                    全体公開
+                                  </Button>
+                                  <Button
+                                    variant={infoEditVisibility === 'restricted' ? 'default' : 'outline'}
+                                    size="sm"
+                                    onClick={() => setInfoEditVisibility('restricted')}
+                                  >
+                                    制限付き
+                                  </Button>
+                                  <Button
+                                    variant={infoEditVisibility === 'gm_only' ? 'default' : 'outline'}
+                                    size="sm"
+                                    onClick={() => setInfoEditVisibility('gm_only')}
+                                  >
+                                    GMのみ
+                                  </Button>
+                                </div>
+                              </div>
+                              {infoEditVisibility !== 'public' && (
+                                <div className="space-y-2">
+                                  <Label>一覧での表示</Label>
+                                  <div className="flex gap-2">
+                                    <Button
+                                      variant={infoEditListVisibility === 'title' ? 'default' : 'outline'}
+                                      size="sm"
+                                      onClick={() => setInfoEditListVisibility('title')}
+                                    >
+                                      タイトルだけ表示
+                                    </Button>
+                                    <Button
+                                      variant={infoEditListVisibility === 'hidden' ? 'default' : 'outline'}
+                                      size="sm"
+                                      onClick={() => setInfoEditListVisibility('hidden')}
+                                    >
+                                      存在も隠す
+                                    </Button>
+                                  </div>
+                                </div>
+                              )}
+                              {infoEditVisibility === 'restricted' && (
+                                <div className="space-y-2">
+                                  <Label>閲覧可能なプレイヤー</Label>
+                                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 max-h-[160px] overflow-auto border rounded-md p-2">
+                                    {Object.values(memberProfiles).map((p: any) => (
+                                      <label key={p.id} className="flex items-center gap-2 text-sm">
+                                        <Checkbox
+                                          checked={infoEditAllowedUsers.includes(p.id)}
+                                          onCheckedChange={(checked) => {
+                                            setInfoEditAllowedUsers((prev) => {
+                                              if (checked) return [...prev, p.id];
+                                              return prev.filter((id) => id !== p.id);
+                                            });
+                                          }}
+                                        />
+                                        <span>{p.display_name} {p.handle ? `@${p.handle}` : ''}</span>
+                                      </label>
+                                    ))}
+                                  </div>
+                                </div>
+                              )}
+                            </div>
                           ) : (
                             <div className="whitespace-pre-wrap text-sm mt-3">
                               {selectedInfoContent ?? '読み込み中...'}
@@ -820,6 +922,23 @@ export function StageToolbar({
                                       }
                                       className="min-h-[120px]"
                                     />
+                                    <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
+                                      <span>公開設定:</span>
+                                      <Button
+                                        size="sm"
+                                        variant={note.visibility === 'private' ? 'default' : 'outline'}
+                                        onClick={() => handleToggleNoteVisibility(note.id, 'private')}
+                                      >
+                                        非公開
+                                      </Button>
+                                      <Button
+                                        size="sm"
+                                        variant={note.visibility === 'shared' ? 'default' : 'outline'}
+                                        onClick={() => handleToggleNoteVisibility(note.id, 'shared')}
+                                      >
+                                        共有
+                                      </Button>
+                                    </div>
                                     <div className="flex justify-end">
                                       <Button size="sm" onClick={() => handleUpdateNote(note.id, noteEditText)}>
                                         保存
