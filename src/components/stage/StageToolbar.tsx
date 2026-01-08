@@ -11,7 +11,7 @@ import { useToast } from '@/hooks/use-toast';
 import { exportReplay } from '@/lib/replayExport';
 import { getDisplayText } from '@/lib/expressionTag';
 import { supabase } from '@/integrations/supabase/client';
-import { uploadFile } from '@/lib/upload';
+import { deleteFile, uploadFile } from '@/lib/upload';
 import type { Room, Message, StageState, Participant, Character } from '@/types/trpg';
 
 interface StageToolbarProps {
@@ -62,6 +62,12 @@ export function StageToolbar({
   const [commentDrafts, setCommentDrafts] = useState<Record<string, string>>({});
   const [infoImageFiles, setInfoImageFiles] = useState<File[]>([]);
   const [infoImages, setInfoImages] = useState<any[]>([]);
+  const [infoEditMode, setInfoEditMode] = useState(false);
+  const [infoEditTitle, setInfoEditTitle] = useState('');
+  const [infoEditContent, setInfoEditContent] = useState('');
+  const [infoSaving, setInfoSaving] = useState(false);
+  const [infoEditImageFiles, setInfoEditImageFiles] = useState<File[]>([]);
+  const [infoRemovedImageIds, setInfoRemovedImageIds] = useState<string[]>([]);
   const { toast } = useToast();
 
   useEffect(() => {
@@ -149,6 +155,9 @@ export function StageToolbar({
     setNotes([]);
     setNoteComments({});
     setInfoImages([]);
+    setInfoEditMode(false);
+    setInfoEditImageFiles([]);
+    setInfoRemovedImageIds([]);
     const info = infoById[infoId];
     if (!info || !canViewInfoContent(info)) return;
     const { data: contentRow } = await supabase
@@ -157,6 +166,8 @@ export function StageToolbar({
       .eq('info_id', infoId)
       .maybeSingle();
     setSelectedInfoContent(contentRow?.content ?? '');
+    setInfoEditTitle(info.title || '');
+    setInfoEditContent(contentRow?.content ?? '');
     const { data: imageRows } = await supabase
       .from('session_info_images')
       .select('*')
@@ -284,6 +295,89 @@ export function StageToolbar({
     await loadInfoDetail(selectedInfoId || '');
   };
 
+  const handleStartEditInfo = () => {
+    if (!selectedInfoId) return;
+    const info = infoById[selectedInfoId];
+    setInfoEditTitle(info?.title || '');
+    setInfoEditContent(selectedInfoContent ?? '');
+    setInfoEditImageFiles([]);
+    setInfoRemovedImageIds([]);
+    setInfoEditMode(true);
+  };
+
+  const handleCancelEditInfo = () => {
+    const info = selectedInfoId ? infoById[selectedInfoId] : null;
+    setInfoEditTitle(info?.title || '');
+    setInfoEditContent(selectedInfoContent ?? '');
+    setInfoEditImageFiles([]);
+    setInfoRemovedImageIds([]);
+    setInfoEditMode(false);
+  };
+
+  const handleSaveInfo = async () => {
+    if (!selectedInfoId) return;
+    if (!infoEditTitle.trim()) {
+      toast({ title: 'タイトルを入力してください', variant: 'destructive' });
+      return;
+    }
+    setInfoSaving(true);
+    const { error: infoError } = await supabase
+      .from('session_infos')
+      .update({ title: infoEditTitle.trim(), updated_at: new Date().toISOString() } as any)
+      .eq('id', selectedInfoId);
+    const { error: contentError } = await supabase
+      .from('session_info_contents')
+      .update({ content: infoEditContent, updated_at: new Date().toISOString() } as any)
+      .eq('info_id', selectedInfoId);
+    for (const imageId of infoRemovedImageIds) {
+      const image = infoImages.find((img: any) => img.id === imageId);
+      if (image?.url) {
+        await deleteFile(image.url);
+      }
+      await supabase.from('session_info_images').delete().eq('id', imageId);
+    }
+    if (infoEditImageFiles.length && room) {
+      let order = infoImages.length;
+      for (const file of infoEditImageFiles) {
+        if (!file.type.startsWith('image/')) continue;
+        const url = await uploadFile(file, `session-info/${room.id}`);
+        if (!url) {
+          toast({ title: '画像のアップロードに失敗しました', variant: 'destructive' });
+          setInfoSaving(false);
+          return;
+        }
+        await supabase.from('session_info_images').insert({
+          info_id: selectedInfoId,
+          url,
+          label: file.name.replace(/\.[^.]+$/, ''),
+          sort_order: order,
+        });
+        order += 1;
+      }
+    }
+    setInfoSaving(false);
+    if (infoError || contentError) {
+      toast({ title: '情報の更新に失敗しました', variant: 'destructive' });
+      return;
+    }
+    await loadInfoList();
+    await loadInfoDetail(selectedInfoId);
+    setInfoEditMode(false);
+  };
+
+  const handleDeleteInfo = async () => {
+    if (!selectedInfoId) return;
+    if (!confirm('この情報を削除しますか？')) return;
+    const { error } = await supabase.from('session_infos').delete().eq('id', selectedInfoId);
+    if (error) {
+      toast({ title: '情報の削除に失敗しました', description: error.message, variant: 'destructive' });
+      return;
+    }
+    toast({ title: '情報を削除しました' });
+    setSelectedInfoId(null);
+    await loadInfoList();
+  };
+
   const handleSelectInfoImages = (files: FileList | null) => {
     if (!files) return;
     const next: File[] = [];
@@ -292,6 +386,16 @@ export function StageToolbar({
     });
     if (!next.length) return;
     setInfoImageFiles((prev) => [...prev, ...next]);
+  };
+
+  const handleSelectInfoEditImages = (files: FileList | null) => {
+    if (!files) return;
+    const next: File[] = [];
+    Array.from(files).forEach((file) => {
+      if (file.type.startsWith('image/')) next.push(file);
+    });
+    if (!next.length) return;
+    setInfoEditImageFiles((prev) => [...prev, ...next]);
   };
 
   useEffect(() => {
@@ -443,25 +547,68 @@ export function StageToolbar({
                     <ChevronLeft className="w-4 h-4 mr-1" />
                     一覧へ戻る
                   </Button>
-                  <div className="text-xs text-muted-foreground">
-                    {infoById[selectedInfoId]?.visibility === 'public' && '全体公開'}
-                    {infoById[selectedInfoId]?.visibility === 'restricted' && '制限付き'}
-                    {infoById[selectedInfoId]?.visibility === 'gm_only' && 'GMのみ'}
+                  <div className="flex items-center gap-2">
+                    <div className="text-xs text-muted-foreground">
+                      {infoById[selectedInfoId]?.visibility === 'public' && '全体公開'}
+                      {infoById[selectedInfoId]?.visibility === 'restricted' && '制限付き'}
+                      {infoById[selectedInfoId]?.visibility === 'gm_only' && 'GMのみ'}
+                    </div>
+                    {isGM && (
+                      <>
+                        {infoEditMode ? (
+                          <>
+                            <Button size="sm" variant="outline" onClick={handleCancelEditInfo} disabled={infoSaving}>
+                              キャンセル
+                            </Button>
+                            <Button size="sm" onClick={handleSaveInfo} disabled={infoSaving}>
+                              保存
+                            </Button>
+                          </>
+                        ) : (
+                          <>
+                            <Button size="sm" variant="outline" onClick={handleStartEditInfo}>
+                              編集
+                            </Button>
+                            <Button size="sm" variant="destructive" onClick={handleDeleteInfo}>
+                              削除
+                            </Button>
+                          </>
+                        )}
+                      </>
+                    )}
                   </div>
                 </div>
                 <ScrollArea className="flex-1 pr-2">
                   <div className="space-y-4 py-4">
                     <div>
-                      <h3 className="text-lg font-semibold">{infoById[selectedInfoId]?.title}</h3>
+                      {infoEditMode ? (
+                        <Input
+                          value={infoEditTitle}
+                          onChange={(e) => setInfoEditTitle(e.target.value)}
+                          className="text-lg font-semibold"
+                        />
+                      ) : (
+                        <h3 className="text-lg font-semibold">{infoById[selectedInfoId]?.title}</h3>
+                      )}
                       {!canViewInfoContent(infoById[selectedInfoId]) && (
                         <p className="text-sm text-muted-foreground mt-2">
                           この情報の内容を閲覧する権限がありません。
                         </p>
                       )}
                       {canViewInfoContent(infoById[selectedInfoId]) && (
-                        <div className="whitespace-pre-wrap text-sm mt-3">
-                          {selectedInfoContent ?? '読み込み中...'}
-                        </div>
+                        <>
+                          {infoEditMode ? (
+                            <Textarea
+                              value={infoEditContent}
+                              onChange={(e) => setInfoEditContent(e.target.value)}
+                              className="min-h-[180px] mt-3"
+                            />
+                          ) : (
+                            <div className="whitespace-pre-wrap text-sm mt-3">
+                              {selectedInfoContent ?? '読み込み中...'}
+                            </div>
+                          )}
+                        </>
                       )}
                     </div>
                     {canViewInfoContent(infoById[selectedInfoId]) && infoImages.length > 0 && (
@@ -469,8 +616,26 @@ export function StageToolbar({
                         <div className="text-sm font-semibold">添付画像</div>
                         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                           {infoImages.map((img: any) => (
-                            <div key={img.id} className="border rounded-md overflow-hidden bg-secondary/20">
+                            <div key={img.id} className="border rounded-md overflow-hidden bg-secondary/20 relative">
                               <img src={img.url} alt={img.label || 'info'} className="w-full h-auto object-contain" />
+                              {infoEditMode && (
+                                <button
+                                  type="button"
+                                  className="absolute top-2 right-2 text-xs bg-destructive/80 text-white px-2 py-1 rounded"
+                                  onClick={() =>
+                                    setInfoRemovedImageIds((prev) =>
+                                      prev.includes(img.id) ? prev : [...prev, img.id]
+                                    )
+                                  }
+                                >
+                                  削除
+                                </button>
+                              )}
+                              {infoEditMode && infoRemovedImageIds.includes(img.id) && (
+                                <div className="absolute inset-0 bg-background/70 flex items-center justify-center text-xs text-muted-foreground">
+                                  削除予定
+                                </div>
+                              )}
                             </div>
                           ))}
                         </div>
@@ -654,6 +819,49 @@ export function StageToolbar({
                         </div>
                       )}
                     </div>
+                    {infoEditMode && (
+                      <div className="space-y-2">
+                        <Label>画像を追加</Label>
+                        <div className="flex items-center gap-2">
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => document.getElementById('info-image-edit-input')?.click()}
+                          >
+                            画像を追加
+                          </Button>
+                          <span className="text-xs text-muted-foreground">
+                            {infoEditImageFiles.length ? `${infoEditImageFiles.length}枚選択中` : '未選択'}
+                          </span>
+                        </div>
+                        <input
+                          id="info-image-edit-input"
+                          type="file"
+                          accept="image/*"
+                          multiple
+                          className="hidden"
+                          onChange={(e) => handleSelectInfoEditImages(e.target.files)}
+                        />
+                        {infoEditImageFiles.length > 0 && (
+                          <div className="space-y-1">
+                            {infoEditImageFiles.map((file, index) => (
+                              <div key={`${file.name}-${index}`} className="flex items-center justify-between text-xs text-muted-foreground">
+                                <span>{file.name}</span>
+                                <button
+                                  className="text-destructive"
+                                  type="button"
+                                  onClick={() =>
+                                    setInfoEditImageFiles((prev) => prev.filter((_, i) => i !== index))
+                                  }
+                                >
+                                  削除
+                                </button>
+                              </div>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    )}
                     <div className="space-y-2">
                       <Label>公開範囲</Label>
                       <div className="flex flex-wrap gap-2">
