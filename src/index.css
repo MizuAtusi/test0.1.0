@@ -149,6 +149,23 @@
     @apply bg-secondary/50 rounded-lg p-3 border border-border;
   }
 
+  .dice-roll-overlay {
+    @apply bg-background/80 border border-border rounded-xl px-6 py-4 flex flex-col items-center gap-2 shadow-lg;
+    animation: diceOverlayFade 2.4s ease-out forwards;
+  }
+
+  .dice-roll-icon {
+    @apply text-primary;
+    width: 48px;
+    height: 48px;
+    animation: diceRollSpin 0.8s linear infinite;
+  }
+
+  .dice-roll-text {
+    @apply text-sm text-foreground text-center whitespace-pre-wrap;
+    max-width: 70vw;
+  }
+
   .glow-text {
     text-shadow: var(--text-glow);
   }
@@ -212,6 +229,36 @@
   }
   20%, 40%, 60%, 80% {
     transform: translateX(5px);
+  }
+}
+
+@keyframes diceRollSpin {
+  0% {
+    transform: rotate(0deg) scale(1);
+  }
+  50% {
+    transform: rotate(180deg) scale(1.08);
+  }
+  100% {
+    transform: rotate(360deg) scale(1);
+  }
+}
+
+@keyframes diceOverlayFade {
+  0% {
+    opacity: 0;
+    transform: translateY(10px) scale(0.96);
+  }
+  15% {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+  80% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 0;
+    transform: translateY(-6px) scale(0.98);
   }
 }
 

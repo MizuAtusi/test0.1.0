@@ -51,6 +51,7 @@ export interface DicePayload {
   expression: string;
   rolls: number[];
   total: number;
+  output?: string;
   threshold?: number;
   skillName?: string;
   result?: 'critical' | 'success' | 'failure' | 'fumble';
