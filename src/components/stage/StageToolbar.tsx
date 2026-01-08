@@ -244,12 +244,16 @@ export function StageToolbar({
           toast({ title: '画像のアップロードに失敗しました', variant: 'destructive' });
           return;
         }
-        await supabase.from('session_info_images').insert({
+        const { error: imageError } = await supabase.from('session_info_images').insert({
           info_id: infoRow.id,
           url,
           label: file.name.replace(/\.[^.]+$/, ''),
           sort_order: order,
         });
+        if (imageError) {
+          toast({ title: '画像の登録に失敗しました', description: imageError.message, variant: 'destructive' });
+          return;
+        }
         order += 1;
       }
     }
@@ -334,7 +338,12 @@ export function StageToolbar({
       if (image?.url) {
         await deleteFile(image.url);
       }
-      await supabase.from('session_info_images').delete().eq('id', imageId);
+      const { error: removeError } = await supabase.from('session_info_images').delete().eq('id', imageId);
+      if (removeError) {
+        toast({ title: '画像の削除に失敗しました', description: removeError.message, variant: 'destructive' });
+        setInfoSaving(false);
+        return;
+      }
     }
     if (infoEditImageFiles.length && room) {
       let order = infoImages.length;
@@ -346,12 +355,17 @@ export function StageToolbar({
           setInfoSaving(false);
           return;
         }
-        await supabase.from('session_info_images').insert({
+        const { error: imageError } = await supabase.from('session_info_images').insert({
           info_id: selectedInfoId,
           url,
           label: file.name.replace(/\.[^.]+$/, ''),
           sort_order: order,
         });
+        if (imageError) {
+          toast({ title: '画像の登録に失敗しました', description: imageError.message, variant: 'destructive' });
+          setInfoSaving(false);
+          return;
+        }
         order += 1;
       }
     }
@@ -527,14 +541,14 @@ export function StageToolbar({
 
       {/* Info Dialog */}
       <Dialog open={showInfo} onOpenChange={setShowInfo}>
-        <DialogContent className="max-w-2xl h-[80vh] flex flex-col">
+        <DialogContent className="max-w-2xl h-[80vh] flex flex-col overflow-hidden">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
               <Info className="w-5 h-5" />
               情報
             </DialogTitle>
           </DialogHeader>
-          <div className="flex-1 min-h-0">
+          <div className="flex-1 min-h-0 overflow-hidden">
             {selectedInfoId ? (
               <div className="flex flex-col h-full">
                 <div className="flex items-center justify-between gap-2 pb-2 border-b">
@@ -639,6 +653,49 @@ export function StageToolbar({
                             </div>
                           ))}
                         </div>
+                      </div>
+                    )}
+                    {canViewInfoContent(infoById[selectedInfoId]) && infoEditMode && (
+                      <div className="space-y-2">
+                        <div className="text-sm font-semibold">画像を追加</div>
+                        <div className="flex items-center gap-2">
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => document.getElementById('info-image-edit-input')?.click()}
+                          >
+                            画像を追加
+                          </Button>
+                          <span className="text-xs text-muted-foreground">
+                            {infoEditImageFiles.length ? `${infoEditImageFiles.length}枚選択中` : '未選択'}
+                          </span>
+                        </div>
+                        <input
+                          id="info-image-edit-input"
+                          type="file"
+                          accept="image/*"
+                          multiple
+                          className="hidden"
+                          onChange={(e) => handleSelectInfoEditImages(e.target.files)}
+                        />
+                        {infoEditImageFiles.length > 0 && (
+                          <div className="space-y-1">
+                            {infoEditImageFiles.map((file, index) => (
+                              <div key={`${file.name}-${index}`} className="flex items-center justify-between text-xs text-muted-foreground">
+                                <span>{file.name}</span>
+                                <button
+                                  className="text-destructive"
+                                  type="button"
+                                  onClick={() =>
+                                    setInfoEditImageFiles((prev) => prev.filter((_, i) => i !== index))
+                                  }
+                                >
+                                  削除
+                                </button>
+                              </div>
+                            ))}
+                          </div>
+                        )}
                       </div>
                     )}
                     {canViewInfoContent(infoById[selectedInfoId]) && (
@@ -819,49 +876,6 @@ export function StageToolbar({
                         </div>
                       )}
                     </div>
-                    {infoEditMode && (
-                      <div className="space-y-2">
-                        <Label>画像を追加</Label>
-                        <div className="flex items-center gap-2">
-                          <Button
-                            variant="outline"
-                            size="sm"
-                            onClick={() => document.getElementById('info-image-edit-input')?.click()}
-                          >
-                            画像を追加
-                          </Button>
-                          <span className="text-xs text-muted-foreground">
-                            {infoEditImageFiles.length ? `${infoEditImageFiles.length}枚選択中` : '未選択'}
-                          </span>
-                        </div>
-                        <input
-                          id="info-image-edit-input"
-                          type="file"
-                          accept="image/*"
-                          multiple
-                          className="hidden"
-                          onChange={(e) => handleSelectInfoEditImages(e.target.files)}
-                        />
-                        {infoEditImageFiles.length > 0 && (
-                          <div className="space-y-1">
-                            {infoEditImageFiles.map((file, index) => (
-                              <div key={`${file.name}-${index}`} className="flex items-center justify-between text-xs text-muted-foreground">
-                                <span>{file.name}</span>
-                                <button
-                                  className="text-destructive"
-                                  type="button"
-                                  onClick={() =>
-                                    setInfoEditImageFiles((prev) => prev.filter((_, i) => i !== index))
-                                  }
-                                >
-                                  削除
-                                </button>
-                              </div>
-                            ))}
-                          </div>
-                        )}
-                      </div>
-                    )}
                     <div className="space-y-2">
                       <Label>公開範囲</Label>
                       <div className="flex flex-wrap gap-2">
