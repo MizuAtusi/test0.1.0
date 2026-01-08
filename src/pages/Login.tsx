@@ -38,7 +38,7 @@ export default function LoginPage() {
 
   const signIn = async () => {
     if (!loginId.trim() || !password) {
-      toast({ title: 'メールアドレスまたはIDとパスワードを入力してください', variant: 'destructive' });
+      toast({ title: 'メールアドレスとパスワードを入力してください', variant: 'destructive' });
       return;
     }
     const loginValue = loginId.trim();
@@ -160,7 +160,7 @@ export default function LoginPage() {
 
               <div className="mt-4 space-y-4">
                 <div className="space-y-2">
-                  <Label htmlFor="login-id">メールアドレスまたはID</Label>
+                  <Label htmlFor="login-id">メールアドレス</Label>
                   <Input
                     id="login-id"
                     type="text"
