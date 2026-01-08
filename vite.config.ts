@@ -13,6 +13,8 @@ export default defineConfig(({ mode }) => ({
   resolve: {
     alias: {
       "@": path.resolve(__dirname, "./src"),
+      "bcdice-js/lib/bcdice": path.resolve(__dirname, "./node_modules/bcdice-js/lib/BCDice.js"),
+      "bcdice-js/lib/bcdice.js": path.resolve(__dirname, "./node_modules/bcdice-js/lib/BCDice.js"),
     },
   },
 }));
