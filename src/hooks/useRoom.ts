@@ -396,6 +396,7 @@ export function useRoom(roomId: string | null) {
       secretAllowList?: string[];
       dicePayload?: any;
       portraitUrl?: string;
+      threadId?: string | null;
     }
   ) => {
     if (!roomId) return null;
@@ -408,6 +409,7 @@ export function useRoom(roomId: string | null) {
         text,
         speaker_name: speakerName,
         channel: options?.channel || 'public',
+        thread_id: options?.threadId ?? null,
         secret_allow_list: options?.secretAllowList || [],
         dice_payload: options?.dicePayload,
         speaker_portrait_url: options?.portraitUrl,

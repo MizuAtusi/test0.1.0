@@ -106,14 +106,15 @@ export function SidePanel({
 
           <TabsContent value="chat" className="h-full m-0 p-0 data-[state=inactive]:hidden">
             <ChatPanel
+              roomId={roomId}
               messages={chatMessages}
               participant={participant}
               onSendMessage={(text, options) => {
                 if (participant) {
                   if (options?.dicePayload) {
-                    onSendMessage('dice', text, participant.name, { channel: 'chat', dicePayload: options.dicePayload });
+                    onSendMessage('dice', text, participant.name, { channel: 'chat', dicePayload: options.dicePayload, threadId: options?.threadId });
                   } else {
-                    onSendMessage('speech', text, participant.name, { channel: 'chat' });
+                    onSendMessage('speech', text, participant.name, { channel: 'chat', threadId: options?.threadId });
                   }
                 }
               }}

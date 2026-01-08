@@ -41,6 +41,7 @@ export default function LoginPage() {
       toast({ title: 'メールアドレスまたはIDとパスワードを入力してください', variant: 'destructive' });
       return;
     }
+    const loginValue = loginId.trim();
     if (allowDevAuth && loginId.trim() === 'test' && password === 'test') {
       setBusy(true);
       const { error } = await supabase.auth.signInWithPassword({
@@ -61,8 +62,20 @@ export default function LoginPage() {
       return;
     }
     setBusy(true);
+    let emailForLogin = loginValue;
+    if (!loginValue.includes('@')) {
+      const { data, error: lookupError } = await supabase.rpc('get_email_for_handle', {
+        handle_input: loginValue.toLowerCase(),
+      });
+      if (lookupError || !data) {
+        setBusy(false);
+        toast({ title: 'ログインに失敗しました', description: 'IDが見つかりません', variant: 'destructive' });
+        return;
+      }
+      emailForLogin = data as string;
+    }
     const { error } = await supabase.auth.signInWithPassword({
-      email: loginId.trim(),
+      email: emailForLogin,
       password,
     });
     setBusy(false);
@@ -195,6 +208,17 @@ export default function LoginPage() {
               </TabsContent>
 
               <TabsContent value="signup" className="mt-4 space-y-4">
+                <div className="space-y-2">
+                  <Label htmlFor="signup-email">メールアドレス</Label>
+                  <Input
+                    id="signup-email"
+                    type="email"
+                    value={email}
+                    onChange={(e) => setEmail(e.target.value)}
+                    className="bg-input border-border"
+                    autoComplete="email"
+                  />
+                </div>
                 <div className="space-y-2">
                   <Label htmlFor="displayName">ユーザー名</Label>
                   <Input

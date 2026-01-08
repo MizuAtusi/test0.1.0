@@ -44,6 +44,7 @@ export interface Message {
   speaker_portrait_url?: string;
   text: string;
   dice_payload?: DicePayload;
+  thread_id?: string | null;
   created_at: string;
 }
 
