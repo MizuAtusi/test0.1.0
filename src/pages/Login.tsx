@@ -22,6 +22,7 @@ export default function LoginPage() {
   const [busy, setBusy] = useState(false);
   const allowDevAuth = import.meta.env.VITE_ALLOW_TEST_LOGIN === 'true';
   const testLoginEmail = import.meta.env.VITE_TEST_LOGIN_EMAIL || 'test@example.com';
+  const basePath = import.meta.env.BASE_URL || '/';
 
   const from = typeof location?.state?.from === 'string' ? location.state.from : '/';
 
@@ -103,6 +104,22 @@ export default function LoginPage() {
     }
   };
 
+  const handleForgotPassword = async () => {
+    if (!email.trim()) {
+      toast({ title: 'メールアドレスを入力してください', variant: 'destructive' });
+      return;
+    }
+    setBusy(true);
+    const redirectTo = new URL(`${basePath}reset-password`, window.location.origin).toString();
+    const { error } = await supabase.auth.resetPasswordForEmail(email.trim(), { redirectTo });
+    setBusy(false);
+    if (error) {
+      toast({ title: '送信に失敗しました', description: error.message, variant: 'destructive' });
+      return;
+    }
+    toast({ title: '再設定用のメールを送信しました' });
+  };
+
   return (
     <div className="min-h-screen bg-background flex items-center justify-center p-4">
       <div className="w-full max-w-md">
@@ -145,6 +162,13 @@ export default function LoginPage() {
                     className="bg-input border-border"
                     autoComplete="current-password"
                   />
+                  <button
+                    type="button"
+                    className="text-xs text-muted-foreground hover:underline"
+                    onClick={handleForgotPassword}
+                  >
+                    パスワードを忘れてしまった場合
+                  </button>
                 </div>
               </div>
 
