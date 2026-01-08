@@ -1,4 +1,5 @@
 import { BCDice } from 'bcdice-js';
+import 'bcdice-js/lib/preload-dicebots';
 import type { DicePayload } from '@/types/trpg';
 
 const bcdice = new BCDice();
@@ -67,26 +68,33 @@ export function parseDiceCommand(input: string, skills?: Record<string, number>)
   if (!isDiceCommand(trimmed)) return null;
   const { command, skillName, threshold } = normalizeCommand(trimmed, skills);
 
-  let result: any = null;
+  let output: string | null = null;
+  let randResults: any = null;
   try {
-    result = bcdice.roll(command);
+    bcdice.setCollectRandResult(true);
+    bcdice.setMessage(command);
+    const raw = bcdice.dice_command();
+    output = Array.isArray(raw) ? raw[0] : raw;
+    randResults = bcdice.getRandResults();
   } catch {
     return null;
   }
-  if (!result || !result.text) return null;
+  if (!output || typeof output !== 'string') return null;
 
-  const rolls: number[] = Array.isArray(result.rands)
-    ? result.rands.map((r: any) => Number(r.value)).filter((v: number) => Number.isFinite(v))
+  const rolls: number[] = Array.isArray(randResults)
+    ? randResults
+        .map((pair: any) => Number(Array.isArray(pair) ? pair[0] : pair))
+        .filter((v: number) => Number.isFinite(v))
     : [];
-  const total = Number.isFinite(result.total)
-    ? Number(result.total)
+  const totalMatch = output.match(/-?\d+(?!.*-?\d)/);
+  const total = totalMatch ? Number.parseInt(totalMatch[0], 10)
     : (rolls.length > 0 ? rolls.reduce((a, b) => a + b, 0) : 0);
 
   const payload: DicePayload = {
     expression: command,
     rolls,
     total,
-    output: result.text,
+    output,
   };
 
   if (threshold !== undefined) {
@@ -94,10 +102,10 @@ export function parseDiceCommand(input: string, skills?: Record<string, number>)
   }
   if (skillName) payload.skillName = skillName;
 
-  if (result.critical) payload.result = 'critical';
-  else if (result.fumble) payload.result = 'fumble';
-  else if (result.success) payload.result = 'success';
-  else if (result.failure) payload.result = 'failure';
+  if (/クリティカル|決定的成功/i.test(output)) payload.result = 'critical';
+  else if (/ファンブル/i.test(output)) payload.result = 'fumble';
+  else if (/成功/i.test(output)) payload.result = 'success';
+  else if (/失敗/i.test(output)) payload.result = 'failure';
 
   return payload;
 }
