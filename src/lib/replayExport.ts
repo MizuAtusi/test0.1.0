@@ -541,29 +541,6 @@ function generateReplayJs(): string {
   const bgmAudio = new Audio();
   bgmAudio.loop = true;
   const seAudio = new Audio();
-  let diceAudioCtx = null;
-
-  function playDiceSe() {
-    try {
-      const Ctx = window.AudioContext || window.webkitAudioContext;
-      if (!Ctx) return;
-      if (!diceAudioCtx) diceAudioCtx = new Ctx();
-      const ctx = diceAudioCtx;
-      const osc = ctx.createOscillator();
-      const gain = ctx.createGain();
-      osc.type = 'square';
-      osc.frequency.value = 240;
-      gain.gain.value = 0.12;
-      osc.connect(gain);
-      gain.connect(ctx.destination);
-      const now = ctx.currentTime;
-      gain.gain.exponentialRampToValueAtTime(0.0001, now + 0.18);
-      osc.start(now);
-      osc.stop(now + 0.2);
-    } catch (e) {
-      // ignore
-    }
-  }
   let currentBgmUrl = null;
   let secretDecision = null; // 'view' | null
 
@@ -841,7 +818,6 @@ function generateReplayJs(): string {
       document.getElementById('speaker-name').textContent = speaker || '';
 
       if (dicePayload) {
-        playDiceSe();
         const rolls = dicePayload.rolls ? dicePayload.rolls.join(', ') : '';
         if (dicePayload.blind) {
           const expr = dicePayload.expression || '';

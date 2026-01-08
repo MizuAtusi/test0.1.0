@@ -5,7 +5,6 @@ import { Button } from '@/components/ui/button';
 import { MessageBubble } from './MessageBubble';
 import { StageToolbar } from './StageToolbar';
 import { supabase } from '@/integrations/supabase/client';
-import { Dice6 } from 'lucide-react';
 import {
   buildEffectRenderList,
   buildOtherEffectRenderList,
@@ -63,8 +62,6 @@ export function StageView({
   const [portraitAssets, setPortraitAssets] = useState<Asset[]>([]);
   const lastHandledMessageIdRef = useRef<string | null>(null);
   const [effectOverlay, setEffectOverlay] = useState<{ nonce: number; images: EffectImage[]; seUrl: string; durationMs: number } | null>(null);
-  const [diceOverlay, setDiceOverlay] = useState<{ nonce: number; text: string } | null>(null);
-  const lastDiceOverlayIdRef = useRef<string | null>(null);
   const [effectFading, setEffectFading] = useState(false);
   const [stageSize, setStageSize] = useState<{ width: number; height: number }>({ width: 1200, height: 675 });
   const overlayTextHeightPx = (() => {
@@ -356,28 +353,6 @@ export function StageView({
     }));
   }, [visibleMessages, participant, room, characters, portraitAssets, showSecretOverlay]);
 
-  // Dice roll overlay (BCDice output)
-  useEffect(() => {
-    if (showSecretOverlay) return;
-    const last = visibleMessages[visibleMessages.length - 1] ?? null;
-    if (!last || last.type !== 'dice') return;
-    if (last.channel === 'chat') return;
-    if (lastDiceOverlayIdRef.current === last.id) return;
-
-    const payload: any = (last as any).dice_payload;
-    const allowList = Array.isArray((last as any).secret_allow_list) ? (last as any).secret_allow_list : [];
-    const canSeeFull = !payload?.blind || (!!participant && allowList.includes(participant.id));
-    if (!canSeeFull) return;
-
-    const output = String(payload?.output || last.text || '').trim();
-    if (!output) return;
-
-    lastDiceOverlayIdRef.current = last.id;
-    setDiceOverlay((prev) => ({ nonce: (prev?.nonce ?? 0) + 1, text: output }));
-    const t = window.setTimeout(() => setDiceOverlay(null), 2400);
-    return () => window.clearTimeout(t);
-  }, [visibleMessages, participant, showSecretOverlay]);
-
   // Fade out overlay after a short duration
   useEffect(() => {
     if (!effectOverlay) return;
@@ -497,16 +472,6 @@ export function StageView({
                 />
               </div>
             ))}
-          </div>
-        </div>
-      )}
-
-      {/* Dice Roll Overlay */}
-      {!showSecretOverlay && diceOverlay && (
-        <div className="absolute inset-0 z-[26] pointer-events-none flex items-center justify-center">
-          <div className="dice-roll-overlay">
-            <Dice6 className="dice-roll-icon" />
-            <div className="dice-roll-text">{diceOverlay.text}</div>
           </div>
         </div>
       )}
