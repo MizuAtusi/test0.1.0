@@ -8,6 +8,7 @@ import { RequireAuth } from "@/components/auth/RequireAuth";
 import Index from "./pages/Index";
 import RoomPage from "./pages/RoomPage";
 import LoginPage from "./pages/Login";
+import ResetPasswordPage from "./pages/ResetPassword";
 import PublicRoomsPage from "./pages/PublicRooms";
 import MyPage from "./pages/MyPage";
 import UserProfilePage from "./pages/UserProfile";
@@ -24,6 +25,7 @@ const App = () => (
         <BrowserRouter basename={import.meta.env.BASE_URL}>
           <Routes>
             <Route path="/login" element={<LoginPage />} />
+            <Route path="/reset-password" element={<ResetPasswordPage />} />
             <Route
               path="/"
               element={

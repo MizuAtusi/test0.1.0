@@ -492,6 +492,21 @@ export default function MyPage() {
     navigate('/login', { replace: true });
   };
 
+  const handleForgotPassword = async () => {
+    if (!user?.email) {
+      toast({ title: 'メールアドレスがありません', variant: 'destructive' });
+      return;
+    }
+    const basePath = import.meta.env.BASE_URL || '/';
+    const redirectTo = new URL(`${basePath}reset-password`, window.location.origin).toString();
+    const { error } = await supabase.auth.resetPasswordForEmail(user.email, { redirectTo });
+    if (error) {
+      toast({ title: '送信に失敗しました', description: error.message, variant: 'destructive' });
+      return;
+    }
+    toast({ title: '再設定用のメールを送信しました' });
+  };
+
   const handleConfirmIdEdit = async () => {
     if (!handlePassword) {
       toast({ title: 'パスワードを入力してください', variant: 'destructive' });
@@ -651,6 +666,13 @@ export default function MyPage() {
                 placeholder="パスワード"
                 className="bg-input border-border"
               />
+              <button
+                type="button"
+                className="text-xs text-muted-foreground hover:underline"
+                onClick={handleForgotPassword}
+              >
+                パスワードを忘れてしまった場合
+              </button>
             </div>
             <DialogFooter className="gap-2">
               <Button

@@ -11,6 +11,7 @@ import { useToast } from '@/hooks/use-toast';
 import { exportReplay } from '@/lib/replayExport';
 import { getDisplayText } from '@/lib/expressionTag';
 import { supabase } from '@/integrations/supabase/client';
+import { uploadFile } from '@/lib/upload';
 import type { Room, Message, StageState, Participant, Character } from '@/types/trpg';
 
 interface StageToolbarProps {
@@ -59,6 +60,8 @@ export function StageToolbar({
   const [noteText, setNoteText] = useState('');
   const [noteShared, setNoteShared] = useState(false);
   const [commentDrafts, setCommentDrafts] = useState<Record<string, string>>({});
+  const [infoImageFiles, setInfoImageFiles] = useState<File[]>([]);
+  const [infoImages, setInfoImages] = useState<any[]>([]);
   const { toast } = useToast();
 
   useEffect(() => {
@@ -145,6 +148,7 @@ export function StageToolbar({
     setSelectedInfoContent(null);
     setNotes([]);
     setNoteComments({});
+    setInfoImages([]);
     const info = infoById[infoId];
     if (!info || !canViewInfoContent(info)) return;
     const { data: contentRow } = await supabase
@@ -153,6 +157,12 @@ export function StageToolbar({
       .eq('info_id', infoId)
       .maybeSingle();
     setSelectedInfoContent(contentRow?.content ?? '');
+    const { data: imageRows } = await supabase
+      .from('session_info_images')
+      .select('*')
+      .eq('info_id', infoId)
+      .order('sort_order', { ascending: true });
+    setInfoImages(imageRows || []);
     const { data: noteRows } = await supabase
       .from('session_info_notes')
       .select('*')
@@ -182,6 +192,7 @@ export function StageToolbar({
     setInfoVisibility('public');
     setInfoListVisibility('title');
     setInfoAllowedUsers([]);
+    setInfoImageFiles([]);
   };
 
   const handleCreateInfo = async () => {
@@ -212,6 +223,24 @@ export function StageToolbar({
     if (contentError) {
       toast({ title: '情報の本文保存に失敗しました', variant: 'destructive' });
       return;
+    }
+    if (infoImageFiles.length) {
+      let order = 0;
+      for (const file of infoImageFiles) {
+        if (!file.type.startsWith('image/')) continue;
+        const url = await uploadFile(file, `session-info/${room.id}`);
+        if (!url) {
+          toast({ title: '画像のアップロードに失敗しました', variant: 'destructive' });
+          return;
+        }
+        await supabase.from('session_info_images').insert({
+          info_id: infoRow.id,
+          url,
+          label: file.name.replace(/\.[^.]+$/, ''),
+          sort_order: order,
+        });
+        order += 1;
+      }
     }
     resetInfoCreate();
     setShowInfoCreate(false);
@@ -253,6 +282,16 @@ export function StageToolbar({
       return;
     }
     await loadInfoDetail(selectedInfoId || '');
+  };
+
+  const handleSelectInfoImages = (files: FileList | null) => {
+    if (!files) return;
+    const next: File[] = [];
+    Array.from(files).forEach((file) => {
+      if (file.type.startsWith('image/')) next.push(file);
+    });
+    if (!next.length) return;
+    setInfoImageFiles((prev) => [...prev, ...next]);
   };
 
   useEffect(() => {
@@ -425,6 +464,18 @@ export function StageToolbar({
                         </div>
                       )}
                     </div>
+                    {canViewInfoContent(infoById[selectedInfoId]) && infoImages.length > 0 && (
+                      <div className="space-y-2">
+                        <div className="text-sm font-semibold">添付画像</div>
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                          {infoImages.map((img: any) => (
+                            <div key={img.id} className="border rounded-md overflow-hidden bg-secondary/20">
+                              <img src={img.url} alt={img.label || 'info'} className="w-full h-auto object-contain" />
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
                     {canViewInfoContent(infoById[selectedInfoId]) && (
                       <div className="space-y-3">
                         <div className="text-sm font-semibold">メモ</div>
@@ -565,6 +616,43 @@ export function StageToolbar({
                         onChange={(e) => setInfoContent(e.target.value)}
                         className="min-h-[140px]"
                       />
+                    </div>
+                    <div className="space-y-2">
+                      <Label>添付画像</Label>
+                      <div className="flex items-center gap-2">
+                        <Button variant="outline" size="sm" onClick={() => document.getElementById('info-image-input')?.click()}>
+                          画像を追加
+                        </Button>
+                        <span className="text-xs text-muted-foreground">
+                          {infoImageFiles.length ? `${infoImageFiles.length}枚選択中` : '未選択'}
+                        </span>
+                      </div>
+                      <input
+                        id="info-image-input"
+                        type="file"
+                        accept="image/*"
+                        multiple
+                        className="hidden"
+                        onChange={(e) => handleSelectInfoImages(e.target.files)}
+                      />
+                      {infoImageFiles.length > 0 && (
+                        <div className="space-y-1">
+                          {infoImageFiles.map((file, index) => (
+                            <div key={`${file.name}-${index}`} className="flex items-center justify-between text-xs text-muted-foreground">
+                              <span>{file.name}</span>
+                              <button
+                                className="text-destructive"
+                                type="button"
+                                onClick={() =>
+                                  setInfoImageFiles((prev) => prev.filter((_, i) => i !== index))
+                                }
+                              >
+                                削除
+                              </button>
+                            </div>
+                          ))}
+                        </div>
+                      )}
                     </div>
                     <div className="space-y-2">
                       <Label>公開範囲</Label>
