@@ -64,9 +64,15 @@ const normalizeCommand = (input: string, skills?: Record<string, number>) => {
 export function parseDiceCommand(input: string, skills?: Record<string, number>): DicePayload | null {
   const trimmed = input.trim();
   if (!trimmed) return null;
+  if (!isDiceCommand(trimmed)) return null;
   const { command, skillName, threshold } = normalizeCommand(trimmed, skills);
 
-  const result: any = bcdice.roll(command);
+  let result: any = null;
+  try {
+    result = bcdice.roll(command);
+  } catch {
+    return null;
+  }
   if (!result || !result.text) return null;
 
   const rolls: number[] = Array.isArray(result.rands)
