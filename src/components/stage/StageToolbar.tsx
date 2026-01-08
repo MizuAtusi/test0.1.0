@@ -1010,6 +1010,146 @@ export function StageToolbar({
                   </div>
                 </ScrollArea>
               </div>
+            ) : showInfoCreate ? (
+              <div className="flex flex-col h-full">
+                <div className="flex items-center justify-between gap-2 pb-2 border-b">
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="h-7"
+                    onClick={() => setShowInfoCreate(false)}
+                  >
+                    <ChevronLeft className="w-4 h-4 mr-1" />
+                    一覧へ戻る
+                  </Button>
+                  <div className="text-xs text-muted-foreground">情報を追加</div>
+                </div>
+                <ScrollArea className="flex-1 pr-2">
+                  <div className="space-y-3 py-4">
+                    <div className="space-y-2">
+                      <Label>タイトル</Label>
+                      <Input value={infoTitle} onChange={(e) => setInfoTitle(e.target.value)} />
+                    </div>
+                    <div className="space-y-2">
+                      <Label>内容</Label>
+                      <Textarea
+                        value={infoContent}
+                        onChange={(e) => setInfoContent(e.target.value)}
+                        className="min-h-[140px]"
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <Label>添付画像</Label>
+                      <div className="flex items-center gap-2">
+                        <Button variant="outline" size="sm" onClick={() => document.getElementById('info-image-input')?.click()}>
+                          画像を追加
+                        </Button>
+                        <span className="text-xs text-muted-foreground">
+                          {infoImageFiles.length ? `${infoImageFiles.length}枚選択中` : '未選択'}
+                        </span>
+                      </div>
+                      <input
+                        id="info-image-input"
+                        type="file"
+                        accept="image/*"
+                        multiple
+                        className="hidden"
+                        onChange={(e) => handleSelectInfoImages(e.target.files)}
+                      />
+                      {infoImageFiles.length > 0 && (
+                        <div className="space-y-1">
+                          {infoImageFiles.map((file, index) => (
+                            <div key={`${file.name}-${index}`} className="flex items-center justify-between text-xs text-muted-foreground">
+                              <span>{file.name}</span>
+                              <button
+                                className="text-destructive"
+                                type="button"
+                                onClick={() =>
+                                  setInfoImageFiles((prev) => prev.filter((_, i) => i !== index))
+                                }
+                              >
+                                削除
+                              </button>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                    <div className="space-y-2">
+                      <Label>公開範囲</Label>
+                      <div className="flex flex-wrap gap-2">
+                        <Button
+                          variant={infoVisibility === 'public' ? 'default' : 'outline'}
+                          size="sm"
+                          onClick={() => setInfoVisibility('public')}
+                        >
+                          全体公開
+                        </Button>
+                        <Button
+                          variant={infoVisibility === 'restricted' ? 'default' : 'outline'}
+                          size="sm"
+                          onClick={() => setInfoVisibility('restricted')}
+                        >
+                          制限付き
+                        </Button>
+                        <Button
+                          variant={infoVisibility === 'gm_only' ? 'default' : 'outline'}
+                          size="sm"
+                          onClick={() => setInfoVisibility('gm_only')}
+                        >
+                          GMのみ
+                        </Button>
+                      </div>
+                    </div>
+                    {infoVisibility !== 'public' && (
+                      <div className="space-y-2">
+                        <Label>一覧での表示</Label>
+                        <div className="flex gap-2">
+                          <Button
+                            variant={infoListVisibility === 'title' ? 'default' : 'outline'}
+                            size="sm"
+                            onClick={() => setInfoListVisibility('title')}
+                          >
+                            タイトルだけ表示
+                          </Button>
+                          <Button
+                            variant={infoListVisibility === 'hidden' ? 'default' : 'outline'}
+                            size="sm"
+                            onClick={() => setInfoListVisibility('hidden')}
+                          >
+                            存在も隠す
+                          </Button>
+                        </div>
+                      </div>
+                    )}
+                    {infoVisibility === 'restricted' && (
+                      <div className="space-y-2">
+                        <Label>閲覧可能なプレイヤー</Label>
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 max-h-[160px] overflow-auto border rounded-md p-2">
+                          {Object.values(memberProfiles).map((p: any) => (
+                            <label key={p.id} className="flex items-center gap-2 text-sm">
+                              <Checkbox
+                                checked={infoAllowedUsers.includes(p.id)}
+                                onCheckedChange={(checked) => {
+                                  setInfoAllowedUsers((prev) => {
+                                    if (checked) return [...prev, p.id];
+                                    return prev.filter((id) => id !== p.id);
+                                  });
+                                }}
+                              />
+                              <span>{p.display_name} {p.handle ? `@${p.handle}` : ''}</span>
+                            </label>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                </ScrollArea>
+                <div className="pt-3 border-t flex justify-end gap-2">
+                  <Button variant="outline" onClick={() => setShowInfoCreate(false)}>キャンセル</Button>
+                  <Button onClick={handleCreateInfo}>保存</Button>
+                </div>
+              </div>
             ) : (
               <div className="flex flex-col h-full">
                 <div className="flex items-center justify-between pb-2 border-b">
@@ -1044,132 +1184,6 @@ export function StageToolbar({
                         </div>
                       </button>
                     ))}
-                    {showInfoCreate && isGM && (
-                      <div className="border-t pt-3 space-y-3">
-                        <div className="text-sm font-semibold">新しい情報を追加</div>
-                        <div className="space-y-2">
-                          <Label>タイトル</Label>
-                          <Input value={infoTitle} onChange={(e) => setInfoTitle(e.target.value)} />
-                        </div>
-                        <div className="space-y-2">
-                          <Label>内容</Label>
-                          <Textarea
-                            value={infoContent}
-                            onChange={(e) => setInfoContent(e.target.value)}
-                            className="min-h-[140px]"
-                          />
-                        </div>
-                        <div className="space-y-2">
-                          <Label>添付画像</Label>
-                          <div className="flex items-center gap-2">
-                            <Button variant="outline" size="sm" onClick={() => document.getElementById('info-image-input')?.click()}>
-                              画像を追加
-                            </Button>
-                            <span className="text-xs text-muted-foreground">
-                              {infoImageFiles.length ? `${infoImageFiles.length}枚選択中` : '未選択'}
-                            </span>
-                          </div>
-                          <input
-                            id="info-image-input"
-                            type="file"
-                            accept="image/*"
-                            multiple
-                            className="hidden"
-                            onChange={(e) => handleSelectInfoImages(e.target.files)}
-                          />
-                          {infoImageFiles.length > 0 && (
-                            <div className="space-y-1">
-                              {infoImageFiles.map((file, index) => (
-                                <div key={`${file.name}-${index}`} className="flex items-center justify-between text-xs text-muted-foreground">
-                                  <span>{file.name}</span>
-                                  <button
-                                    className="text-destructive"
-                                    type="button"
-                                    onClick={() =>
-                                      setInfoImageFiles((prev) => prev.filter((_, i) => i !== index))
-                                    }
-                                  >
-                                    削除
-                                  </button>
-                                </div>
-                              ))}
-                            </div>
-                          )}
-                        </div>
-                        <div className="space-y-2">
-                          <Label>公開範囲</Label>
-                          <div className="flex flex-wrap gap-2">
-                            <Button
-                              variant={infoVisibility === 'public' ? 'default' : 'outline'}
-                              size="sm"
-                              onClick={() => setInfoVisibility('public')}
-                            >
-                              全体公開
-                            </Button>
-                            <Button
-                              variant={infoVisibility === 'restricted' ? 'default' : 'outline'}
-                              size="sm"
-                              onClick={() => setInfoVisibility('restricted')}
-                            >
-                              制限付き
-                            </Button>
-                            <Button
-                              variant={infoVisibility === 'gm_only' ? 'default' : 'outline'}
-                              size="sm"
-                              onClick={() => setInfoVisibility('gm_only')}
-                            >
-                              GMのみ
-                            </Button>
-                          </div>
-                        </div>
-                        {infoVisibility !== 'public' && (
-                          <div className="space-y-2">
-                            <Label>一覧での表示</Label>
-                            <div className="flex gap-2">
-                              <Button
-                                variant={infoListVisibility === 'title' ? 'default' : 'outline'}
-                                size="sm"
-                                onClick={() => setInfoListVisibility('title')}
-                              >
-                                タイトルだけ表示
-                              </Button>
-                              <Button
-                                variant={infoListVisibility === 'hidden' ? 'default' : 'outline'}
-                                size="sm"
-                                onClick={() => setInfoListVisibility('hidden')}
-                              >
-                                存在も隠す
-                              </Button>
-                            </div>
-                          </div>
-                        )}
-                        {infoVisibility === 'restricted' && (
-                          <div className="space-y-2">
-                            <Label>閲覧可能なプレイヤー</Label>
-                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 max-h-[160px] overflow-auto border rounded-md p-2">
-                              {Object.values(memberProfiles).map((p: any) => (
-                                <label key={p.id} className="flex items-center gap-2 text-sm">
-                                  <Checkbox
-                                    checked={infoAllowedUsers.includes(p.id)}
-                                    onCheckedChange={(checked) => {
-                                      setInfoAllowedUsers((prev) => {
-                                        if (checked) return [...prev, p.id];
-                                        return prev.filter((id) => id !== p.id);
-                                      });
-                                    }}
-                                  />
-                                  <span>{p.display_name} {p.handle ? `@${p.handle}` : ''}</span>
-                                </label>
-                              ))}
-                            </div>
-                          </div>
-                        )}
-                        <div className="flex justify-end gap-2">
-                          <Button variant="outline" onClick={() => setShowInfoCreate(false)}>キャンセル</Button>
-                          <Button onClick={handleCreateInfo}>保存</Button>
-                        </div>
-                      </div>
-                    )}
                   </div>
                 </ScrollArea>
               </div>
