@@ -32,10 +32,6 @@ export function ChatPanel({ roomId, messages, participant, onSendMessage }: Chat
   const [lastSeenByThread, setLastSeenByThread] = useState<Record<string, number>>({});
 
   useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [activeMessages]);
-
-  useEffect(() => {
     supabase.auth.getUser().then(({ data }) => {
       setCurrentUserId(data.user?.id ?? null);
     });
@@ -90,6 +86,10 @@ export function ChatPanel({ roomId, messages, participant, onSendMessage }: Chat
     if (!activeThreadId) return publicMessages;
     return privateMessages.filter((m) => m.thread_id === activeThreadId);
   }, [activeThreadId, publicMessages, privateMessages]);
+
+  useEffect(() => {
+    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+  }, [activeMessages]);
 
   useEffect(() => {
     const key = activeThreadId || 'public';
