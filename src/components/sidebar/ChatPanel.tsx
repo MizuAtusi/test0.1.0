@@ -193,83 +193,106 @@ export function ChatPanel({ roomId, messages, participant, onSendMessage }: Chat
     return date.toLocaleTimeString('ja-JP', { hour: '2-digit', minute: '2-digit' });
   };
 
+  const activeThreadTitle = activeThreadId
+    ? threads.find((t) => t.id === activeThreadId)?.title ?? 'チャット'
+    : '全体チャット';
+  const activeThreadColor = activeThreadId
+    ? threads.find((t) => t.id === activeThreadId)?.color ?? '#7c3aed'
+    : '#7c3aed';
+
   return (
-    <div className="h-full flex flex-col">
-      <div className="border-b border-sidebar-border px-3 py-2">
-        <div className="flex items-center justify-between text-xs text-muted-foreground">
-          <span>インデックス</span>
-          <Button type="button" size="icon" variant="ghost" className="h-6 w-6" onClick={openCreate}>
-            <Plus className="w-4 h-4" />
-          </Button>
-        </div>
-        <div className="flex flex-wrap gap-2 mt-2">
-          <button
-            type="button"
-            className={`flex items-center gap-2 px-2 py-1 rounded border text-xs ${
-              activeThreadId === null ? 'bg-secondary/60' : 'bg-transparent'
-            }`}
-            onClick={() => setActiveThreadId(null)}
-          >
-            <Circle className="w-2 h-2" style={{ color: '#7c3aed' }} />
-            全体チャット
-            {unreadByThread.public && <span className="ml-1 h-2 w-2 rounded-full bg-red-500" />}
-          </button>
+    <div className="h-full flex">
+      <div className="w-12 border-r border-sidebar-border flex flex-col items-center py-2 gap-2 bg-sidebar">
+        <Button type="button" size="icon" variant="ghost" className="h-8 w-8" onClick={openCreate}>
+          <Plus className="w-4 h-4" />
+        </Button>
+        <button
+          type="button"
+          className={`relative h-10 w-8 rounded-md border ${
+            activeThreadId === null ? 'bg-secondary/70' : 'bg-transparent'
+          }`}
+          onClick={() => setActiveThreadId(null)}
+          aria-label="全体チャット"
+        >
+          <span
+            className="absolute inset-1 rounded-sm"
+            style={{ backgroundColor: '#7c3aed' }}
+          />
+          {unreadByThread.public && (
+            <span className="absolute -top-1 -right-1 h-2.5 w-2.5 rounded-full bg-red-500" />
+          )}
+        </button>
+        <div className="flex-1 flex flex-col gap-2 overflow-y-auto px-1 pb-2">
           {threads.map((thread) => (
             <button
               key={thread.id}
               type="button"
-              className={`flex items-center gap-2 px-2 py-1 rounded border text-xs ${
-                activeThreadId === thread.id ? 'bg-secondary/60' : 'bg-transparent'
+              className={`relative h-10 w-8 rounded-md border ${
+                activeThreadId === thread.id ? 'bg-secondary/70' : 'bg-transparent'
               }`}
               onClick={() => setActiveThreadId(thread.id)}
+              aria-label={thread.title}
             >
-              <Circle className="w-2 h-2" style={{ color: thread.color || '#7c3aed' }} />
-              {thread.title}
-              {unreadByThread[thread.id] && <span className="ml-1 h-2 w-2 rounded-full bg-red-500" />}
+              <span
+                className="absolute inset-1 rounded-sm"
+                style={{ backgroundColor: thread.color || '#7c3aed' }}
+              />
+              {unreadByThread[thread.id] && (
+                <span className="absolute -top-1 -right-1 h-2.5 w-2.5 rounded-full bg-red-500" />
+              )}
             </button>
           ))}
+        </div>
+      </div>
+
+      <div className="flex-1 flex flex-col min-w-0">
+        <div className="border-b border-sidebar-border px-3 py-2 flex items-center justify-between">
+          <div className="flex items-center gap-2 min-w-0">
+            <Circle className="w-3 h-3" style={{ color: activeThreadColor }} />
+            <span className="text-sm font-medium truncate">{activeThreadTitle}</span>
+          </div>
           {activeThreadId && (
-            <Button type="button" size="icon" variant="ghost" className="h-6 w-6" onClick={openEdit}>
+            <Button type="button" size="icon" variant="ghost" className="h-7 w-7" onClick={openEdit}>
               <Pencil className="w-3 h-3" />
             </Button>
           )}
         </div>
-      </div>
-      <ScrollArea className="flex-1 p-3">
-        <div className="space-y-3">
-          {activeMessages.map((msg) => (
-            <div key={msg.id} className="animate-fade-in">
-              <div className="flex items-center gap-2 mb-1">
-                <span className="text-xs font-medium text-primary">{msg.speaker_name}</span>
-                <span className="text-xs text-muted-foreground">{formatTime(msg.created_at)}</span>
+        <ScrollArea className="flex-1 p-3">
+          <div className="space-y-3">
+            {activeMessages.map((msg) => (
+              <div key={msg.id} className="animate-fade-in">
+                <div className="flex items-center gap-2 mb-1">
+                  <span className="text-xs font-medium text-primary">{msg.speaker_name}</span>
+                  <span className="text-xs text-muted-foreground">{formatTime(msg.created_at)}</span>
+                </div>
+                <p className="text-sm text-foreground pl-2 border-l-2 border-border">
+                  {msg.text}
+                </p>
               </div>
-              <p className="text-sm text-foreground pl-2 border-l-2 border-border">
-                {msg.text}
-              </p>
-            </div>
-          ))}
-          <div ref={messagesEndRef} />
-        </div>
+            ))}
+            <div ref={messagesEndRef} />
+          </div>
 
-        {activeMessages.length === 0 && (
-          <p className="text-sm text-muted-foreground text-center py-8">
-            チャットメッセージはここに表示されます
-          </p>
-        )}
-      </ScrollArea>
+          {activeMessages.length === 0 && (
+            <p className="text-sm text-muted-foreground text-center py-8">
+              チャットメッセージはここに表示されます
+            </p>
+          )}
+        </ScrollArea>
 
-      <form onSubmit={handleSubmit} className="p-3 border-t border-sidebar-border flex gap-2">
-        <Input
-          value={input}
-          onChange={(e) => setInput(e.target.value)}
-          placeholder="メッセージを入力..."
-          className="flex-1 bg-sidebar-accent border-sidebar-border"
-          disabled={!participant}
-        />
-        <Button type="submit" size="icon" disabled={!participant}>
-          <Send className="w-4 h-4" />
-        </Button>
-      </form>
+        <form onSubmit={handleSubmit} className="p-3 border-t border-sidebar-border flex gap-2">
+          <Input
+            value={input}
+            onChange={(e) => setInput(e.target.value)}
+            placeholder="メッセージを入力..."
+            className="flex-1 bg-sidebar-accent border-sidebar-border"
+            disabled={!participant}
+          />
+          <Button type="submit" size="icon" disabled={!participant}>
+            <Send className="w-4 h-4" />
+          </Button>
+        </form>
+      </div>
       <Dialog open={createOpen} onOpenChange={setCreateOpen}>
         <DialogContent className="max-w-md">
           <DialogHeader>
