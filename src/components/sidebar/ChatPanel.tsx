@@ -202,14 +202,16 @@ export function ChatPanel({ roomId, messages, participant, onSendMessage }: Chat
 
   return (
     <div className="h-full flex">
-      <div className="w-12 border-r border-sidebar-border flex flex-col items-center py-2 gap-2 bg-sidebar">
+      <div className="w-12 border-r border-sidebar-border flex flex-col items-center py-2 gap-2 bg-sidebar overflow-visible">
         <Button type="button" size="icon" variant="ghost" className="h-8 w-8" onClick={openCreate}>
           <Plus className="w-4 h-4" />
         </Button>
         <button
           type="button"
-          className={`relative h-10 w-8 rounded-md border ${
-            activeThreadId === null ? 'bg-secondary/70' : 'bg-transparent'
+          className={`relative h-10 w-8 border overflow-visible ${
+            activeThreadId === null
+              ? 'bg-secondary/70 border-sidebar-border rounded-l-md rounded-r-none -mr-px'
+              : 'bg-transparent rounded-md'
           }`}
           onClick={() => setActiveThreadId(null)}
           aria-label="全体チャット"
@@ -219,7 +221,7 @@ export function ChatPanel({ roomId, messages, participant, onSendMessage }: Chat
             style={{ backgroundColor: '#7c3aed' }}
           />
           {unreadByThread.public && (
-            <span className="absolute -top-1 -right-1 h-2.5 w-2.5 rounded-full bg-red-500" />
+            <span className="absolute top-0 right-0 h-2.5 w-2.5 rounded-full bg-red-500 translate-x-1/2 -translate-y-1/2" />
           )}
         </button>
         <div className="flex-1 flex flex-col gap-2 overflow-y-auto px-1 pb-2">
@@ -227,8 +229,10 @@ export function ChatPanel({ roomId, messages, participant, onSendMessage }: Chat
             <button
               key={thread.id}
               type="button"
-              className={`relative h-10 w-8 rounded-md border ${
-                activeThreadId === thread.id ? 'bg-secondary/70' : 'bg-transparent'
+              className={`relative h-10 w-8 border overflow-visible ${
+                activeThreadId === thread.id
+                  ? 'bg-secondary/70 border-sidebar-border rounded-l-md rounded-r-none -mr-px'
+                  : 'bg-transparent rounded-md'
               }`}
               onClick={() => setActiveThreadId(thread.id)}
               aria-label={thread.title}
@@ -238,7 +242,7 @@ export function ChatPanel({ roomId, messages, participant, onSendMessage }: Chat
                 style={{ backgroundColor: thread.color || '#7c3aed' }}
               />
               {unreadByThread[thread.id] && (
-                <span className="absolute -top-1 -right-1 h-2.5 w-2.5 rounded-full bg-red-500" />
+                <span className="absolute top-0 right-0 h-2.5 w-2.5 rounded-full bg-red-500 translate-x-1/2 -translate-y-1/2" />
               )}
             </button>
           ))}
