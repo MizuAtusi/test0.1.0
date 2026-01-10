@@ -40,7 +40,7 @@ export function PlatformShell({ title, onSignOut, children }: PlatformShellProps
       <Sidebar collapsible="icon">
         <SidebarHeader className="gap-2">
           <div className="flex items-center justify-end">
-            <SidebarTrigger className="h-12 w-12 [&>svg]:size-7" />
+            <SidebarTrigger className="h-14 w-14 [&>svg]:size-8" />
           </div>
         </SidebarHeader>
         <SidebarSeparator />
