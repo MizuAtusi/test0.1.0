@@ -29,6 +29,7 @@ const ROOM_HEADER_HEIGHT_PX = 48;
 const INPUT_BAR_HEIGHT_PX = 64;
 const STAGE_AREA_PADDING_Y_PX = 16 + 8; // pt-4 + pb-2 (approx)
 const STAGE_STACKED_ASPECT_THRESHOLD = 0.66; // availableStageHeight / stageColumnWidth
+const ROOM_LAST_SEEN_STORAGE_KEY = 'trpg:lastSeenRoomMessages';
 
 export default function RoomPage() {
   const { roomId } = useParams<{ roomId: string }>();
@@ -92,6 +93,24 @@ export default function RoomPage() {
     refreshCharacters,
   } = useRoom(roomId || null);
   const { user } = useAuth();
+
+  useEffect(() => {
+    if (!roomId) return;
+    if (!messages.length) return;
+    const latest = messages.reduce<number | null>((max, msg) => {
+      const ts = new Date(msg.created_at).getTime();
+      return max === null || ts > max ? ts : max;
+    }, null);
+    if (!latest) return;
+    try {
+      const raw = localStorage.getItem(ROOM_LAST_SEEN_STORAGE_KEY);
+      const parsed = raw ? JSON.parse(raw) : {};
+      parsed[roomId] = latest;
+      localStorage.setItem(ROOM_LAST_SEEN_STORAGE_KEY, JSON.stringify(parsed));
+    } catch {
+      // ignore
+    }
+  }, [roomId, messages]);
 
   const hasSidePanel = !isReadOnlyViewer;
   const effectiveSidePanelWidth = hasSidePanel

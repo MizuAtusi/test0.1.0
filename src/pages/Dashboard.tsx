@@ -16,6 +16,8 @@ type JoinedRoom = {
   rooms: Room | null;
 };
 
+const ROOM_LAST_SEEN_STORAGE_KEY = 'trpg:lastSeenRoomMessages';
+
 export default function DashboardPage() {
   const { user, isDevAuth } = useAuth();
   const navigate = useNavigate();
@@ -28,6 +30,8 @@ export default function DashboardPage() {
   const [joinRoomId, setJoinRoomId] = useState('');
   const [joining, setJoining] = useState(false);
   const [deletingRoomId, setDeletingRoomId] = useState<string | null>(null);
+  const [lastMessageMap, setLastMessageMap] = useState<Record<string, number>>({});
+  const [lastSeenMap, setLastSeenMap] = useState<Record<string, number>>({});
 
   const myId = user?.id ?? '';
 
@@ -84,6 +88,75 @@ export default function DashboardPage() {
     const createdIds = new Set(createdRooms.map((r) => r.id));
     return roomCards.filter((r) => !createdIds.has(r.id));
   }, [roomCards, createdRooms]);
+
+  useEffect(() => {
+    if (!roomCards.length) {
+      setLastMessageMap({});
+      return;
+    }
+    if (isDevAuth) return;
+    let canceled = false;
+    (async () => {
+      const roomIds = roomCards.map((r) => r.id);
+      const { data, error } = await supabase
+        .from('messages')
+        .select('room_id, created_at')
+        .in('room_id', roomIds)
+        .order('created_at', { ascending: false });
+      if (canceled) return;
+      if (error) {
+        toast({ title: '通知の取得に失敗しました', description: error.message, variant: 'destructive' });
+        return;
+      }
+      const map: Record<string, number> = {};
+      (data as any[] | null)?.forEach((row) => {
+        if (!map[row.room_id]) {
+          map[row.room_id] = new Date(row.created_at).getTime();
+        }
+      });
+      setLastMessageMap(map);
+    })();
+    return () => {
+      canceled = true;
+    };
+  }, [roomCards, isDevAuth, toast]);
+
+  useEffect(() => {
+    if (!roomCards.length) {
+      setLastSeenMap({});
+      return;
+    }
+    const now = Date.now();
+    let stored: Record<string, number> = {};
+    try {
+      const raw = localStorage.getItem(ROOM_LAST_SEEN_STORAGE_KEY);
+      if (raw) stored = JSON.parse(raw);
+    } catch {
+      stored = {};
+    }
+    let changed = false;
+    roomCards.forEach((room) => {
+      if (!stored[room.id]) {
+        stored[room.id] = now;
+        changed = true;
+      }
+    });
+    if (changed) {
+      try {
+        localStorage.setItem(ROOM_LAST_SEEN_STORAGE_KEY, JSON.stringify(stored));
+      } catch {
+        // ignore
+      }
+    }
+    setLastSeenMap(stored);
+  }, [roomCards]);
+
+  const hasUnread = (roomId: string) => {
+    const lastMessageAt = lastMessageMap[roomId];
+    const lastSeenAt = lastSeenMap[roomId];
+    if (!lastMessageAt || !lastSeenAt) return false;
+    return lastMessageAt > lastSeenAt;
+  };
 
   const createRoom = async () => {
     if (!myId) return;
@@ -273,7 +346,10 @@ export default function DashboardPage() {
                   className="flex items-center justify-between gap-3 rounded-md border border-border/50 p-3"
                 >
                   <div className="min-w-0">
-                    <div className="font-medium truncate">{r.name}</div>
+                    <div className="flex items-center gap-2 font-medium truncate">
+                      <span className="truncate">{r.name}</span>
+                      {hasUnread(r.id) && <span className="h-2 w-2 rounded-full bg-red-500" />}
+                    </div>
                     <div className="text-xs text-muted-foreground">権限: GM</div>
                   </div>
                   <div className="flex items-center gap-2">
@@ -315,7 +391,10 @@ export default function DashboardPage() {
                   className="flex items-center justify-between gap-3 rounded-md border border-border/50 p-3"
                 >
                   <div className="min-w-0">
-                    <div className="font-medium truncate">{r.name}</div>
+                    <div className="flex items-center gap-2 font-medium truncate">
+                      <span className="truncate">{r.name}</span>
+                      {hasUnread(r.id) && <span className="h-2 w-2 rounded-full bg-red-500" />}
+                    </div>
                     <div className="text-xs text-muted-foreground">権限: {r.role}</div>
                   </div>
                   <Button variant="outline" onClick={() => navigate(`/room/${r.id}`)}>
