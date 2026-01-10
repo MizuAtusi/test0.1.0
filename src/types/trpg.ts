@@ -200,6 +200,16 @@ export interface RoomJoinRequest {
   updated_at: string;
 }
 
+export interface RoomInvite {
+  id: string;
+  room_id: string;
+  inviter_user_id: string;
+  invitee_user_id: string;
+  status: 'invited' | 'accepted' | 'cancelled';
+  created_at: string;
+  updated_at: string;
+}
+
 export interface Profile {
   id: string;
   display_name: string;

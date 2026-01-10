@@ -128,6 +128,7 @@ export default function RoomPage() {
   const resizeStateRef = useRef<{ startX: number; startWidth: number } | null>(null);
   const [joiningRoom, setJoiningRoom] = useState(false);
   const [joinRequest, setJoinRequest] = useState<any>(null);
+  const [inviteAccepted, setInviteAccepted] = useState(false);
   const [joinMessage, setJoinMessage] = useState('');
   const [joinLoading, setJoinLoading] = useState(false);
   const [joinReady, setJoinReady] = useState(false);
@@ -449,6 +450,29 @@ export default function RoomPage() {
       canceled = true;
     };
   }, [needsJoin, roomId, user?.id]);
+
+  useEffect(() => {
+    if (!roomId || !user?.id || inviteAccepted) return;
+    let canceled = false;
+    (async () => {
+      const { data } = await supabase
+        .from('room_invites')
+        .select('id,status')
+        .eq('room_id', roomId)
+        .eq('invitee_user_id', user.id)
+        .eq('status', 'invited')
+        .maybeSingle();
+      if (canceled || !data) return;
+      await supabase
+        .from('room_invites')
+        .update({ status: 'accepted', updated_at: new Date().toISOString() } as any)
+        .eq('id', data.id);
+      if (!canceled) setInviteAccepted(true);
+    })();
+    return () => {
+      canceled = true;
+    };
+  }, [roomId, user?.id, inviteAccepted]);
 
   // Determine if current user can view secret content
   const canViewSecret = isReadOnlyViewer || isGM || (

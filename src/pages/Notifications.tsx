@@ -6,7 +6,7 @@ import { useToast } from '@/hooks/use-toast';
 import { PlatformShell } from '@/components/navigation/PlatformShell';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
-import type { Profile, FriendRequest, ProfilePost } from '@/types/trpg';
+import type { Profile, FriendRequest, ProfilePost, RoomInvite } from '@/types/trpg';
 
 type NotificationItem = {
   id: string;
@@ -15,6 +15,8 @@ type NotificationItem = {
     | 'friend_accepted'
     | 'room_request'
     | 'room_approved'
+    | 'room_invited'
+    | 'room_invite_accepted'
     | 'post_like'
     | 'post_quote'
     | 'post_reply';
@@ -90,6 +92,18 @@ export default function NotificationsPage() {
           .eq('status', 'approved')
           .eq('requester_user_id', userId);
 
+        const { data: roomInvited } = await supabase
+          .from('room_invites')
+          .select('id,room_id,inviter_user_id,invitee_user_id,status,created_at,rooms(id,name)')
+          .eq('status', 'invited')
+          .eq('invitee_user_id', userId);
+
+        const { data: roomInviteAccepted } = await supabase
+          .from('room_invites')
+          .select('id,room_id,inviter_user_id,invitee_user_id,status,updated_at,rooms(id,name)')
+          .eq('status', 'accepted')
+          .eq('inviter_user_id', userId);
+
         let likes: any[] = [];
         let quotes: any[] = [];
         let replies: any[] = [];
@@ -157,6 +171,30 @@ export default function NotificationsPage() {
             title: 'ルーム参加申請が承認されました',
             roomId: r.room_id,
             body: r.rooms?.name || 'ルーム',
+          });
+        });
+
+        (roomInvited as any[] | null)?.forEach((r: RoomInvite) => {
+          items.push({
+            id: `room_invited:${r.id}`,
+            kind: 'room_invited',
+            createdAt: r.created_at,
+            title: 'ルームに招待されました',
+            actorId: r.inviter_user_id,
+            roomId: r.room_id,
+            body: (r as any).rooms?.name || 'ルーム',
+          });
+        });
+
+        (roomInviteAccepted as any[] | null)?.forEach((r: RoomInvite) => {
+          items.push({
+            id: `room_invite_accepted:${r.id}`,
+            kind: 'room_invite_accepted',
+            createdAt: (r as any).updated_at || r.created_at,
+            title: '招待が承認されました',
+            actorId: r.invitee_user_id,
+            roomId: r.room_id,
+            body: (r as any).rooms?.name || 'ルーム',
           });
         });
 

@@ -99,6 +99,12 @@ export function GMToolsPanel({
   const [savingPublic, setSavingPublic] = useState(false);
   const [joinRequests, setJoinRequests] = useState<RoomJoinRequest[]>([]);
   const [joinRequestProfiles, setJoinRequestProfiles] = useState<Record<string, Profile>>({});
+  const [inviteDialogOpen, setInviteDialogOpen] = useState(false);
+  const [inviteFriends, setInviteFriends] = useState<Record<string, Profile>>({});
+  const [inviteHandle, setInviteHandle] = useState('');
+  const [inviteSearchResult, setInviteSearchResult] = useState<Profile | null>(null);
+  const [inviteSearchLoading, setInviteSearchLoading] = useState(false);
+  const [inviteActionLoading, setInviteActionLoading] = useState<string | null>(null);
 
   const fetchRoomMembers = useCallback(async () => {
     const { data, error } = await supabase
@@ -109,6 +115,39 @@ export function GMToolsPanel({
     if (error) return;
     setRoomMembers((data as any) || []);
   }, [roomId]);
+
+  const fetchInviteFriends = useCallback(async () => {
+    if (!user?.id) {
+      setInviteFriends({});
+      return;
+    }
+    const { data, error } = await supabase
+      .from('friend_requests')
+      .select('*')
+      .or(`requester_user_id.eq.${user.id},receiver_user_id.eq.${user.id}`)
+      .eq('status', 'accepted');
+    if (error) return;
+    const friendIds = Array.from(
+      new Set(
+        (data as any[] | null)?.map((req) =>
+          req.requester_user_id === user.id ? req.receiver_user_id : req.requester_user_id,
+        ) || [],
+      ),
+    );
+    if (friendIds.length === 0) {
+      setInviteFriends({});
+      return;
+    }
+    const { data: profiles } = await supabase
+      .from('profiles')
+      .select('id,display_name,handle,avatar_url')
+      .in('id', friendIds);
+    const next: Record<string, Profile> = {};
+    (profiles as any[] | null)?.forEach((p) => {
+      next[p.id] = p as Profile;
+    });
+    setInviteFriends(next);
+  }, [user?.id]);
 
   useEffect(() => {
     void fetchRoomMembers();
@@ -124,6 +163,69 @@ export function GMToolsPanel({
       supabase.removeChannel(channel);
     };
   }, [roomId, fetchRoomMembers]);
+
+  useEffect(() => {
+    if (!inviteDialogOpen) return;
+    void fetchInviteFriends();
+  }, [inviteDialogOpen, fetchInviteFriends]);
+
+  const inviteUserToRoom = async (profile: Profile) => {
+    if (!roomId) return;
+    if (roomMembers.some((m) => m.user_id === profile.id)) {
+      toast({ title: 'すでに参加中のプレイヤーです' });
+      return;
+    }
+    setInviteActionLoading(profile.id);
+    const { error } = await supabase.from('room_members').insert({
+      room_id: roomId,
+      user_id: profile.id,
+      role: 'PL',
+    } as any);
+    setInviteActionLoading(null);
+    if (error) {
+      toast({ title: '招待に失敗しました', description: error.message, variant: 'destructive' });
+      return;
+    }
+    await supabase.from('room_invites').upsert(
+      {
+        room_id: roomId,
+        inviter_user_id: user?.id,
+        invitee_user_id: profile.id,
+        status: 'invited',
+        updated_at: new Date().toISOString(),
+      } as any,
+      { onConflict: 'room_id,invitee_user_id' },
+    );
+    toast({ title: 'プレイヤーを招待しました' });
+    void fetchRoomMembers();
+  };
+
+  const handleInviteSearch = async () => {
+    const target = inviteHandle.trim().toLowerCase();
+    if (!target) return;
+    setInviteSearchLoading(true);
+    const { data: byHandle, error } = await supabase
+      .from('profiles')
+      .select('id,display_name,handle,avatar_url')
+      .eq('handle', target)
+      .maybeSingle();
+    if (error) {
+      setInviteSearchLoading(false);
+      toast({ title: 'ID検索に失敗しました', description: error.message, variant: 'destructive' });
+      return;
+    }
+    let resolved = byHandle as any;
+    if (!resolved) {
+      const { data: byId } = await supabase
+        .from('profiles')
+        .select('id,display_name,handle,avatar_url')
+        .eq('id', target)
+        .maybeSingle();
+      resolved = byId as any;
+    }
+    setInviteSearchResult(resolved ? (resolved as Profile) : null);
+    setInviteSearchLoading(false);
+  };
 
   useEffect(() => {
     if (!roomId || !user?.id || !isGmUser) return;
@@ -1460,6 +1562,9 @@ export function GMToolsPanel({
     void fetchJoinRequests();
   };
 
+  const inviteFriendsList = Object.values(inviteFriends);
+  const memberUserIds = useMemo(() => new Set(roomMembers.map((m) => m.user_id)), [roomMembers]);
+
   return (
     <>
       <ScrollArea className="h-full">
@@ -2378,9 +2483,102 @@ export function GMToolsPanel({
                 参加者をクリックしてGM権限を付与できます（ルーム作成者のみ）
               </div>
             )}
+            {isGmUser && (
+              <Button variant="outline" size="sm" className="w-full" onClick={() => setInviteDialogOpen(true)}>
+                プレイヤーを招待する
+              </Button>
+            )}
           </div>
         </div>
       </ScrollArea>
+
+      <Dialog open={inviteDialogOpen} onOpenChange={setInviteDialogOpen}>
+        <DialogContent className="sm:max-w-xl max-h-[80vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>プレイヤーを招待</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div className="space-y-2">
+              <Label className="text-xs text-muted-foreground">フレンド一覧</Label>
+              <div className="max-h-56 overflow-y-auto space-y-2 pr-2">
+                {inviteFriendsList.length === 0 ? (
+                  <div className="text-sm text-muted-foreground">まだフレンドがいません</div>
+                ) : (
+                  inviteFriendsList.map((friend) => {
+                    const alreadyMember = memberUserIds.has(friend.id);
+                    return (
+                      <div
+                        key={friend.id}
+                        className="flex items-center justify-between gap-3 rounded-md border border-border/60 bg-secondary/30 px-3 py-2"
+                      >
+                        <div className="min-w-0">
+                          <button
+                            type="button"
+                            className="text-sm font-medium truncate hover:underline"
+                            onClick={() => navigate(`/users/${friend.id}`)}
+                          >
+                            {friend.display_name || 'ユーザー'}
+                          </button>
+                          <div className="text-xs text-muted-foreground truncate">@{friend.handle || 'id'}</div>
+                        </div>
+                        <Button
+                          size="sm"
+                          onClick={() => inviteUserToRoom(friend)}
+                          disabled={alreadyMember || inviteActionLoading === friend.id}
+                        >
+                          {alreadyMember ? '参加中' : '招待'}
+                        </Button>
+                      </div>
+                    );
+                  })
+                )}
+              </div>
+            </div>
+            <div className="space-y-2">
+              <Label className="text-xs text-muted-foreground">IDを入力</Label>
+              <div className="flex gap-2">
+                <Input
+                  value={inviteHandle}
+                  onChange={(e) => setInviteHandle(e.target.value)}
+                  placeholder="プレイヤーID"
+                />
+                <Button onClick={handleInviteSearch} disabled={inviteSearchLoading}>
+                  検索
+                </Button>
+              </div>
+              {inviteSearchResult && (
+                <div className="flex items-center justify-between gap-3 rounded-md border border-border/60 bg-secondary/30 px-3 py-2">
+                  <div className="min-w-0">
+                    <button
+                      type="button"
+                      className="text-sm font-medium truncate hover:underline"
+                      onClick={() => navigate(`/users/${inviteSearchResult.id}`)}
+                    >
+                      {inviteSearchResult.display_name || 'ユーザー'}
+                    </button>
+                    <div className="text-xs text-muted-foreground truncate">@{inviteSearchResult.handle || 'id'}</div>
+                  </div>
+                  <Button
+                    size="sm"
+                    onClick={() => inviteUserToRoom(inviteSearchResult)}
+                    disabled={memberUserIds.has(inviteSearchResult.id)}
+                  >
+                    {memberUserIds.has(inviteSearchResult.id) ? '参加中' : '招待'}
+                  </Button>
+                </div>
+              )}
+              {!inviteSearchResult && inviteHandle.trim() !== '' && !inviteSearchLoading && (
+                <div className="text-xs text-muted-foreground">一致するユーザーが見つかりません</div>
+              )}
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setInviteDialogOpen(false)}>
+              閉じる
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       <ThemeSettings
         open={showThemeSettings}
