@@ -52,7 +52,7 @@ export default function UserProfilePage() {
     return () => {
       canceled = true;
     };
-  }, [userId]);
+  }, [userId, user?.id, navigate]);
 
   const loadPosts = async () => {
     if (!userId) return;

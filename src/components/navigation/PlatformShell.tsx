@@ -108,8 +108,8 @@ export function PlatformShell({ title, onSignOut, children }: PlatformShellProps
         <SidebarRail />
       </Sidebar>
       <SidebarInset>
-        <header className="sticky top-0 z-20 flex items-center gap-3 border-b border-border bg-card px-4 py-3">
-          <SidebarTrigger className="h-10 w-10" />
+        <header className="sticky top-0 z-20 flex items-center gap-3 border-b border-border bg-card px-4 py-3 pointer-events-auto">
+          <SidebarTrigger className="h-10 w-10 relative z-30 pointer-events-auto" />
           <h1 className="font-display text-2xl text-foreground">{title}</h1>
         </header>
         <div className="flex-1 bg-background p-4">{children}</div>
