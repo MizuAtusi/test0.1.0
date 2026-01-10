@@ -1,6 +1,6 @@
 import type { ReactNode } from 'react';
 import { NavLink } from 'react-router-dom';
-import { Globe, Home, LogOut, User } from 'lucide-react';
+import { Bell, Globe, Home, LogOut, User } from 'lucide-react';
 import {
   Sidebar,
   SidebarContent,
@@ -24,6 +24,8 @@ type PlatformShellProps = {
 };
 
 export function PlatformShell({ title, onSignOut, children }: PlatformShellProps) {
+  const menuButtonClass = 'text-lg py-3 [&>svg]:size-7';
+
   return (
     <SidebarProvider>
       <Sidebar collapsible="icon">
@@ -32,14 +34,14 @@ export function PlatformShell({ title, onSignOut, children }: PlatformShellProps
             <span className="text-xs font-semibold tracking-wider text-sidebar-foreground/70">
               MENU
             </span>
-            <SidebarTrigger />
+            <SidebarTrigger className="h-9 w-9" />
           </div>
         </SidebarHeader>
         <SidebarSeparator />
         <SidebarContent>
           <SidebarMenu>
             <SidebarMenuItem>
-              <SidebarMenuButton asChild tooltip="ルームで遊ぶ">
+              <SidebarMenuButton asChild tooltip="ルームで遊ぶ" size="lg" className={menuButtonClass}>
                 <NavLink
                   to="/"
                   end
@@ -53,7 +55,7 @@ export function PlatformShell({ title, onSignOut, children }: PlatformShellProps
               </SidebarMenuButton>
             </SidebarMenuItem>
             <SidebarMenuItem>
-              <SidebarMenuButton asChild tooltip="みんなのルーム">
+              <SidebarMenuButton asChild tooltip="みんなのルーム" size="lg" className={menuButtonClass}>
                 <NavLink
                   to="/rooms"
                   className={({ isActive }) =>
@@ -66,7 +68,20 @@ export function PlatformShell({ title, onSignOut, children }: PlatformShellProps
               </SidebarMenuButton>
             </SidebarMenuItem>
             <SidebarMenuItem>
-              <SidebarMenuButton asChild tooltip="マイページ">
+              <SidebarMenuButton asChild tooltip="通知" size="lg" className={menuButtonClass}>
+                <NavLink
+                  to="/notifications"
+                  className={({ isActive }) =>
+                    cn(isActive && 'bg-sidebar-accent text-sidebar-accent-foreground')
+                  }
+                >
+                  <Bell />
+                  <span>通知</span>
+                </NavLink>
+              </SidebarMenuButton>
+            </SidebarMenuItem>
+            <SidebarMenuItem>
+              <SidebarMenuButton asChild tooltip="マイページ" size="lg" className={menuButtonClass}>
                 <NavLink
                   to="/me"
                   className={({ isActive }) =>
@@ -83,7 +98,7 @@ export function PlatformShell({ title, onSignOut, children }: PlatformShellProps
         <SidebarFooter>
           <SidebarMenu>
             <SidebarMenuItem>
-              <SidebarMenuButton onClick={onSignOut} tooltip="ログアウト">
+              <SidebarMenuButton onClick={onSignOut} tooltip="ログアウト" size="lg" className={menuButtonClass}>
                 <LogOut />
                 <span>ログアウト</span>
               </SidebarMenuButton>
@@ -94,7 +109,7 @@ export function PlatformShell({ title, onSignOut, children }: PlatformShellProps
       </Sidebar>
       <SidebarInset>
         <header className="flex items-center gap-3 border-b border-border bg-card px-4 py-3">
-          <SidebarTrigger className="md:hidden" />
+          <SidebarTrigger className="h-9 w-9" />
           <h1 className="font-display text-2xl text-foreground">{title}</h1>
         </header>
         <div className="flex-1 bg-background p-4">{children}</div>

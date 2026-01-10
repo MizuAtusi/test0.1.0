@@ -12,6 +12,7 @@ import ResetPasswordPage from "./pages/ResetPassword";
 import PublicRoomsPage from "./pages/PublicRooms";
 import MyPage from "./pages/MyPage";
 import UserProfilePage from "./pages/UserProfile";
+import NotificationsPage from "./pages/Notifications";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
@@ -47,6 +48,14 @@ const App = () => (
               element={
                 <RequireAuth>
                   <MyPage />
+                </RequireAuth>
+              }
+            />
+            <Route
+              path="/notifications"
+              element={
+                <RequireAuth>
+                  <NotificationsPage />
                 </RequireAuth>
               }
             />

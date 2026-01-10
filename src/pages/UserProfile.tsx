@@ -6,6 +6,7 @@ import { useAuth } from '@/hooks/useAuth';
 import { useToast } from '@/hooks/use-toast';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { PlatformShell } from '@/components/navigation/PlatformShell';
@@ -25,6 +26,9 @@ export default function UserProfilePage() {
   const [quoteDraft, setQuoteDraft] = useState('');
   const [quoteTargetId, setQuoteTargetId] = useState<string | null>(null);
   const [quotedPostsById, setQuotedPostsById] = useState<Record<string, ProfilePost>>({});
+  const [engagementOpen, setEngagementOpen] = useState(false);
+  const [engagementLikes, setEngagementLikes] = useState<Profile[]>([]);
+  const [engagementQuotes, setEngagementQuotes] = useState<ProfilePost[]>([]);
   const [friendStatus, setFriendStatus] = useState<FriendRequest | null>(null);
   const [friendsById, setFriendsById] = useState<Record<string, Profile>>({});
   const [replyDrafts, setReplyDrafts] = useState<Record<string, string>>({});
@@ -230,6 +234,36 @@ export default function UserProfilePage() {
     setQuoteDraft('');
   };
 
+  const openEngagement = async (postId: string) => {
+    setEngagementOpen(true);
+    try {
+      const { data: likeRows } = await supabase
+        .from('profile_post_likes')
+        .select('user_id, created_at')
+        .eq('post_id', postId)
+        .order('created_at', { ascending: false });
+      const likerIds = (likeRows as any[] | null)?.map((l) => l.user_id).filter(Boolean) || [];
+      if (likerIds.length) {
+        const { data: likerProfiles } = await supabase
+          .from('profiles')
+          .select('id,display_name,handle,avatar_url')
+          .in('id', likerIds);
+        setEngagementLikes((likerProfiles as Profile[] | null) || []);
+      } else {
+        setEngagementLikes([]);
+      }
+
+      const { data: quoteRows } = await supabase
+        .from('profile_posts')
+        .select('id,user_id,content,thumbnail_url,created_at')
+        .eq('quoted_post_id', postId)
+        .order('created_at', { ascending: false });
+      setEngagementQuotes((quoteRows as ProfilePost[] | null) || []);
+    } catch (e: any) {
+      toast({ title: 'エンゲージメントの取得に失敗しました', description: String(e?.message || e), variant: 'destructive' });
+    }
+  };
+
   const handleSubmitQuote = async () => {
     if (!user?.id || !quoteTargetId) return;
     try {
@@ -406,6 +440,16 @@ export default function UserProfilePage() {
                             size="sm"
                             variant="ghost"
                             className="text-muted-foreground"
+                            onClick={() => openEngagement(p.id)}
+                            disabled={!user?.id}
+                          >
+                            反応
+                          </Button>
+                          <Button
+                            type="button"
+                            size="sm"
+                            variant="ghost"
+                            className="text-muted-foreground"
                             onClick={() => handleOpenQuote(p.id)}
                             disabled={!user?.id}
                           >
@@ -476,6 +520,67 @@ export default function UserProfilePage() {
             )}
           </CardContent>
         </Card>
+
+        <Dialog open={engagementOpen} onOpenChange={setEngagementOpen}>
+          <DialogContent className="max-w-lg">
+            <DialogHeader>
+              <DialogTitle>投稿のエンゲージメント</DialogTitle>
+            </DialogHeader>
+            <div className="space-y-4">
+              <div className="space-y-2">
+                <div className="text-sm font-semibold">いいね</div>
+                {engagementLikes.length === 0 ? (
+                  <div className="text-xs text-muted-foreground">まだありません</div>
+                ) : (
+                  <div className="space-y-2">
+                    {engagementLikes.map((p) => (
+                      <button
+                        key={p.id}
+                        type="button"
+                        className="flex items-center gap-2 text-sm"
+                        onClick={() => navigate(`/users/${p.id}`)}
+                      >
+                        <div className="h-6 w-6 rounded-full bg-secondary/60 overflow-hidden flex items-center justify-center shrink-0">
+                          {p.avatar_url ? (
+                            <img src={p.avatar_url} alt="" className="h-full w-full object-cover" />
+                          ) : (
+                            <ImagePlus className="w-3 h-3 text-muted-foreground" />
+                          )}
+                        </div>
+                        <span className="font-semibold">{p.display_name || 'ユーザー'}</span>
+                        <span className="text-xs text-muted-foreground">@{p.handle || 'id'}</span>
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
+              <div className="space-y-2">
+                <div className="text-sm font-semibold">引用投稿</div>
+                {engagementQuotes.length === 0 ? (
+                  <div className="text-xs text-muted-foreground">まだありません</div>
+                ) : (
+                  <div className="space-y-3">
+                    {engagementQuotes.map((q) => {
+                      const author = profilesById[q.user_id];
+                      return (
+                        <div key={q.id} className="rounded-md border border-border/50 p-3 text-sm">
+                          <button
+                            type="button"
+                            className="font-semibold hover:underline"
+                            onClick={() => navigate(`/users/${q.user_id}`)}
+                          >
+                            {author?.display_name || 'ユーザー'} @{author?.handle || 'id'}
+                          </button>
+                          <div className="mt-2 whitespace-pre-wrap">{q.content}</div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+            </div>
+          </DialogContent>
+        </Dialog>
       </div>
     </PlatformShell>
   );
