@@ -38,9 +38,9 @@ export function PlatformShell({ title, onSignOut, children }: PlatformShellProps
   return (
     <SidebarProvider defaultOpen={defaultOpen}>
       <Sidebar collapsible="icon">
-        <SidebarHeader className="gap-2">
+        <SidebarHeader className="gap-2 px-2">
           <div className="flex items-center justify-end">
-            <SidebarTrigger className="h-14 w-14 [&>svg]:size-8" />
+            <SidebarTrigger className="h-16 w-16 [&>svg]:size-9" />
           </div>
         </SidebarHeader>
         <SidebarSeparator />
