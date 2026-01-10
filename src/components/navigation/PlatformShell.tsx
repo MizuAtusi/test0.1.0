@@ -25,9 +25,18 @@ type PlatformShellProps = {
 
 export function PlatformShell({ title, onSignOut, children }: PlatformShellProps) {
   const menuButtonClass = 'text-xl py-4 leading-none [&>svg]:size-8';
+  const defaultOpen = (() => {
+    if (typeof document === 'undefined') return true;
+    const match = document.cookie
+      .split(';')
+      .map((c) => c.trim())
+      .find((c) => c.startsWith('sidebar:state='));
+    if (!match) return true;
+    return match.split('=')[1] !== 'false';
+  })();
 
   return (
-    <SidebarProvider>
+    <SidebarProvider defaultOpen={defaultOpen}>
       <Sidebar collapsible="icon">
         <SidebarHeader className="gap-2">
           <div className="flex items-center justify-between">
@@ -108,8 +117,7 @@ export function PlatformShell({ title, onSignOut, children }: PlatformShellProps
         <SidebarRail />
       </Sidebar>
       <SidebarInset>
-        <header className="sticky top-0 z-20 flex items-center gap-3 border-b border-border bg-card px-4 py-3 pointer-events-auto">
-          <SidebarTrigger className="h-10 w-10 relative z-30 pointer-events-auto" />
+        <header className="sticky top-0 z-20 flex items-center gap-3 border-b border-border bg-card px-4 py-3">
           <h1 className="font-display text-2xl text-foreground">{title}</h1>
         </header>
         <div className="flex-1 bg-background p-4">{children}</div>
