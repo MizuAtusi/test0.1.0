@@ -24,7 +24,7 @@ type PlatformShellProps = {
 };
 
 export function PlatformShell({ title, onSignOut, children }: PlatformShellProps) {
-  const menuButtonClass = 'text-xl py-4 leading-none [&>svg]:size-8';
+  const menuButtonClass = 'text-2xl py-5 leading-none [&>svg]:size-10';
   const defaultOpen = (() => {
     if (typeof document === 'undefined') return true;
     const match = document.cookie
@@ -39,11 +39,8 @@ export function PlatformShell({ title, onSignOut, children }: PlatformShellProps
     <SidebarProvider defaultOpen={defaultOpen}>
       <Sidebar collapsible="icon">
         <SidebarHeader className="gap-2">
-          <div className="flex items-center justify-between">
-            <span className="text-xs font-semibold tracking-wider text-sidebar-foreground/70">
-              MENU
-            </span>
-            <SidebarTrigger className="h-10 w-10" />
+          <div className="flex items-center justify-end">
+            <SidebarTrigger className="h-12 w-12 [&>svg]:size-7" />
           </div>
         </SidebarHeader>
         <SidebarSeparator />
