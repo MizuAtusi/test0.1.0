@@ -24,7 +24,7 @@ type PlatformShellProps = {
 };
 
 export function PlatformShell({ title, onSignOut, children }: PlatformShellProps) {
-  const menuButtonClass = 'text-2xl py-5 leading-none flex-row-reverse justify-end gap-4 pr-6 pl-4 [&>svg]:size-10';
+  const menuButtonClass = 'text-2xl py-5 leading-none [&>svg]:size-10';
   const defaultOpen = (() => {
     if (typeof document === 'undefined') return true;
     const match = document.cookie
