@@ -1,13 +1,13 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Copy, Search, LogOut } from 'lucide-react';
+import { Copy, Search } from 'lucide-react';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/hooks/useAuth';
 import { useToast } from '@/hooks/use-toast';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
-import { MainNav } from '@/components/navigation/MainNav';
+import { PlatformShell } from '@/components/navigation/PlatformShell';
 import type { RoomPublicSettings } from '@/types/trpg';
 
 export default function PublicRoomsPage() {
@@ -159,19 +159,8 @@ export default function PublicRoomsPage() {
   };
 
   return (
-    <div className="min-h-screen bg-background p-4">
+    <PlatformShell title="みんなのルーム" onSignOut={signOut}>
       <div className="mx-auto w-full max-w-5xl space-y-4">
-        <div className="flex items-center justify-between gap-3">
-          <h1 className="font-display text-2xl text-foreground">みんなのルーム</h1>
-          <div className="flex items-center gap-3">
-            <MainNav />
-            <Button variant="outline" onClick={signOut}>
-              <LogOut className="w-4 h-4 mr-2" />
-              ログアウト
-            </Button>
-          </div>
-        </div>
-
         <Card className="bg-card border-border">
           <CardContent className="pt-6">
             <div className="flex items-center gap-2">
@@ -245,6 +234,6 @@ export default function PublicRoomsPage() {
           </CardContent>
         </Card>
       </div>
-    </div>
+    </PlatformShell>
   );
 }

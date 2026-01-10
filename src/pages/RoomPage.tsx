@@ -113,6 +113,7 @@ export default function RoomPage() {
   }, [roomId, messages]);
 
   const hasSidePanel = !isReadOnlyViewer;
+  const activeParticipantCount = participants.filter((p) => p.role === 'PL' || p.role === 'GM').length;
   const effectiveSidePanelWidth = hasSidePanel
     ? (sidePanelCollapsed ? SIDE_PANEL_COLLAPSED_WIDTH : sidePanelWidth)
     : 0;
@@ -654,7 +655,7 @@ export default function RoomPage() {
         <div className="flex items-center gap-3">
           <div className="flex items-center gap-2 text-sm text-muted-foreground">
             <Users className="w-4 h-4" />
-            {participants.length}
+            {activeParticipantCount}
           </div>
           <Button 
             variant="outline" 

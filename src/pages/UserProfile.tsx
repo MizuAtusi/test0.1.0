@@ -8,7 +8,7 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
-import { MainNav } from '@/components/navigation/MainNav';
+import { PlatformShell } from '@/components/navigation/PlatformShell';
 import type { Profile, ProfilePost, ProfileReply, FriendRequest } from '@/types/trpg';
 
 export default function UserProfilePage() {
@@ -263,14 +263,19 @@ export default function UserProfilePage() {
     await loadFriendStatus();
   };
 
-  return (
-    <div className="min-h-screen bg-background p-4">
-      <div className="mx-auto w-full max-w-5xl space-y-4">
-        <div className="flex items-center justify-between gap-3">
-          <h1 className="font-display text-2xl text-foreground">ユーザーページ</h1>
-          <MainNav />
-        </div>
+  const signOut = async () => {
+    try {
+      localStorage.removeItem('trpg:devAuth');
+    } catch {
+      // ignore
+    }
+    await supabase.auth.signOut();
+    navigate('/login', { replace: true });
+  };
 
+  return (
+    <PlatformShell title="ユーザーページ" onSignOut={signOut}>
+      <div className="mx-auto w-full max-w-5xl space-y-4">
         <Card className="bg-card border-border">
           <CardContent className="pt-6 space-y-4">
             <div className="flex items-start gap-4">
@@ -472,6 +477,6 @@ export default function UserProfilePage() {
           </CardContent>
         </Card>
       </div>
-    </div>
+    </PlatformShell>
   );
 }

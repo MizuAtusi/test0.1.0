@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { LogOut, Plus } from 'lucide-react';
+import { Plus } from 'lucide-react';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/hooks/useAuth';
 import { useToast } from '@/hooks/use-toast';
@@ -8,7 +8,7 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import type { Room } from '@/types/trpg';
-import { MainNav } from '@/components/navigation/MainNav';
+import { PlatformShell } from '@/components/navigation/PlatformShell';
 
 type JoinedRoom = {
   room_id: string;
@@ -286,19 +286,8 @@ export default function DashboardPage() {
   };
 
   return (
-    <div className="min-h-screen bg-background p-4">
+    <PlatformShell title="ルームで遊ぶ" onSignOut={signOut}>
       <div className="mx-auto w-full max-w-3xl space-y-4">
-        <div className="flex items-center justify-between gap-3">
-          <h1 className="font-display text-2xl text-foreground">ルームで遊ぶ</h1>
-          <div className="flex items-center gap-3">
-            <MainNav />
-            <Button variant="outline" onClick={signOut}>
-              <LogOut className="w-4 h-4 mr-2" />
-              ログアウト
-            </Button>
-          </div>
-        </div>
-
         <Card className="bg-card border-border">
           <CardHeader>
             <CardTitle className="text-base">ルーム作成</CardTitle>
@@ -406,6 +395,6 @@ export default function DashboardPage() {
           </CardContent>
         </Card>
       </div>
-    </div>
+    </PlatformShell>
   );
 }
