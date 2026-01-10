@@ -37,6 +37,7 @@ export default function NotificationsPage() {
   const [loading, setLoading] = useState(true);
   const [notifications, setNotifications] = useState<NotificationItem[]>([]);
   const [profilesById, setProfilesById] = useState<Record<string, Profile>>({});
+  const NOTIFICATIONS_LAST_SEEN_KEY = 'trpg:notifications:lastSeen';
 
   const signOut = async () => {
     try {
@@ -265,6 +266,21 @@ export default function NotificationsPage() {
       canceled = true;
     };
   }, [user?.id, toast]);
+
+  useEffect(() => {
+    if (loading) return;
+    const latest = notifications.reduce<number | null>((max, item) => {
+      const ts = Date.parse(item.createdAt);
+      if (Number.isNaN(ts)) return max;
+      return max === null || ts > max ? ts : max;
+    }, null);
+    const next = latest ?? Date.now();
+    try {
+      localStorage.setItem(NOTIFICATIONS_LAST_SEEN_KEY, String(next));
+    } catch {
+      // ignore
+    }
+  }, [loading, notifications]);
 
   const renderActor = (id?: string) => {
     if (!id) return null;
