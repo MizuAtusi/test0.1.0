@@ -24,7 +24,7 @@ type PlatformShellProps = {
 };
 
 export function PlatformShell({ title, onSignOut, children }: PlatformShellProps) {
-  const menuButtonClass = 'text-lg py-3 [&>svg]:size-7';
+  const menuButtonClass = 'text-xl py-4 leading-none [&>svg]:size-8';
 
   return (
     <SidebarProvider>
@@ -34,7 +34,7 @@ export function PlatformShell({ title, onSignOut, children }: PlatformShellProps
             <span className="text-xs font-semibold tracking-wider text-sidebar-foreground/70">
               MENU
             </span>
-            <SidebarTrigger className="h-9 w-9" />
+            <SidebarTrigger className="h-10 w-10" />
           </div>
         </SidebarHeader>
         <SidebarSeparator />
@@ -108,8 +108,8 @@ export function PlatformShell({ title, onSignOut, children }: PlatformShellProps
         <SidebarRail />
       </Sidebar>
       <SidebarInset>
-        <header className="flex items-center gap-3 border-b border-border bg-card px-4 py-3">
-          <SidebarTrigger className="h-9 w-9" />
+        <header className="sticky top-0 z-20 flex items-center gap-3 border-b border-border bg-card px-4 py-3">
+          <SidebarTrigger className="h-10 w-10" />
           <h1 className="font-display text-2xl text-foreground">{title}</h1>
         </header>
         <div className="flex-1 bg-background p-4">{children}</div>

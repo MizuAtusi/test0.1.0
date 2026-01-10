@@ -35,6 +35,10 @@ export default function UserProfilePage() {
 
   useEffect(() => {
     if (!userId) return;
+    if (user?.id && userId === user.id) {
+      navigate('/me', { replace: true });
+      return;
+    }
     let canceled = false;
     (async () => {
       const { data, error } = await supabase.from('profiles').select('*').eq('id', userId).single();
