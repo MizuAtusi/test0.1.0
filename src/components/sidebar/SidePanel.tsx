@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Users, MessageCircle, Wand2, ChevronRight } from 'lucide-react';
 import { CharacterPanel } from './CharacterPanel';
@@ -44,9 +44,30 @@ export function SidePanel({
   onCollapse,
 }: SidePanelProps) {
   const [activeTab, setActiveTab] = useState('characters');
+  const [lastSeenChatAt, setLastSeenChatAt] = useState<number | null>(null);
 
   // Filter chat messages only
   const chatMessages = messages.filter(m => m.channel === 'chat');
+  const lastChatMessage = chatMessages[chatMessages.length - 1];
+  const lastChatTime = lastChatMessage ? new Date(lastChatMessage.created_at).getTime() : null;
+
+  useEffect(() => {
+    if (lastSeenChatAt === null) {
+      setLastSeenChatAt(lastChatTime ?? Date.now());
+    }
+  }, [lastChatTime, lastSeenChatAt]);
+
+  useEffect(() => {
+    if (activeTab === 'chat') {
+      setLastSeenChatAt(lastChatTime ?? Date.now());
+    }
+  }, [activeTab, lastChatTime]);
+
+  const hasUnreadChat =
+    activeTab !== 'chat' &&
+    lastChatTime !== null &&
+    lastSeenChatAt !== null &&
+    lastChatTime > lastSeenChatAt;
 
   return (
     <div className="h-full flex flex-col bg-sidebar border-l border-sidebar-border overflow-hidden">
@@ -63,10 +84,13 @@ export function SidePanel({
             </TabsTrigger>
             <TabsTrigger 
               value="chat" 
-              className="tab-gothic rounded-none data-[state=active]:bg-transparent"
+              className="relative tab-gothic rounded-none data-[state=active]:bg-transparent"
             >
               <MessageCircle className="w-4 h-4 mr-2" />
               チャット
+              {hasUnreadChat && (
+                <span className="absolute -top-1 right-2 h-2.5 w-2.5 rounded-full bg-red-500" />
+              )}
             </TabsTrigger>
             {isGM && (
               <TabsTrigger 
