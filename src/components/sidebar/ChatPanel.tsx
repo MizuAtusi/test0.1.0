@@ -37,6 +37,31 @@ export function ChatPanel({ roomId, messages, participant, onSendMessage }: Chat
     });
   }, []);
 
+  useEffect(() => {
+    if (!roomId || !currentUserId) return;
+    const key = `chat_last_seen_${roomId}_${currentUserId}`;
+    try {
+      const raw = window.localStorage.getItem(key);
+      if (!raw) return;
+      const parsed = JSON.parse(raw) as Record<string, number>;
+      if (parsed && typeof parsed === 'object') {
+        setLastSeenByThread(parsed);
+      }
+    } catch {
+      // ignore
+    }
+  }, [roomId, currentUserId]);
+
+  useEffect(() => {
+    if (!roomId || !currentUserId) return;
+    const key = `chat_last_seen_${roomId}_${currentUserId}`;
+    try {
+      window.localStorage.setItem(key, JSON.stringify(lastSeenByThread));
+    } catch {
+      // ignore
+    }
+  }, [lastSeenByThread, roomId, currentUserId]);
+
   const loadThreads = async () => {
     if (!roomId) return;
     const { data } = await supabase
