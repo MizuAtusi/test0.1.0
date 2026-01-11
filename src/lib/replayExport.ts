@@ -674,7 +674,7 @@ function generateReplayJs(): string {
     const s = (typeof rawText === 'string') ? rawText : '';
     return s
       .replace(/\\{[^}]+\\}/g, '')
-      .replace(/\\[(bg|bgm|se|portrait|speaker|npc_disclosure|effects_config|portrait_transform):[^\\]]+\\]\\n?/gi, '')
+      .replace(/\\[(bg|bgm|se|portrait|speaker|npc_disclosure|effects_config|effects_other|portrait_transform):[^\\]]+\\]\\n?/gi, '')
       .trim();
   }
 

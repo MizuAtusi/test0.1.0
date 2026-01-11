@@ -77,6 +77,7 @@ export type OtherEffectTrigger = {
   syntax: 'plain' | 'tag';
   match: 'exact' | 'contains';
   images: EffectImage[];
+  pc?: Record<string, PcEffect>;
   seUrl?: string;
   durationMs?: number; // time before fade-out
 };
@@ -119,6 +120,23 @@ export function normalizeEffectsConfig(config: EffectsConfig | null | undefined)
     }
     return out;
   };
+  const normalizePcMap = (pc: any) => {
+    const out: Record<string, PcEffect> = {};
+    if (!pc || typeof pc !== 'object') return out;
+    for (const [characterId, v] of Object.entries(pc)) {
+      if (!v || typeof v !== 'object') continue;
+      out[String(characterId)] = {
+        tag: String((v as any).tag || ''),
+        x: normalizeRelMaybe(Number.isFinite((v as any).x) ? Number((v as any).x) : 0, 'x'),
+        y: normalizeRelMaybe(Number.isFinite((v as any).y) ? Number((v as any).y) : 0, 'y'),
+        scale: Number.isFinite((v as any).scale) ? Number((v as any).scale) : 1,
+        rotate: Number.isFinite((v as any).rotate) ? Number((v as any).rotate) : 0,
+        opacity: Number.isFinite((v as any).opacity) ? Math.max(0, Math.min(1, Number((v as any).opacity))) : 1,
+        z: Number.isFinite((v as any).z) ? Number((v as any).z) : 0,
+      };
+    }
+    return out;
+  };
 
   const normalizeOther = (other: any) => {
     const raw = other && typeof other === 'object' ? other : {};
@@ -142,6 +160,7 @@ export function normalizeEffectsConfig(config: EffectsConfig | null | undefined)
         syntax,
         match,
         images: normalizeImages(t?.images),
+        pc: normalizePcMap(t?.pc),
         seUrl: String(t?.seUrl || ''),
         durationMs: Math.max(0, durationMs),
       };
@@ -289,6 +308,11 @@ export function shouldTriggerOtherEffectsForMessage(params: {
   if (!text) return null;
   const c = normalizeEffectsConfig(config);
   const triggers = c.other?.triggers || [];
+  const forced = text.match(/\[effects_other:([a-z0-9-]+)\]/i);
+  if (forced) {
+    const target = triggers.find((t) => String(t.id) === String(forced[1]));
+    if (target) return target;
+  }
   const trimmed = text.trim();
   for (const t of triggers) {
     const pattern = String(t.pattern || '').trim();
@@ -303,12 +327,42 @@ export function shouldTriggerOtherEffectsForMessage(params: {
   return null;
 }
 
-export function buildOtherEffectRenderList(trigger: OtherEffectTrigger) {
+export function buildOtherEffectRenderList(params: {
+  trigger: OtherEffectTrigger;
+  characters: Character[];
+  assets: Asset[];
+  speakerName?: string;
+}) {
+  const { trigger, characters, assets, speakerName } = params;
   const t = trigger;
   const images = (Array.isArray(t.images) ? t.images : []).filter((x) => !!x.url).sort((a, b) => (a.z ?? 0) - (b.z ?? 0));
   const seUrl = String(t.seUrl || '');
   const durationMs = Math.max(0, Number.isFinite(t.durationMs) ? Number(t.durationMs) : 2000);
-  return { images, seUrl, durationMs };
+  const pcImages: Array<EffectImage & { isPc: true; characterId: string }> = [];
+  const pcMap = t.pc || {};
+  const speaker = speakerName ? characters.find((c) => c.name === speakerName) ?? null : null;
+  if (speaker) {
+    const pc = pcMap[speaker.id];
+    if (pc?.tag) {
+      const resolved = resolvePortraitTagToUrl(assets, speaker.id, pc.tag);
+      if (resolved) {
+        pcImages.push({
+          id: `pc:${speaker.id}:other:${t.id}`,
+          label: `${speaker.name}`,
+          url: resolved.url,
+          x: pc.x,
+          y: pc.y,
+          scale: pc.scale,
+          rotate: pc.rotate,
+          opacity: pc.opacity,
+          z: pc.z,
+          isPc: true,
+          characterId: speaker.id,
+        });
+      }
+    }
+  }
+  return { images: [...images, ...pcImages].sort((a, b) => (a.z ?? 0) - (b.z ?? 0)), seUrl, durationMs };
 }
 
 export function buildEffectRenderList(params: {

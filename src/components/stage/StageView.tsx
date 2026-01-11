@@ -342,7 +342,12 @@ export function StageView({
 
     const otherTrigger = shouldTriggerOtherEffectsForMessage({ message: last, config });
     if (!otherTrigger) return;
-    const built = buildOtherEffectRenderList(otherTrigger);
+    const built = buildOtherEffectRenderList({
+      trigger: otherTrigger,
+      characters,
+      assets: portraitAssets,
+      speakerName: last.speaker_name,
+    });
 
     setEffectFading(false);
     setEffectOverlay((prev) => ({

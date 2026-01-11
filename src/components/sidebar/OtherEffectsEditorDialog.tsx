@@ -4,10 +4,11 @@ import { Button } from '@/components/ui/button';
 import { Label } from '@/components/ui/label';
 import { Input } from '@/components/ui/input';
 import { Switch } from '@/components/ui/switch';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Slider } from '@/components/ui/slider';
 import { Upload, Plus, Trash2, Pencil } from 'lucide-react';
-import type { Room } from '@/types/trpg';
+import type { Asset, Character, Room } from '@/types/trpg';
 import { supabase } from '@/integrations/supabase/client';
 import { uploadFile } from '@/lib/upload';
 import { useToast } from '@/hooks/use-toast';
@@ -16,16 +17,23 @@ import {
   DEFAULT_EFFECTS,
   type EffectsConfig,
   type EffectImage,
+  type PcEffect,
   type OtherEffectTrigger,
   createId,
   buildEffectsConfigCommand,
   loadEffectsConfig,
   normalizeEffectsConfig,
+  resolvePortraitTagToUrl,
   saveEffectsConfigLocal,
 } from '@/lib/effects';
 
 const EFFECT_BASE_WIDTH = 1200;
 const EFFECT_BASE_HEIGHT = 675;
+
+type SelectedTarget =
+  | { kind: 'image'; imageId: string }
+  | { kind: 'pc'; characterId: string }
+  | null;
 
 function sanitizePattern(raw: string) {
   const s = String(raw || '').trim();
@@ -42,22 +50,43 @@ export function OtherEffectsEditorDialog(props: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   room: Room | null;
+  characters: Character[];
+  assets: Asset[];
+  activeTriggerId?: string | null;
+  showList?: boolean;
   createNonce?: number;
   onSaved?: (next: EffectsConfig) => void;
 }) {
-  const { open, onOpenChange, room, createNonce, onSaved } = props;
+  const { open, onOpenChange, room, createNonce, onSaved, characters, assets, activeTriggerId, showList = true } = props;
   const { toast } = useToast();
   const roomId = room?.id || '';
   const [saving, setSaving] = useState(false);
   const [uploading, setUploading] = useState(false);
   const [config, setConfig] = useState<EffectsConfig>(DEFAULT_EFFECTS);
   const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [selectedTarget, setSelectedTarget] = useState<SelectedTarget>(null);
   const [tab, setTab] = useState<'settings' | 'images'>('settings');
   const imgFileRef = useRef<HTMLInputElement>(null);
   const seFileRef = useRef<HTMLInputElement>(null);
   const createNonceRef = useRef<number | undefined>(undefined);
   const previewRef = useRef<HTMLDivElement>(null);
   const [previewSize, setPreviewSize] = useState<{ width: number; height: number }>({ width: 720, height: 405 });
+  const pcCharacters = useMemo(() => characters.filter((c) => !c.is_npc), [characters]);
+  const portraitOptionsByPc = useMemo(() => {
+    const map = new Map<string, Array<{ key: string; label: string }>>();
+    for (const pc of pcCharacters) {
+      const list = assets
+        .filter((a) => a.kind === 'portrait' && a.character_id === pc.id && a.tag !== '__avatar__')
+        .map((a) => ({
+          key: (a.tag || a.label || '').toLowerCase(),
+          label: a.tag ? `${a.tag}（${a.label}）` : a.label,
+        }))
+        .filter((x) => x.key)
+        .sort((a, b) => a.label.localeCompare(b.label, 'ja'));
+      map.set(pc.id, list);
+    }
+    return map;
+  }, [assets, pcCharacters]);
 
   useEffect(() => {
     if (!open) return;
@@ -74,6 +103,7 @@ export function OtherEffectsEditorDialog(props: {
         syntax: 'tag',
         match: 'contains',
         images: [],
+        pc: {},
         seUrl: '',
       };
       const other = base.other || { triggers: [] };
@@ -82,12 +112,13 @@ export function OtherEffectsEditorDialog(props: {
       setSelectedId(id);
     } else {
       const triggers = base.other?.triggers || [];
-      setSelectedId(triggers[0]?.id ?? null);
+      setSelectedId(activeTriggerId ?? triggers[0]?.id ?? null);
     }
 
     setConfig(base);
     setTab('settings');
-  }, [open, roomId, createNonce]);
+    setSelectedTarget(null);
+  }, [open, roomId, createNonce, activeTriggerId]);
 
   const triggers = useMemo(() => normalizeEffectsConfig(config).other?.triggers || [], [config]);
   const selected = useMemo(() => triggers.find((t) => t.id === selectedId) ?? null, [triggers, selectedId]);
@@ -112,6 +143,7 @@ export function OtherEffectsEditorDialog(props: {
       syntax: 'tag',
       match: 'contains',
       images: [],
+      pc: {},
       seUrl: '',
     };
     setConfig((prev) => {
@@ -138,6 +170,7 @@ export function OtherEffectsEditorDialog(props: {
       const rest = triggers.filter((t) => t.id !== id);
       return rest[0]?.id ?? null;
     });
+    setSelectedTarget(null);
   };
 
   const updateImage = (triggerId: string, imageId: string, patch: Partial<EffectImage>) => {
@@ -148,6 +181,22 @@ export function OtherEffectsEditorDialog(props: {
         if (t.id !== triggerId) return t;
         const images = (t.images || []).map((img) => (img.id === imageId ? { ...img, ...patch } : img));
         return { ...t, images };
+      });
+      next.other = other;
+      return next;
+    });
+  };
+
+  const updatePc = (triggerId: string, characterId: string, patch: Partial<PcEffect>) => {
+    setConfig((prev) => {
+      const next = normalizeEffectsConfig(prev);
+      const other = next.other || { triggers: [] };
+      other.triggers = (other.triggers || []).map((t) => {
+        if (t.id !== triggerId) return t;
+        const pc = { ...(t.pc || {}) };
+        const current = pc[characterId] || { tag: '', x: 0, y: 0, scale: 1, rotate: 0, opacity: 1, z: 0 };
+        pc[characterId] = { ...current, ...patch };
+        return { ...t, pc };
       });
       next.other = other;
       return next;
@@ -189,6 +238,7 @@ export function OtherEffectsEditorDialog(props: {
       next.other = other;
       return next;
     });
+    setSelectedTarget((prev) => (prev && prev.kind === 'image' && prev.imageId === imageId ? null : prev));
   };
 
   const handleUploadImage = async (triggerId: string, file: File) => {
@@ -225,16 +275,63 @@ export function OtherEffectsEditorDialog(props: {
 
   const previewItems = useMemo(() => {
     if (!selected) return [];
-    const list = (selected.images || []).filter((x) => !!x.url).slice();
+    const list: Array<
+      | ({ kind: 'image' } & EffectImage)
+      | ({ kind: 'pc'; characterId: string; name: string } & EffectImage)
+    > = [];
+    for (const img of (selected.images || []).filter((x) => !!x.url)) {
+      list.push({ kind: 'image', ...img });
+    }
+    if (selectedTarget?.kind === 'pc') {
+      const pc = pcCharacters.find((c) => c.id === selectedTarget.characterId);
+      const pcEffect = selected.pc?.[selectedTarget.characterId];
+      if (pc && pcEffect?.tag) {
+        const resolved = resolvePortraitTagToUrl(assets, pc.id, pcEffect.tag);
+        if (resolved) {
+          list.push({
+            kind: 'pc',
+            characterId: pc.id,
+            name: pc.name,
+            id: `pc:${pc.id}:other:${selected.id}`,
+            label: pc.name,
+            url: resolved.url,
+            x: pcEffect.x,
+            y: pcEffect.y,
+            scale: pcEffect.scale,
+            rotate: pcEffect.rotate,
+            opacity: pcEffect.opacity,
+            z: pcEffect.z,
+          });
+        }
+      }
+    }
     return list.sort((a, b) => (a.z ?? 0) - (b.z ?? 0));
-  }, [selected]);
+  }, [selected, selectedTarget, pcCharacters, assets]);
 
-  const [selectedImageId, setSelectedImageId] = useState<string | null>(null);
   useEffect(() => {
     if (!open) return;
-    setSelectedImageId(null);
+    setSelectedTarget(null);
   }, [open, selectedId]);
-  const selectedImage = useMemo(() => previewItems.find((i) => i.id === selectedImageId) ?? null, [previewItems, selectedImageId]);
+
+  const selectedImage = useMemo(() => {
+    if (!selectedTarget || selectedTarget.kind !== 'image') return null;
+    return (selected?.images || []).find((i) => i.id === selectedTarget.imageId) ?? null;
+  }, [selected, selectedTarget]);
+
+  const selectedPc = useMemo(() => {
+    if (!selectedTarget || selectedTarget.kind !== 'pc') return null;
+    return pcCharacters.find((c) => c.id === selectedTarget.characterId) ?? null;
+  }, [selectedTarget, pcCharacters]);
+
+  const selectedPcEffect = useMemo(() => {
+    if (!selected || !selectedPc) return null;
+    const entry = selected.pc?.[selectedPc.id];
+    return entry || { tag: '', x: 0, y: 0, scale: 1, rotate: 0, opacity: 1, z: 0 };
+  }, [selected, selectedPc]);
+  const selectedPcOptions = useMemo(() => {
+    if (!selectedPc) return [];
+    return portraitOptionsByPc.get(selectedPc.id) || [];
+  }, [selectedPc, portraitOptionsByPc]);
 
   useEffect(() => {
     const el = previewRef.current;
@@ -248,7 +345,7 @@ export function OtherEffectsEditorDialog(props: {
   }, [open, selectedId]);
 
   const draggingRef = useRef<{
-    imageId: string;
+    target: SelectedTarget;
     startX: number;
     startY: number;
     baseXRel: number;
@@ -256,12 +353,16 @@ export function OtherEffectsEditorDialog(props: {
     width: number;
     height: number;
   } | null>(null);
-  const onPointerDown = (e: React.PointerEvent, item: EffectImage) => {
+  const onPointerDown = (e: React.PointerEvent, item: { kind: 'image' | 'pc'; id: string; characterId?: string; x: number; y: number }) => {
     e.preventDefault();
     (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
-    setSelectedImageId(item.id);
+    if (item.kind === 'pc' && item.characterId) {
+      setSelectedTarget({ kind: 'pc', characterId: item.characterId });
+    } else {
+      setSelectedTarget({ kind: 'image', imageId: item.id });
+    }
     draggingRef.current = {
-      imageId: item.id,
+      target: item.kind === 'pc' && item.characterId ? { kind: 'pc', characterId: item.characterId } : { kind: 'image', imageId: item.id },
       startX: e.clientX,
       startY: e.clientY,
       baseXRel: item.x,
@@ -277,7 +378,12 @@ export function OtherEffectsEditorDialog(props: {
     const dy = e.clientY - drag.startY;
     const x = drag.baseXRel + dx / Math.max(1, drag.width);
     const y = drag.baseYRel + dy / Math.max(1, drag.height);
-    updateImage(selected.id, drag.imageId, { x: Math.round(x * 10000) / 10000, y: Math.round(y * 10000) / 10000 });
+    const next = { x: Math.round(x * 10000) / 10000, y: Math.round(y * 10000) / 10000 };
+    if (drag.target.kind === 'pc') {
+      updatePc(selected.id, drag.target.characterId, next);
+    } else {
+      updateImage(selected.id, drag.target.imageId, next);
+    }
   };
   const onPointerUp = () => {
     draggingRef.current = null;
@@ -348,57 +454,59 @@ export function OtherEffectsEditorDialog(props: {
           <DialogTitle>その他演出</DialogTitle>
         </DialogHeader>
 
-        <div className="flex-1 min-h-0 overflow-auto grid grid-cols-6 gap-4">
-          <div className="col-span-2 min-h-0 flex flex-col gap-3">
-            <div className="flex items-center justify-between">
-              <Label className="text-xs text-muted-foreground">演出一覧</Label>
-              <Button type="button" size="sm" variant="outline" onClick={addTrigger}>
-                <Plus className="w-4 h-4 mr-2" />
-                演出を追加
-              </Button>
-            </div>
-            <div className="flex-1 min-h-0 overflow-auto rounded border border-border p-2 space-y-2">
-              {triggers.length === 0 ? (
-                <div className="text-xs text-muted-foreground">演出がありません</div>
-              ) : (
-                triggers.map((t) => (
-                  <div
-                    key={t.id}
-                    className={`rounded border p-2 flex items-center gap-2 ${
-                      selectedId === t.id ? 'border-primary' : 'border-border/60'
-                    }`}
-                  >
-                    <button
-                      type="button"
-                      className="flex-1 text-left min-w-0"
-                      onClick={() => setSelectedId(t.id)}
-                      title={t.label}
+        <div className={`flex-1 min-h-0 overflow-auto ${showList ? 'grid grid-cols-6 gap-4' : ''}`}>
+          {showList && (
+            <div className="col-span-2 min-h-0 flex flex-col gap-3">
+              <div className="flex items-center justify-between">
+                <Label className="text-xs text-muted-foreground">演出一覧</Label>
+                <Button type="button" size="sm" variant="outline" onClick={addTrigger}>
+                  <Plus className="w-4 h-4 mr-2" />
+                  演出を追加
+                </Button>
+              </div>
+              <div className="flex-1 min-h-0 overflow-auto rounded border border-border p-2 space-y-2">
+                {triggers.length === 0 ? (
+                  <div className="text-xs text-muted-foreground">演出がありません</div>
+                ) : (
+                  triggers.map((t) => (
+                    <div
+                      key={t.id}
+                      className={`rounded border p-2 flex items-center gap-2 ${
+                        selectedId === t.id ? 'border-primary' : 'border-border/60'
+                      }`}
                     >
-                      <div className="text-sm truncate">{triggerTitle(t)}</div>
-                      <div className="text-xs text-muted-foreground truncate">
-                        {triggerDisplay(t)} / {t.match === 'exact' ? '全文合致' : '含む'}
-                      </div>
-                    </button>
-                    <Button type="button" variant="outline" size="icon" className="h-9 w-9" onClick={() => setSelectedId(t.id)} title="編集">
-                      <Pencil className="h-4 w-4" />
-                    </Button>
-                    <Button
-                      type="button"
-                      variant="outline"
-                      size="icon"
-                      className="h-9 w-9"
-                      onClick={() => deleteTrigger(t.id)}
-                      title="削除"
-                    >
-                      <Trash2 className="h-4 w-4" />
-                    </Button>
-                  </div>
-                ))
-              )}
+                      <button
+                        type="button"
+                        className="flex-1 text-left min-w-0"
+                        onClick={() => setSelectedId(t.id)}
+                        title={t.label}
+                      >
+                        <div className="text-sm truncate">{triggerTitle(t)}</div>
+                        <div className="text-xs text-muted-foreground truncate">
+                          {triggerDisplay(t)} / {t.match === 'exact' ? '全文合致' : '含む'}
+                        </div>
+                      </button>
+                      <Button type="button" variant="outline" size="icon" className="h-9 w-9" onClick={() => setSelectedId(t.id)} title="編集">
+                        <Pencil className="h-4 w-4" />
+                      </Button>
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="icon"
+                        className="h-9 w-9"
+                        onClick={() => deleteTrigger(t.id)}
+                        title="削除"
+                      >
+                        <Trash2 className="h-4 w-4" />
+                      </Button>
+                    </div>
+                  ))
+                )}
+              </div>
             </div>
-          </div>
+          )}
 
-          <div className="col-span-4 min-h-0 flex flex-col gap-3">
+          <div className={`${showList ? 'col-span-4' : ''} min-h-0 flex flex-col gap-3`}>
             {!selected ? (
               <div className="text-sm text-muted-foreground">左の「演出を追加」から作成してください。</div>
             ) : (
@@ -532,17 +640,17 @@ export function OtherEffectsEditorDialog(props: {
 
                     <div className="h-[86px] overflow-x-auto overflow-y-hidden rounded border border-border p-2">
                       <div className="flex gap-2 w-max">
-                        {previewItems.map((img) => (
+                        {previewItems.filter((img) => img.kind === 'image').map((img) => (
                           <div
                             key={img.id}
                             className={`relative shrink-0 w-[120px] h-[64px] rounded border ${
-                              selectedImageId === img.id ? 'border-primary' : 'border-border/60'
+                              selectedTarget?.kind === 'image' && selectedTarget.imageId === img.id ? 'border-primary' : 'border-border/60'
                             }`}
                           >
                             <button
                               type="button"
                               className="absolute inset-0 p-2 text-left"
-                              onClick={() => setSelectedImageId(img.id)}
+                              onClick={() => setSelectedTarget({ kind: 'image', imageId: img.id })}
                               title={img.label}
                             >
                               <img src={img.url} alt={img.label} className="absolute inset-0 w-full h-full object-contain opacity-70" />
@@ -563,6 +671,62 @@ export function OtherEffectsEditorDialog(props: {
                           </div>
                         ))}
                       </div>
+                    </div>
+
+                    <div className="space-y-2">
+                      <Label className="text-xs text-muted-foreground">PCごとの画像</Label>
+                      {pcCharacters.length === 0 ? (
+                        <div className="text-xs text-muted-foreground">PCがいません</div>
+                      ) : (
+                        <>
+                          <Select
+                            value={selectedPc?.id ?? ''}
+                            onValueChange={(v) => setSelectedTarget(v ? { kind: 'pc', characterId: v } : null)}
+                          >
+                            <SelectTrigger className="bg-sidebar-accent border-sidebar-border text-xs">
+                              <SelectValue placeholder="PCを選択" />
+                            </SelectTrigger>
+                            <SelectContent>
+                              {pcCharacters.map((pc) => (
+                                <SelectItem key={pc.id} value={pc.id}>
+                                  {pc.name}
+                                </SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                          {selectedPc && selectedPcEffect && (
+                            <div className="grid grid-cols-2 gap-2">
+                              <Select
+                                value={selectedPcEffect.tag ? selectedPcEffect.tag.toLowerCase() : '__none__'}
+                                onValueChange={(v) => {
+                                  const tag = v === '__none__' ? '' : v;
+                                  updatePc(selected.id, selectedPc.id, { tag });
+                                }}
+                              >
+                                <SelectTrigger className="bg-sidebar-accent border-sidebar-border text-xs">
+                                  <SelectValue placeholder="立ち絵タグを選択" />
+                                </SelectTrigger>
+                                <SelectContent>
+                                  <SelectItem value="__none__">表示しない</SelectItem>
+                                  {selectedPcOptions.map((opt) => (
+                                    <SelectItem key={opt.key} value={opt.key}>
+                                      {opt.label}
+                                    </SelectItem>
+                                  ))}
+                                </SelectContent>
+                              </Select>
+                              <Button
+                                type="button"
+                                variant="outline"
+                                size="sm"
+                                onClick={() => updatePc(selected.id, selectedPc.id, { tag: '' })}
+                              >
+                                解除
+                              </Button>
+                            </div>
+                          )}
+                        </>
+                      )}
                     </div>
 
                     {selectedImage && (
@@ -611,6 +775,54 @@ export function OtherEffectsEditorDialog(props: {
                       </div>
                     )}
 
+                    {selectedPc && selectedPcEffect && (
+                      <div className="rounded border border-border p-2">
+                        <div className="grid grid-cols-4 gap-2 text-xs items-end">
+                          <div className="space-y-1">
+                            <Label className="text-xs text-muted-foreground">拡大</Label>
+                            <Slider
+                              value={[selectedPcEffect.scale]}
+                              min={0.1}
+                              max={5}
+                              step={0.05}
+                              onValueChange={(v) => updatePc(selected.id, selectedPc.id, { scale: v[0] })}
+                            />
+                          </div>
+                          <div className="space-y-1">
+                            <Label className="text-xs text-muted-foreground">回転</Label>
+                            <Slider
+                              value={[selectedPcEffect.rotate]}
+                              min={-180}
+                              max={180}
+                              step={1}
+                              onValueChange={(v) => updatePc(selected.id, selectedPc.id, { rotate: v[0] })}
+                            />
+                          </div>
+                          <div className="space-y-1">
+                            <Label className="text-xs text-muted-foreground">透明</Label>
+                            <Slider
+                              value={[selectedPcEffect.opacity]}
+                              min={0}
+                              max={1}
+                              step={0.05}
+                              onValueChange={(v) => updatePc(selected.id, selectedPc.id, { opacity: v[0] })}
+                            />
+                          </div>
+                          <div className="space-y-1">
+                            <Label className="text-xs text-muted-foreground">Z</Label>
+                            <Input
+                              type="number"
+                              value={selectedPcEffect.z}
+                              onChange={(e) =>
+                                updatePc(selected.id, selectedPc.id, { z: parseInt(e.target.value || '0', 10) || 0 })
+                              }
+                              className="h-8"
+                            />
+                          </div>
+                        </div>
+                      </div>
+                    )}
+
                     <div className="text-xs text-muted-foreground">プレビュー（ステージ比率 / ドラッグで移動 / クリックで選択）</div>
                     <div className="h-[360px] min-h-0">
                       <StageFrame ratio={16 / 9} className="w-full h-full">
@@ -633,7 +845,13 @@ export function OtherEffectsEditorDialog(props: {
                             {previewItems.map((item) => (
                               <div
                                 key={item.id}
-                                className={`absolute ${selectedImageId === item.id ? 'ring-2 ring-primary' : ''}`}
+                                className={`absolute ${
+                                  selectedTarget?.kind === item.kind &&
+                                  ((item.kind === 'image' && selectedTarget.imageId === item.id) ||
+                                    (item.kind === 'pc' && selectedTarget.characterId === item.characterId))
+                                    ? 'ring-2 ring-primary'
+                                    : ''
+                                }`}
                                 style={{
                                   left: EFFECT_BASE_WIDTH / 2 + item.x * EFFECT_BASE_WIDTH,
                                   top: EFFECT_BASE_HEIGHT / 2 + item.y * EFFECT_BASE_HEIGHT,

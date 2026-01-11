@@ -20,6 +20,7 @@ import { EffectsEditorDialog } from './EffectsEditorDialog';
 import { OtherEffectsEditorDialog } from './OtherEffectsEditorDialog';
 import { getDisplayText } from '@/lib/expressionTag';
 import { getPortraitTransformRel } from '@/lib/portraitTransformsShared';
+import { loadEffectsConfig, normalizeEffectsConfig } from '@/lib/effects';
 import type { Participant, Character, StageState, Macro, Room, Asset, ActivePortrait, RoomPublicSettings, RoomJoinRequest, Profile } from '@/types/trpg';
 import { useAuth } from '@/hooks/useAuth';
 
@@ -325,6 +326,12 @@ export function GMToolsPanel({
   const [effectsEditorOpen, setEffectsEditorOpen] = useState(false);
   const [otherEffectsEditorOpen, setOtherEffectsEditorOpen] = useState(false);
   const [otherEffectsCreateNonce, setOtherEffectsCreateNonce] = useState(0);
+  const [otherEffectsActiveId, setOtherEffectsActiveId] = useState<string | null>(null);
+  const [effectsVersion, setEffectsVersion] = useState(0);
+  const [bgAddOpen, setBgAddOpen] = useState(false);
+  const [bgmAddOpen, setBgmAddOpen] = useState(false);
+  const [seAddOpen, setSeAddOpen] = useState(false);
+  const [macroAddOpen, setMacroAddOpen] = useState(false);
   const [assets, setAssets] = useState<Asset[]>([]);
   const bgFileRef = useRef<HTMLInputElement>(null);
   const macroBgFileRef = useRef<HTMLInputElement>(null);
@@ -686,6 +693,7 @@ export function GMToolsPanel({
     setNewMacroSeAssetId(null);
     setNewMacroClearBackground(false);
     setNewMacroClearBgm(false);
+    setMacroAddOpen(false);
     toast({ title: '定型文を登録しました' });
   };
 
@@ -1149,6 +1157,7 @@ export function GMToolsPanel({
     setStageSeUploadUrl('');
     setStageSeLabel('');
     if (stageSeFileRef.current) stageSeFileRef.current.value = '';
+    setSeAddOpen(false);
     toast({ title: 'SEを登録しました' });
   };
 
@@ -1207,6 +1216,7 @@ export function GMToolsPanel({
     setAssets((prev) => [...prev, data as Asset]);
     setStageBgUploadUrl('');
     setStageBgLabel('');
+    setBgAddOpen(false);
     toast({ title: '背景を登録しました' });
   };
 
@@ -1316,6 +1326,7 @@ export function GMToolsPanel({
     setStageBgmUploadUrl('');
     setStageBgmLabel('');
     setStageBgmPreviewUrl(null);
+    setBgmAddOpen(false);
     toast({ title: 'BGMを登録しました' });
   };
 
@@ -1472,6 +1483,9 @@ export function GMToolsPanel({
   const bgAssets = assets.filter(isBackgroundAsset);
   const bgmAssets = assets.filter(isBgmAsset);
   const canManagePublic = isGmUser;
+  const otherEffectsTriggers = useMemo(() => {
+    return normalizeEffectsConfig(loadEffectsConfig(room)).other?.triggers || [];
+  }, [room?.effects, room?.id, effectsVersion]);
 
   const buildPublicSnapshot = () => {
     return {
@@ -1605,39 +1619,11 @@ export function GMToolsPanel({
               <Button
                 variant="outline"
                 className="w-full"
-                onClick={() => bgFileRef.current?.click()}
+                onClick={() => setBgAddOpen(true)}
               >
                 <Upload className="w-4 h-4 mr-2" />
-                画像をアップロード
+                背景を登録
               </Button>
-              <input
-                ref={bgFileRef}
-                type="file"
-                accept="image/*"
-                className="hidden"
-                onChange={handleBgFileChange}
-              />
-              <div className="space-y-1">
-                <Label className="text-xs text-muted-foreground">名前</Label>
-                <Input
-                  value={stageBgLabel}
-                  onChange={(e) => setStageBgLabel(e.target.value)}
-                  placeholder="例：森、街、屋敷…"
-                />
-              </div>
-              <Button
-                className="w-full"
-                onClick={handleRegisterStageBackground}
-                disabled={!stageBgUploadUrl || !stageBgLabel.trim()}
-              >
-                登録
-              </Button>
-              {stageBgUploadUrl && (
-                <div
-                  className="h-20 rounded-lg bg-cover bg-center border border-border"
-                  style={{ backgroundImage: `url(${stageBgUploadUrl})` }}
-                />
-              )}
               <Button
                 variant="outline"
                 className="w-full"
@@ -1701,32 +1687,10 @@ export function GMToolsPanel({
               <Button
                 variant="outline"
                 className="w-full"
-                onClick={() => stageBgmFileRef.current?.click()}
+                onClick={() => setBgmAddOpen(true)}
               >
                 <Upload className="w-4 h-4 mr-2" />
-                BGMをアップロード
-              </Button>
-              <input
-                ref={stageBgmFileRef}
-                type="file"
-                accept="audio/*"
-                className="hidden"
-                onChange={handleStageBgmFileChange}
-              />
-              <div className="space-y-1">
-                <Label className="text-xs text-muted-foreground">名前</Label>
-                <Input
-                  value={stageBgmLabel}
-                  onChange={(e) => setStageBgmLabel(e.target.value)}
-                  placeholder="例：戦闘、日常、緊迫…"
-                />
-              </div>
-              <Button
-                className="w-full"
-                onClick={handleRegisterStageBgm}
-                disabled={!stageBgmUploadUrl || !stageBgmLabel.trim()}
-              >
-                登録
+                BGMを登録
               </Button>
               <Button
                 variant="outline"
@@ -1739,9 +1703,6 @@ export function GMToolsPanel({
                 <Trash2 className="w-4 h-4 mr-2" />
                 BGMを消す
               </Button>
-              {stageBgmPreviewUrl && (
-                <audio controls src={stageBgmPreviewUrl} className="w-full" />
-              )}
             </CollapsibleContent>
           </Collapsible>
 
@@ -1789,36 +1750,11 @@ export function GMToolsPanel({
                 <Button
                   variant="outline"
                   className="w-full"
-                  onClick={() => stageSeFileRef.current?.click()}
+                  onClick={() => setSeAddOpen(true)}
                 >
                   <Upload className="w-4 h-4 mr-2" />
-                  SEをアップロード
+                  SEを登録
                 </Button>
-                <input
-                  ref={stageSeFileRef}
-                  type="file"
-                  accept="audio/*"
-                  className="hidden"
-                  onChange={handleStageSeFileChange}
-                />
-                <div className="space-y-1">
-                  <Label className="text-xs text-muted-foreground">名前</Label>
-                  <Input
-                    value={stageSeLabel}
-                    onChange={(e) => setStageSeLabel(e.target.value)}
-                    placeholder="例：ドア、決定音、爆発…"
-                  />
-                </div>
-                <Button
-                  className="w-full"
-                  onClick={handleRegisterStageSe}
-                  disabled={!stageSeUploadUrl || !stageSeLabel.trim()}
-                >
-                  登録
-                </Button>
-                {stageSeUploadUrl && (
-                  <audio controls src={stageSeUploadUrl} className="w-full" />
-                )}
               </div>
             </CollapsibleContent>
           </Collapsible>
@@ -1870,17 +1806,21 @@ export function GMToolsPanel({
             クリティカル/ファンブル演出
           </Button>
 
-          <div className="space-y-2">
-            <div className="text-sm font-semibold text-muted-foreground uppercase tracking-wider">
-              その他演出
-            </div>
-            <div className="flex gap-2">
+          <Collapsible>
+            <CollapsibleTrigger asChild>
+              <Button variant="ghost" className="w-full justify-start">
+                <Image className="w-4 h-4 mr-2" />
+                その他演出
+              </Button>
+            </CollapsibleTrigger>
+            <CollapsibleContent className="pt-2 space-y-2">
               <Button
                 type="button"
                 variant="outline"
                 size="sm"
-                className="flex-1"
+                className="w-full"
                 onClick={() => {
+                  setOtherEffectsActiveId(null);
                   setOtherEffectsCreateNonce((n) => n + 1);
                   setOtherEffectsEditorOpen(true);
                 }}
@@ -1888,16 +1828,53 @@ export function GMToolsPanel({
                 <Plus className="w-4 h-4 mr-2" />
                 演出を追加
               </Button>
-              <Button
-                type="button"
-                variant="outline"
-                size="sm"
-                onClick={() => setOtherEffectsEditorOpen(true)}
-              >
-                編集
-              </Button>
-            </div>
-          </div>
+              <div className="space-y-2">
+                {otherEffectsTriggers.length === 0 ? (
+                  <div className="text-xs text-muted-foreground">演出がありません</div>
+                ) : (
+                  otherEffectsTriggers.map((t) => (
+                    <div key={t.id} className="flex items-center gap-2">
+                      <Button
+                        variant="secondary"
+                        className="flex-1 justify-start"
+                        onClick={() => {
+                          onSendMessage('system', `[effects_other:${t.id}]`, 'システム');
+                        }}
+                      >
+                        {t.label || '演出'}
+                      </Button>
+                      <Button
+                        variant="outline"
+                        size="icon"
+                        className="h-9 w-9"
+                        title="編集"
+                        onClick={() => {
+                          setOtherEffectsActiveId(t.id);
+                          setOtherEffectsEditorOpen(true);
+                        }}
+                      >
+                        <Settings className="h-4 w-4" />
+                      </Button>
+                      <Button
+                        variant="outline"
+                        size="icon"
+                        className="h-9 w-9"
+                        title="削除"
+                        onClick={() => {
+                          const next = normalizeEffectsConfig(loadEffectsConfig(room));
+                          next.other = { triggers: (next.other?.triggers || []).filter((x) => x.id !== t.id) };
+                          onUpdateRoom({ effects: next } as any);
+                          setEffectsVersion((v) => v + 1);
+                        }}
+                      >
+                        <Trash2 className="h-4 w-4" />
+                      </Button>
+                    </div>
+                  ))
+                )}
+              </div>
+            </CollapsibleContent>
+          </Collapsible>
 
           {/* Public Settings */}
           <Collapsible>
@@ -2216,225 +2193,12 @@ export function GMToolsPanel({
               </Collapsible>
 	
 	            {/* Add New Macro */}
-	            <div className="space-y-2 pt-2 border-t border-sidebar-border">
-              {/* Speaker for macro (above body) */}
-              <div className="space-y-1">
-                <Label className="text-xs text-muted-foreground">発言者</Label>
-                <div className="flex gap-2">
-                  <Select value={newMacroSpeakerId} onValueChange={(v) => setNewMacroSpeakerId(v as any)}>
-                    <SelectTrigger className="bg-sidebar-accent border-sidebar-border text-xs flex-1">
-                      <SelectValue placeholder="発言者を選択" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="gm">GM</SelectItem>
-                      {npcCharacters.map(char => (
-                        <SelectItem key={char.id} value={char.id}>{char.name}</SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                  <Input
-                    value={newMacroSpeakerPortraitTag}
-                    onChange={(e) => setNewMacroSpeakerPortraitTag(e.target.value)}
-                    placeholder="立ち絵タグ(任意)"
-                    disabled={newMacroSpeakerId === 'gm'}
-                    className="bg-sidebar-accent border-sidebar-border text-xs w-28"
-                    title={newMacroSpeakerId === 'gm' ? 'NPC発言時のみ指定できます' : (speakerNpc ? `${speakerNpc.name} の立ち絵タグ` : '')}
-                  />
-                </div>
+	            <div className="pt-2 border-t border-sidebar-border">
+                <Button onClick={() => setMacroAddOpen(true)} size="sm" className="w-full">
+                  <Plus className="w-4 h-4 mr-2" />
+                  定型文を追加
+                </Button>
               </div>
-
-              <Textarea
-                value={newMacroText}
-                onChange={(e) => setNewMacroText(e.target.value)}
-                placeholder="本文（シナリオ文章、描写など）"
-                className="bg-sidebar-accent border-sidebar-border min-h-[80px]"
-              />
-
-              {/* Background/BGM/SE for macro: upload only */}
-	            <div className="space-y-1">
-	                <Label className="text-xs text-muted-foreground">背景（任意）</Label>
-	                <div className="flex items-center justify-between gap-2">
-		                  <div className="grid grid-cols-2 gap-2 flex-1">
-		                    <Button
-		                      type="button"
-		                      variant="outline"
-		                      size="sm"
-		                      className={`w-full min-w-0 justify-start overflow-hidden text-[clamp(10px,1vw,12px)] leading-none ${
-		                        newMacroBgSource === 'upload' ? macroAssetButtonActiveClass : ''
-		                      }`}
-		                      onClick={() => macroBgFileRef.current?.click()}
-		                      disabled={newMacroClearBackground}
-		                    >
-		                      <Upload className="w-4 h-4 mr-2 shrink-0" />
-		                      <span className="min-w-0 flex-1 truncate">背景をアップロード</span>
-		                    </Button>
-		                    <Button
-		                      type="button"
-		                      variant="outline"
-		                      size="sm"
-		                      className={`w-full min-w-0 justify-start overflow-hidden text-[clamp(10px,1vw,12px)] leading-none ${
-		                        newMacroBgSource === 'select' ? macroAssetButtonActiveClass : ''
-		                      }`}
-		                      onClick={() => openMacroAssetPicker('new', 'bg')}
-		                      disabled={newMacroClearBackground || macroBgAssets.length === 0}
-		                      title={macroBgAssets.length === 0 ? '登録された背景がありません' : undefined}
-		                    >
-		                      <Image className="w-4 h-4 mr-2 shrink-0" />
-		                      <span className="min-w-0 flex-1 truncate">
-		                        {(() => {
-		                          if (newMacroBgSource === 'select' && newMacroBgAssetId) {
-		                            const a = macroBgAssets.find((x) => x.id === newMacroBgAssetId);
-		                            if (a) return a.label || '背景';
-		                          }
-		                          return '一覧から選ぶ';
-		                        })()}
-		                      </span>
-		                    </Button>
-		                  </div>
-	                  <input
-	                    ref={macroBgFileRef}
-	                    type="file"
-	                    accept="image/*"
-	                    className="hidden"
-	                    onChange={handleMacroBgFileChange}
-	                  />
-                  <label className="flex items-center gap-2 text-xs text-muted-foreground shrink-0">
-                    <input
-                      type="checkbox"
-                      className="accent-primary"
-                      checked={newMacroClearBackground}
-                      onChange={(e) => {
-                        setNewMacroClearBackground(e.target.checked);
-                        if (e.target.checked) {
-                          setNewMacroBgUrl('');
-                          setNewMacroBgSource(null);
-                          setNewMacroBgAssetId(null);
-                        }
-                      }}
-                    />
-                    背景を消す
-                  </label>
-	                </div>
-	              </div>
-	
-	              <div className="space-y-1">
-	                <Label className="text-xs text-muted-foreground">BGM（任意）</Label>
-	                <div className="flex items-center justify-between gap-2">
-		                  <div className="grid grid-cols-2 gap-2 flex-1">
-		                    <Button
-		                      type="button"
-		                      variant="outline"
-		                      size="sm"
-		                      className={`w-full min-w-0 justify-start overflow-hidden text-[clamp(10px,1vw,12px)] leading-none ${
-		                        newMacroBgmSource === 'upload' ? macroAssetButtonActiveClass : ''
-		                      }`}
-		                      onClick={() => bgmFileRef.current?.click()}
-		                      disabled={newMacroClearBgm}
-		                    >
-		                      <Upload className="w-4 h-4 mr-2 shrink-0" />
-		                      <span className="min-w-0 flex-1 truncate">BGMをアップロード</span>
-		                    </Button>
-		                    <Button
-		                      type="button"
-		                      variant="outline"
-		                      size="sm"
-		                      className={`w-full min-w-0 justify-start overflow-hidden text-[clamp(10px,1vw,12px)] leading-none ${
-		                        newMacroBgmSource === 'select' ? macroAssetButtonActiveClass : ''
-		                      }`}
-		                      onClick={() => openMacroAssetPicker('new', 'bgm')}
-		                      disabled={newMacroClearBgm || macroBgmAssets.length === 0}
-		                      title={macroBgmAssets.length === 0 ? '登録されたBGMがありません' : undefined}
-		                    >
-		                      <Music className="w-4 h-4 mr-2 shrink-0" />
-		                      <span className="min-w-0 flex-1 truncate">
-		                        {(() => {
-		                          if (newMacroBgmSource === 'select' && newMacroBgmAssetId) {
-		                            const a = macroBgmAssets.find((x) => x.id === newMacroBgmAssetId);
-		                            if (a) return a.label || 'BGM';
-		                          }
-		                          return '一覧から選ぶ';
-		                        })()}
-		                      </span>
-		                    </Button>
-		                  </div>
-	                  <label className="flex items-center gap-2 text-xs text-muted-foreground shrink-0">
-	                    <input
-	                      type="checkbox"
-	                      className="accent-primary"
-                      checked={newMacroClearBgm}
-                      onChange={(e) => {
-                        setNewMacroClearBgm(e.target.checked);
-                        if (e.target.checked) {
-                          setNewMacroBgmUrl('');
-                          setNewMacroBgmSource(null);
-                          setNewMacroBgmAssetId(null);
-                        }
-                      }}
-                    />
-                    BGMを消す
-                  </label>
-	                  <input
-	                    ref={bgmFileRef}
-	                    type="file"
-	                    accept="audio/*"
-	                    className="hidden"
-	                    onChange={handleBgmFileChange}
-	                  />
-	                </div>
-	              </div>
-	              <div className="space-y-1">
-	                <Label className="text-xs text-muted-foreground">SE（任意）</Label>
-		                <div className="grid grid-cols-2 gap-2">
-		                  <Button
-		                    type="button"
-		                    variant="outline"
-		                    size="sm"
-		                    className={`w-full min-w-0 justify-start overflow-hidden text-[clamp(10px,1vw,12px)] leading-none ${
-		                      newMacroSeSource === 'upload' ? macroAssetButtonActiveClass : ''
-		                    }`}
-		                    onClick={() => seFileRef.current?.click()}
-		                  >
-		                    <Upload className="w-4 h-4 mr-2 shrink-0" />
-		                    <span className="min-w-0 flex-1 truncate">SEをアップロード</span>
-		                  </Button>
-		                  <Button
-		                    type="button"
-		                    variant="outline"
-		                    size="sm"
-		                    className={`w-full min-w-0 justify-start overflow-hidden text-[clamp(10px,1vw,12px)] leading-none ${
-		                      newMacroSeSource === 'select' ? macroAssetButtonActiveClass : ''
-		                    }`}
-		                    onClick={() => openMacroAssetPicker('new', 'se')}
-		                    disabled={macroSeAssets.length === 0}
-		                    title={macroSeAssets.length === 0 ? '登録されたSEがありません' : undefined}
-		                  >
-		                    <Music className="w-4 h-4 mr-2 shrink-0" />
-		                    <span className="min-w-0 flex-1 truncate">
-		                      {(() => {
-		                        if (newMacroSeSource === 'select' && newMacroSeAssetId) {
-		                          const a = macroSeAssets.find((x) => x.id === newMacroSeAssetId);
-		                          if (a) return a.label || 'SE';
-		                        }
-		                        return '一覧から選ぶ';
-		                      })()}
-		                    </span>
-		                  </Button>
-		                  <input
-		                    ref={seFileRef}
-		                    type="file"
-	                    accept="audio/*"
-	                    className="hidden"
-	                    onChange={handleSeFileChange}
-	                  />
-	                </div>
-	              </div>
-
-              <Button onClick={handleAddMacro} size="sm" className="w-full">
-                <Plus className="w-4 h-4 mr-2" />
-                定型文を追加
-              </Button>
-            </div>
-          </div>
 
           {/* Participants List */}
           <div className="space-y-2">
@@ -2602,11 +2366,19 @@ export function GMToolsPanel({
 
       <OtherEffectsEditorDialog
         open={otherEffectsEditorOpen}
-        onOpenChange={setOtherEffectsEditorOpen}
+        onOpenChange={(open) => {
+          setOtherEffectsEditorOpen(open);
+          if (!open) setOtherEffectsActiveId(null);
+        }}
         room={room}
+        characters={characters}
+        assets={assets}
+        activeTriggerId={otherEffectsActiveId}
+        showList={false}
         createNonce={otherEffectsCreateNonce}
         onSaved={(next) => {
           onUpdateRoom({ effects: next } as any);
+          setEffectsVersion((v) => v + 1);
         }}
       />
 
@@ -2665,6 +2437,371 @@ export function GMToolsPanel({
           <DialogFooter>
             <Button variant="outline" onClick={() => setMacroAssetPicker((p) => ({ ...p, open: false }))}>
               閉じる
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={bgAddOpen} onOpenChange={setBgAddOpen}>
+        <DialogContent className="sm:max-w-lg">
+          <DialogHeader>
+            <DialogTitle>背景を登録</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-3">
+            <Button variant="outline" className="w-full" onClick={() => bgFileRef.current?.click()}>
+              <Upload className="w-4 h-4 mr-2" />
+              画像をアップロード
+            </Button>
+            <input
+              ref={bgFileRef}
+              type="file"
+              accept="image/*"
+              className="hidden"
+              onChange={handleBgFileChange}
+            />
+            <div className="space-y-1">
+              <Label className="text-xs text-muted-foreground">名前</Label>
+              <Input
+                value={stageBgLabel}
+                onChange={(e) => setStageBgLabel(e.target.value)}
+                placeholder="例：森、街、屋敷…"
+              />
+            </div>
+            <Button
+              className="w-full"
+              onClick={handleRegisterStageBackground}
+              disabled={!stageBgUploadUrl || !stageBgLabel.trim()}
+            >
+              登録
+            </Button>
+            {stageBgUploadUrl && (
+              <div
+                className="h-24 rounded-lg bg-cover bg-center border border-border"
+                style={{ backgroundImage: `url(${stageBgUploadUrl})` }}
+              />
+            )}
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setBgAddOpen(false)}>
+              閉じる
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={bgmAddOpen} onOpenChange={setBgmAddOpen}>
+        <DialogContent className="sm:max-w-lg">
+          <DialogHeader>
+            <DialogTitle>BGMを登録</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-3">
+            <Button variant="outline" className="w-full" onClick={() => stageBgmFileRef.current?.click()}>
+              <Upload className="w-4 h-4 mr-2" />
+              BGMをアップロード
+            </Button>
+            <input
+              ref={stageBgmFileRef}
+              type="file"
+              accept="audio/*"
+              className="hidden"
+              onChange={handleStageBgmFileChange}
+            />
+            <div className="space-y-1">
+              <Label className="text-xs text-muted-foreground">名前</Label>
+              <Input
+                value={stageBgmLabel}
+                onChange={(e) => setStageBgmLabel(e.target.value)}
+                placeholder="例：戦闘、日常、緊迫…"
+              />
+            </div>
+            <Button
+              className="w-full"
+              onClick={handleRegisterStageBgm}
+              disabled={!stageBgmUploadUrl || !stageBgmLabel.trim()}
+            >
+              登録
+            </Button>
+            {stageBgmPreviewUrl && (
+              <audio controls src={stageBgmPreviewUrl} className="w-full" />
+            )}
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setBgmAddOpen(false)}>
+              閉じる
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={seAddOpen} onOpenChange={setSeAddOpen}>
+        <DialogContent className="sm:max-w-lg">
+          <DialogHeader>
+            <DialogTitle>SEを登録</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-3">
+            <Button variant="outline" className="w-full" onClick={() => stageSeFileRef.current?.click()}>
+              <Upload className="w-4 h-4 mr-2" />
+              SEをアップロード
+            </Button>
+            <input
+              ref={stageSeFileRef}
+              type="file"
+              accept="audio/*"
+              className="hidden"
+              onChange={handleStageSeFileChange}
+            />
+            <div className="space-y-1">
+              <Label className="text-xs text-muted-foreground">名前</Label>
+              <Input
+                value={stageSeLabel}
+                onChange={(e) => setStageSeLabel(e.target.value)}
+                placeholder="例：ドア、決定音、爆発…"
+              />
+            </div>
+            <Button
+              className="w-full"
+              onClick={handleRegisterStageSe}
+              disabled={!stageSeUploadUrl || !stageSeLabel.trim()}
+            >
+              登録
+            </Button>
+            {stageSeUploadUrl && (
+              <audio controls src={stageSeUploadUrl} className="w-full" />
+            )}
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setSeAddOpen(false)}>
+              閉じる
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={macroAddOpen} onOpenChange={setMacroAddOpen}>
+        <DialogContent className="sm:max-w-3xl max-h-[85vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>定型文を追加</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-3">
+            <div className="space-y-1">
+              <Label className="text-xs text-muted-foreground">発言者</Label>
+              <div className="flex gap-2">
+                <Select value={newMacroSpeakerId} onValueChange={(v) => setNewMacroSpeakerId(v as any)}>
+                  <SelectTrigger className="bg-sidebar-accent border-sidebar-border text-xs flex-1">
+                    <SelectValue placeholder="発言者を選択" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="gm">GM</SelectItem>
+                    {npcCharacters.map((char) => (
+                      <SelectItem key={char.id} value={char.id}>
+                        {char.name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <Input
+                  value={newMacroSpeakerPortraitTag}
+                  onChange={(e) => setNewMacroSpeakerPortraitTag(e.target.value)}
+                  placeholder="立ち絵タグ(任意)"
+                  disabled={newMacroSpeakerId === 'gm'}
+                  className="bg-sidebar-accent border-sidebar-border text-xs w-28"
+                  title={newMacroSpeakerId === 'gm' ? 'NPC発言時のみ指定できます' : (speakerNpc ? `${speakerNpc.name} の立ち絵タグ` : '')}
+                />
+              </div>
+            </div>
+
+            <Textarea
+              value={newMacroText}
+              onChange={(e) => setNewMacroText(e.target.value)}
+              placeholder="本文（シナリオ文章、描写など）"
+              className="bg-sidebar-accent border-sidebar-border min-h-[120px]"
+            />
+
+            <div className="space-y-1">
+              <Label className="text-xs text-muted-foreground">背景（任意）</Label>
+              <div className="flex items-center justify-between gap-2">
+                <div className="grid grid-cols-2 gap-2 flex-1">
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    className={`w-full min-w-0 justify-start overflow-hidden text-[clamp(10px,1vw,12px)] leading-none ${
+                      newMacroBgSource === 'upload' ? macroAssetButtonActiveClass : ''
+                    }`}
+                    onClick={() => macroBgFileRef.current?.click()}
+                    disabled={newMacroClearBackground}
+                  >
+                    <Upload className="w-4 h-4 mr-2 shrink-0" />
+                    <span className="min-w-0 flex-1 truncate">背景をアップロード</span>
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    className={`w-full min-w-0 justify-start overflow-hidden text-[clamp(10px,1vw,12px)] leading-none ${
+                      newMacroBgSource === 'select' ? macroAssetButtonActiveClass : ''
+                    }`}
+                    onClick={() => openMacroAssetPicker('new', 'bg')}
+                    disabled={newMacroClearBackground || macroBgAssets.length === 0}
+                    title={macroBgAssets.length === 0 ? '登録された背景がありません' : undefined}
+                  >
+                    <Image className="w-4 h-4 mr-2 shrink-0" />
+                    <span className="min-w-0 flex-1 truncate">
+                      {(() => {
+                        if (newMacroBgSource === 'select' && newMacroBgAssetId) {
+                          const a = macroBgAssets.find((x) => x.id === newMacroBgAssetId);
+                          if (a) return a.label || '背景';
+                        }
+                        return '一覧から選ぶ';
+                      })()}
+                    </span>
+                  </Button>
+                </div>
+                <input
+                  ref={macroBgFileRef}
+                  type="file"
+                  accept="image/*"
+                  className="hidden"
+                  onChange={handleMacroBgFileChange}
+                />
+                <label className="flex items-center gap-2 text-xs text-muted-foreground shrink-0">
+                  <input
+                    type="checkbox"
+                    className="accent-primary"
+                    checked={newMacroClearBackground}
+                    onChange={(e) => {
+                      setNewMacroClearBackground(e.target.checked);
+                      if (e.target.checked) {
+                        setNewMacroBgUrl('');
+                        setNewMacroBgSource(null);
+                        setNewMacroBgAssetId(null);
+                      }
+                    }}
+                  />
+                  背景を消す
+                </label>
+              </div>
+            </div>
+
+            <div className="space-y-1">
+              <Label className="text-xs text-muted-foreground">BGM（任意）</Label>
+              <div className="flex items-center justify-between gap-2">
+                <div className="grid grid-cols-2 gap-2 flex-1">
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    className={`w-full min-w-0 justify-start overflow-hidden text-[clamp(10px,1vw,12px)] leading-none ${
+                      newMacroBgmSource === 'upload' ? macroAssetButtonActiveClass : ''
+                    }`}
+                    onClick={() => bgmFileRef.current?.click()}
+                    disabled={newMacroClearBgm}
+                  >
+                    <Upload className="w-4 h-4 mr-2 shrink-0" />
+                    <span className="min-w-0 flex-1 truncate">BGMをアップロード</span>
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    className={`w-full min-w-0 justify-start overflow-hidden text-[clamp(10px,1vw,12px)] leading-none ${
+                      newMacroBgmSource === 'select' ? macroAssetButtonActiveClass : ''
+                    }`}
+                    onClick={() => openMacroAssetPicker('new', 'bgm')}
+                    disabled={newMacroClearBgm || macroBgmAssets.length === 0}
+                    title={macroBgmAssets.length === 0 ? '登録されたBGMがありません' : undefined}
+                  >
+                    <Music className="w-4 h-4 mr-2 shrink-0" />
+                    <span className="min-w-0 flex-1 truncate">
+                      {(() => {
+                        if (newMacroBgmSource === 'select' && newMacroBgmAssetId) {
+                          const a = macroBgmAssets.find((x) => x.id === newMacroBgmAssetId);
+                          if (a) return a.label || 'BGM';
+                        }
+                        return '一覧から選ぶ';
+                      })()}
+                    </span>
+                  </Button>
+                </div>
+                <label className="flex items-center gap-2 text-xs text-muted-foreground shrink-0">
+                  <input
+                    type="checkbox"
+                    className="accent-primary"
+                    checked={newMacroClearBgm}
+                    onChange={(e) => {
+                      setNewMacroClearBgm(e.target.checked);
+                      if (e.target.checked) {
+                        setNewMacroBgmUrl('');
+                        setNewMacroBgmSource(null);
+                        setNewMacroBgmAssetId(null);
+                      }
+                    }}
+                  />
+                  BGMを消す
+                </label>
+                <input
+                  ref={bgmFileRef}
+                  type="file"
+                  accept="audio/*"
+                  className="hidden"
+                  onChange={handleBgmFileChange}
+                />
+              </div>
+            </div>
+
+            <div className="space-y-1">
+              <Label className="text-xs text-muted-foreground">SE（任意）</Label>
+              <div className="grid grid-cols-2 gap-2">
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  className={`w-full min-w-0 justify-start overflow-hidden text-[clamp(10px,1vw,12px)] leading-none ${
+                    newMacroSeSource === 'upload' ? macroAssetButtonActiveClass : ''
+                  }`}
+                  onClick={() => seFileRef.current?.click()}
+                >
+                  <Upload className="w-4 h-4 mr-2 shrink-0" />
+                  <span className="min-w-0 flex-1 truncate">SEをアップロード</span>
+                </Button>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  className={`w-full min-w-0 justify-start overflow-hidden text-[clamp(10px,1vw,12px)] leading-none ${
+                    newMacroSeSource === 'select' ? macroAssetButtonActiveClass : ''
+                  }`}
+                  onClick={() => openMacroAssetPicker('new', 'se')}
+                  disabled={macroSeAssets.length === 0}
+                  title={macroSeAssets.length === 0 ? '登録されたSEがありません' : undefined}
+                >
+                  <Music className="w-4 h-4 mr-2 shrink-0" />
+                  <span className="min-w-0 flex-1 truncate">
+                    {(() => {
+                      if (newMacroSeSource === 'select' && newMacroSeAssetId) {
+                        const a = macroSeAssets.find((x) => x.id === newMacroSeAssetId);
+                        if (a) return a.label || 'SE';
+                      }
+                      return '一覧から選ぶ';
+                    })()}
+                  </span>
+                </Button>
+                <input
+                  ref={seFileRef}
+                  type="file"
+                  accept="audio/*"
+                  className="hidden"
+                  onChange={handleSeFileChange}
+                />
+              </div>
+            </div>
+          </div>
+          <DialogFooter className="gap-2">
+            <Button variant="outline" onClick={() => setMacroAddOpen(false)}>
+              キャンセル
+            </Button>
+            <Button onClick={handleAddMacro}>
+              定型文を追加
             </Button>
           </DialogFooter>
         </DialogContent>
