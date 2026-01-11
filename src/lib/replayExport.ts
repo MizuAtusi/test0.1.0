@@ -342,8 +342,8 @@ function generateReplayHtml(roomName: string, replayJsonString: string): string 
       <h2>タイトル</h2>
       <div class="text-muted">タイトル画面に戻りますか？</div>
       <div class="modal-actions">
-        <button id="confirm-title">戻る</button>
-        <button id="close-title">閉じる</button>
+        <button id="confirm-title" class="title-action-button">はい</button>
+        <button id="close-title" class="title-action-button">いいえ</button>
       </div>
     </div>
   </div>
@@ -452,6 +452,22 @@ body {
 }
 
 .title-actions button:hover {
+  background: linear-gradient(180deg, rgba(168, 85, 247, 0.36), rgba(17, 24, 39, 0.86));
+  border-color: rgba(216, 180, 254, 0.75);
+}
+
+.title-action-button {
+  padding: 12px 28px;
+  font-size: 1.05em;
+  font-weight: 700;
+  border-radius: 999px;
+  border: 1px solid rgba(168, 85, 247, 0.55);
+  background: linear-gradient(180deg, rgba(168, 85, 247, 0.28), rgba(17, 24, 39, 0.86));
+  color: rgba(255,255,255,0.95);
+  cursor: pointer;
+}
+
+.title-action-button:hover {
   background: linear-gradient(180deg, rgba(168, 85, 247, 0.36), rgba(17, 24, 39, 0.86));
   border-color: rgba(216, 180, 254, 0.75);
 }

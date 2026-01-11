@@ -149,13 +149,18 @@ export default function RoomPage() {
   }, []);
 
   const prevTitleVisibleRef = useRef(false);
+  const lastTextWindowVisibleRef = useRef(true);
   useEffect(() => {
     const visible = !!room?.title_screen_visible;
     if (visible && !prevTitleVisibleRef.current) {
+      lastTextWindowVisibleRef.current = textWindowVisible;
       setTextWindowVisible(false);
     }
+    if (!visible && prevTitleVisibleRef.current) {
+      setTextWindowVisible(lastTextWindowVisibleRef.current ?? true);
+    }
     prevTitleVisibleRef.current = visible;
-  }, [room?.title_screen_visible]);
+  }, [room?.title_screen_visible, textWindowVisible]);
 
   const hasSidePanel = !isReadOnlyViewer;
   const activeParticipantCount = participants.filter((p) => p.role === 'PL' || p.role === 'GM').length;
