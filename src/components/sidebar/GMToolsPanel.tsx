@@ -259,6 +259,7 @@ export function GMToolsPanel({
       .from('room_join_requests')
       .select('*')
       .eq('room_id', roomId)
+      .eq('status', 'pending')
       .order('created_at', { ascending: true });
     if (error) return;
     const rows = (data as any[]) || [];

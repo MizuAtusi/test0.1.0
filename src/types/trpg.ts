@@ -210,6 +210,16 @@ export interface RoomInvite {
   updated_at: string;
 }
 
+export interface RoomLogMarkup {
+  id: string;
+  room_id: string;
+  message_id: string;
+  label: string;
+  created_by: string;
+  created_at: string;
+  updated_at: string;
+}
+
 export interface Profile {
   id: string;
   display_name: string;

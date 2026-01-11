@@ -46,6 +46,7 @@ export async function exportReplay(data: ReplayData): Promise<void> {
     timestamp: msg.created_at,
     type: 'message',
     data: {
+      messageId: msg.id,
       speaker: msg.speaker_name,
       text: msg.text,
       type: msg.type,
@@ -62,6 +63,12 @@ export async function exportReplay(data: ReplayData): Promise<void> {
     type: ev.kind,
     data: ev.data,
   })) as any;
+
+  const { data: logMarkups, error: logMarkupsError } = await supabase
+    .from('room_log_markups')
+    .select('id,room_id,message_id,label,created_at')
+    .eq('room_id', room.id)
+    .order('created_at', { ascending: true });
 
   // If stage_events is unavailable, fall back to locally recorded transitions
   const shouldUseLocalStageEvents =
@@ -224,6 +231,12 @@ export async function exportReplay(data: ReplayData): Promise<void> {
     initialPortraits,
     characters: characters.map(c => ({ name: c.name, isNpc: c.is_npc })),
     participants: (participants || []).map((p) => ({ id: p.id, name: p.name, role: p.role })),
+    markups: (logMarkupsError ? [] : (logMarkups || [])).map((m: any) => ({
+      id: m.id,
+      messageId: m.message_id,
+      label: m.label,
+      createdAt: m.created_at,
+    })),
   };
   const replayJsonString = JSON.stringify(replayJson, null, 2);
 
@@ -274,6 +287,13 @@ function generateReplayHtml(roomName: string, replayJsonString: string): string 
       <h2>バックログ</h2>
       <div id="log-content"></div>
       <button id="close-log">閉じる</button>
+    </div>
+  </div>
+  <div id="load-modal" class="modal hidden">
+    <div class="modal-content">
+      <h2>ロード</h2>
+      <div id="load-content"></div>
+      <button id="close-load">閉じる</button>
     </div>
   </div>
   <script id="replay-data" type="application/json">${safeJson}</script>
@@ -528,6 +548,54 @@ body {
   padding: 5px 10px;
   border-radius: 5px;
   font-family: monospace;
+}
+
+#load-content {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  margin-bottom: 20px;
+}
+
+.load-section-title {
+  font-size: 0.95em;
+  color: #bb86fc;
+  margin-bottom: 8px;
+}
+
+.load-item {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 10px 12px;
+  border: 1px solid rgba(255,255,255,0.12);
+  border-radius: 8px;
+  cursor: pointer;
+  background: rgba(255,255,255,0.02);
+}
+
+.load-item:hover {
+  background: rgba(255,255,255,0.08);
+}
+
+.load-item-title {
+  font-size: 0.95em;
+  color: #e8e8e8;
+}
+
+.load-item-meta {
+  font-size: 0.8em;
+  color: #b7b7b7;
+}
+
+#close-load {
+  background: #bb86fc;
+  border: none;
+  color: #000;
+  padding: 10px 30px;
+  border-radius: 5px;
+  cursor: pointer;
+  font-size: 1em;
 }`;
 }
 
@@ -536,6 +604,7 @@ function generateReplayJs(): string {
   let replayData = null;
   let steps = [];
   let currentIndex = 0;
+  let messageIndexById = new Map();
   let autoPlay = false;
   let autoTimer = null;
   const bgmAudio = new Audio();
@@ -684,6 +753,7 @@ function generateReplayJs(): string {
           secretActive: secretActive,
           secretAllowList: secretAllowList,
           message: ev.data,
+          messageId: ev.data && ev.data.messageId ? ev.data.messageId : null,
         });
       }
     }
@@ -701,6 +771,12 @@ function generateReplayJs(): string {
   function initWithData(data) {
     replayData = data;
     steps = buildSteps(data);
+    messageIndexById = new Map();
+    steps.forEach((step, idx) => {
+      if (step && step.kind === 'message' && step.messageId) {
+        messageIndexById.set(String(step.messageId), idx);
+      }
+    });
     currentIndex = 0;
     if (steps.length === 0) {
       // No message steps; show just initial state if any
@@ -978,15 +1054,76 @@ function generateReplayJs(): string {
     alert('セーブしました');
   }
 
-  function loadProgress() {
+  function showLoadModal() {
+    const modal = document.getElementById('load-modal');
+    const content = document.getElementById('load-content');
+    if (!modal || !content) return;
+    content.innerHTML = '';
+
+    const makeSection = function(title, nodes) {
+      const wrapper = document.createElement('div');
+      const heading = document.createElement('div');
+      heading.className = 'load-section-title';
+      heading.textContent = title;
+      wrapper.appendChild(heading);
+      (nodes || []).forEach((n) => wrapper.appendChild(n));
+      content.appendChild(wrapper);
+    };
+
+    const makeItem = function(label, meta, onClick) {
+      const item = document.createElement('div');
+      item.className = 'load-item';
+      const t = document.createElement('div');
+      t.className = 'load-item-title';
+      t.textContent = label;
+      item.appendChild(t);
+      if (meta) {
+        const m = document.createElement('div');
+        m.className = 'load-item-meta';
+        m.textContent = meta;
+        item.appendChild(m);
+      }
+      item.onclick = onClick;
+      return item;
+    };
+
     const saved = localStorage.getItem('replay_progress');
     if (saved) {
-      const { index } = JSON.parse(saved);
-      showStep(index);
-      alert('ロードしました');
+      const parsed = JSON.parse(saved);
+      const index = (parsed && typeof parsed.index === 'number') ? parsed.index : 0;
+      makeSection('セーブデータ', [
+        makeItem('続きからロード', '保存位置へ移動します', function() {
+          showStep(index);
+          modal.classList.add('hidden');
+        }),
+      ]);
     } else {
-      alert('セーブデータがありません');
+      makeSection('セーブデータ', [
+        makeItem('セーブデータがありません', 'セーブボタンで保存できます', function() {}),
+      ]);
     }
+
+    const markups = (replayData && Array.isArray(replayData.markups)) ? replayData.markups : [];
+    if (markups.length > 0) {
+      const nodes = markups
+        .map(function(m) {
+          const idx = messageIndexById.get(String(m.messageId));
+          if (idx === undefined) return null;
+          const meta = m.createdAt ? new Date(m.createdAt).toLocaleString() : null;
+          return makeItem(m.label || 'マークアップ', meta, function() {
+            showStep(idx);
+            modal.classList.add('hidden');
+          });
+        })
+        .filter(Boolean);
+      makeSection('マークアップから再生', nodes);
+    } else {
+      makeSection('マークアップから再生', [
+        makeItem('マークアップがありません', 'GMがログから追加できます', function() {}),
+      ]);
+    }
+
+    modal.classList.remove('hidden');
   }
 
   // Event listeners
@@ -1013,9 +1150,12 @@ function generateReplayJs(): string {
   document.getElementById('btn-auto').addEventListener('click', toggleAuto);
   document.getElementById('btn-log').addEventListener('click', showLog);
   document.getElementById('btn-save').addEventListener('click', saveProgress);
-  document.getElementById('btn-load').addEventListener('click', loadProgress);
+  document.getElementById('btn-load').addEventListener('click', showLoadModal);
   document.getElementById('close-log').addEventListener('click', function() {
     document.getElementById('log-modal').classList.add('hidden');
+  });
+  document.getElementById('close-load').addEventListener('click', function() {
+    document.getElementById('load-modal').classList.add('hidden');
   });
 })();`;
 }

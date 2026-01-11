@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Book, Download, ScrollText, Info, ChevronLeft, Lock, Users } from 'lucide-react';
 import { Button } from '@/components/ui/button';
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Textarea } from '@/components/ui/textarea';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Input } from '@/components/ui/input';
@@ -12,7 +12,7 @@ import { exportReplay } from '@/lib/replayExport';
 import { getDisplayText } from '@/lib/expressionTag';
 import { supabase } from '@/integrations/supabase/client';
 import { deleteFile, uploadFile } from '@/lib/upload';
-import type { Room, Message, StageState, Participant, Character } from '@/types/trpg';
+import type { Room, Message, StageState, Participant, Character, RoomLogMarkup } from '@/types/trpg';
 
 interface StageToolbarProps {
   room: Room | null;
@@ -73,6 +73,10 @@ export function StageToolbar({
   const [infoEditVisibility, setInfoEditVisibility] = useState<'public' | 'restricted' | 'gm_only'>('public');
   const [infoEditListVisibility, setInfoEditListVisibility] = useState<'hidden' | 'title'>('title');
   const [infoEditAllowedUsers, setInfoEditAllowedUsers] = useState<string[]>([]);
+  const [logMarkups, setLogMarkups] = useState<RoomLogMarkup[]>([]);
+  const [markupDialogOpen, setMarkupDialogOpen] = useState(false);
+  const [markupTarget, setMarkupTarget] = useState<Message | null>(null);
+  const [markupLabel, setMarkupLabel] = useState('');
   const { toast } = useToast();
 
   useEffect(() => {
@@ -80,6 +84,58 @@ export function StageToolbar({
       setCurrentUserId(data.user?.id ?? null);
     });
   }, []);
+
+  useEffect(() => {
+    if (!showLog || !room?.id || !isGM) return;
+    let canceled = false;
+    (async () => {
+      const { data } = await supabase
+        .from('room_log_markups')
+        .select('*')
+        .eq('room_id', room.id)
+        .order('created_at', { ascending: true });
+      if (!canceled) setLogMarkups((data as any) || []);
+    })();
+    return () => {
+      canceled = true;
+    };
+  }, [showLog, room?.id, isGM]);
+
+  const openMarkupDialog = (msg: Message) => {
+    setMarkupTarget(msg);
+    setMarkupLabel('');
+    setMarkupDialogOpen(true);
+  };
+
+  const saveMarkup = async () => {
+    if (!room?.id || !markupTarget || !markupLabel.trim() || !currentUserId) return;
+    const { error } = await supabase.from('room_log_markups').upsert(
+      {
+        room_id: room.id,
+        message_id: markupTarget.id,
+        label: markupLabel.trim(),
+        created_by: currentUserId,
+        updated_at: new Date().toISOString(),
+      } as any,
+      { onConflict: 'room_id,message_id' },
+    );
+    if (error) {
+      toast({ title: 'マークアップの保存に失敗しました', description: error.message, variant: 'destructive' });
+      return;
+    }
+    setMarkupDialogOpen(false);
+    setMarkupTarget(null);
+    setMarkupLabel('');
+    if (room?.id) {
+      const { data } = await supabase
+        .from('room_log_markups')
+        .select('*')
+        .eq('room_id', room.id)
+        .order('created_at', { ascending: true });
+      setLogMarkups((data as any) || []);
+    }
+    toast({ title: 'マークアップを保存しました' });
+  };
 
   const infoById = useMemo(() => {
     const map: Record<string, any> = {};
@@ -1203,18 +1259,62 @@ export function StageToolbar({
               {logMessages.map((msg) => {
                 const text = getDisplayText(msg.text);
                 if (!text) return null;
+                const existingMarkup = logMarkups.find((m) => m.message_id === msg.id);
                 return (
-                  <div key={msg.id} className="py-1 border-b border-border/30">
-                    <span className="text-muted-foreground text-xs">
-                      {new Date(msg.created_at).toLocaleTimeString()}
-                    </span>
-                    <span className="font-medium ml-2">{msg.speaker_name}:</span>
-                    <span className="ml-2 whitespace-pre-wrap">{text}</span>
+                  <div key={msg.id} className="group py-1 border-b border-border/30">
+                    <div className="flex items-center justify-between gap-2">
+                      <div>
+                        <span className="text-muted-foreground text-xs">
+                          {new Date(msg.created_at).toLocaleTimeString()}
+                        </span>
+                        <span className="font-medium ml-2">{msg.speaker_name}:</span>
+                        <span className="ml-2 whitespace-pre-wrap">{text}</span>
+                        {existingMarkup && (
+                          <span className="ml-2 text-xs text-muted-foreground">（{existingMarkup.label}）</span>
+                        )}
+                      </div>
+                      {isGM && (
+                        <Button
+                          type="button"
+                          size="sm"
+                          variant="ghost"
+                          className="opacity-0 group-hover:opacity-100 text-xs"
+                          onClick={() => openMarkupDialog(msg)}
+                        >
+                          マークアップする
+                        </Button>
+                      )}
+                    </div>
                   </div>
                 );
               })}
             </div>
           </ScrollArea>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={markupDialogOpen} onOpenChange={setMarkupDialogOpen}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>マークアップを作成</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-3">
+            <div className="text-sm text-muted-foreground">
+              ログの内容: {markupTarget ? getDisplayText(markupTarget.text) : ''}
+            </div>
+            <div className="space-y-1">
+              <Label className="text-xs text-muted-foreground">マークアップ名</Label>
+              <Input value={markupLabel} onChange={(e) => setMarkupLabel(e.target.value)} />
+            </div>
+          </div>
+          <DialogFooter className="gap-2">
+            <Button variant="outline" onClick={() => setMarkupDialogOpen(false)}>
+              閉じる
+            </Button>
+            <Button onClick={saveMarkup} disabled={!markupLabel.trim()}>
+              保存
+            </Button>
+          </DialogFooter>
         </DialogContent>
       </Dialog>
     </>
