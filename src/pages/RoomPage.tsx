@@ -157,7 +157,7 @@ export default function RoomPage() {
       setTextWindowVisible(false);
     }
     if (!visible && prevTitleVisibleRef.current) {
-      setTextWindowVisible(lastTextWindowVisibleRef.current ?? true);
+      setTextWindowVisible(true);
     }
     prevTitleVisibleRef.current = visible;
   }, [room?.title_screen_visible, textWindowVisible]);
