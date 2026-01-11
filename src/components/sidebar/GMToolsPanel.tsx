@@ -1797,23 +1797,23 @@ export function GMToolsPanel({
             テーマ設定
           </Button>
 
-          <Button
-            variant="ghost"
-            className="w-full justify-start"
-            onClick={() => setEffectsEditorOpen(true)}
-          >
-            <Image className="w-4 h-4 mr-2" />
-            クリティカル/ファンブル演出
-          </Button>
-
           <Collapsible>
             <CollapsibleTrigger asChild>
               <Button variant="ghost" className="w-full justify-start">
                 <Image className="w-4 h-4 mr-2" />
-                その他演出
+                演出
               </Button>
             </CollapsibleTrigger>
             <CollapsibleContent className="pt-2 space-y-2">
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                className="w-full"
+                onClick={() => setEffectsEditorOpen(true)}
+              >
+                クリティカル/ファンブル
+              </Button>
               <Button
                 type="button"
                 variant="outline"
