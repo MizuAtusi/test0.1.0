@@ -37,7 +37,7 @@ export default function NotificationsPage() {
   const [loading, setLoading] = useState(true);
   const [notifications, setNotifications] = useState<NotificationItem[]>([]);
   const [profilesById, setProfilesById] = useState<Record<string, Profile>>({});
-  const NOTIFICATIONS_LAST_SEEN_KEY = 'trpg:notifications:lastSeen';
+  const NOTIFICATIONS_LAST_SEEN_KEY = user?.id ? `trpg:notifications:lastSeen:${user.id}` : null;
 
   const signOut = async () => {
     try {
@@ -276,11 +276,12 @@ export default function NotificationsPage() {
     }, null);
     const next = latest ?? Date.now();
     try {
+      if (!NOTIFICATIONS_LAST_SEEN_KEY) return;
       localStorage.setItem(NOTIFICATIONS_LAST_SEEN_KEY, String(next));
     } catch {
       // ignore
     }
-  }, [loading, notifications]);
+  }, [loading, notifications, NOTIFICATIONS_LAST_SEEN_KEY]);
 
   const renderActor = (id?: string) => {
     if (!id) return null;

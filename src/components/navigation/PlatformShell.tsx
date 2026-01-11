@@ -38,7 +38,7 @@ export function PlatformShell({ title, onSignOut, children }: PlatformShellProps
     if (!match) return true;
     return match.split('=')[1] !== 'false';
   })();
-  const NOTIFICATIONS_LAST_SEEN_KEY = 'trpg:notifications:lastSeen';
+  const NOTIFICATIONS_LAST_SEEN_KEY = user?.id ? `trpg:notifications:lastSeen:${user.id}` : null;
 
   useEffect(() => {
     if (!user?.id) {
@@ -53,6 +53,7 @@ export function PlatformShell({ title, onSignOut, children }: PlatformShellProps
     };
     const lastSeen = (() => {
       try {
+        if (!NOTIFICATIONS_LAST_SEEN_KEY) return 0;
         const raw = localStorage.getItem(NOTIFICATIONS_LAST_SEEN_KEY);
         const parsed = raw ? Number(raw) : 0;
         return Number.isFinite(parsed) ? parsed : 0;
@@ -156,7 +157,7 @@ export function PlatformShell({ title, onSignOut, children }: PlatformShellProps
     return () => {
       canceled = true;
     };
-  }, [user?.id]);
+  }, [user?.id, NOTIFICATIONS_LAST_SEEN_KEY]);
 
   return (
     <SidebarProvider defaultOpen={defaultOpen}>
@@ -196,8 +197,8 @@ export function PlatformShell({ title, onSignOut, children }: PlatformShellProps
                 </NavLink>
               </SidebarMenuButton>
             </SidebarMenuItem>
-            <SidebarMenuItem>
-              <SidebarMenuButton asChild tooltip="通知" size="lg" className={cn(menuButtonClass, 'relative')}>
+            <SidebarMenuItem className="relative">
+              <SidebarMenuButton asChild tooltip="通知" size="lg" className={menuButtonClass}>
                 <NavLink
                   to="/notifications"
                   className={({ isActive }) =>
@@ -206,11 +207,11 @@ export function PlatformShell({ title, onSignOut, children }: PlatformShellProps
                 >
                   <Bell />
                   <span>通知</span>
-                  {hasUnreadNotifications && (
-                    <span className="absolute right-3 top-3 h-2.5 w-2.5 rounded-full bg-destructive" />
-                  )}
                 </NavLink>
               </SidebarMenuButton>
+              {hasUnreadNotifications && (
+                <span className="pointer-events-none absolute right-3 top-3 h-2.5 w-2.5 rounded-full bg-destructive" />
+              )}
             </SidebarMenuItem>
             <SidebarMenuItem>
               <SidebarMenuButton asChild tooltip="マイページ" size="lg" className={menuButtonClass}>
