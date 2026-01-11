@@ -93,11 +93,18 @@ export function ChatPanel({ roomId, messages, participant, onSendMessage }: Chat
 
   useEffect(() => {
     const key = activeThreadId || 'public';
-    const lastMessage = activeMessages[activeMessages.length - 1];
-    if (!lastMessage) return;
-    const ts = new Date(lastMessage.created_at).getTime();
-    setLastSeenByThread((prev) => ({ ...prev, [key]: ts }));
-  }, [activeThreadId, activeMessages]);
+    let lastMessage: Message | undefined;
+    if (activeThreadId) {
+      lastMessage = privateMessages.filter((m) => m.thread_id === activeThreadId).slice(-1)[0];
+    } else {
+      lastMessage = publicMessages[publicMessages.length - 1];
+    }
+    const ts = lastMessage ? new Date(lastMessage.created_at).getTime() : Date.now();
+    setLastSeenByThread((prev) => ({
+      ...prev,
+      [key]: Math.max(prev[key] ?? 0, ts),
+    }));
+  }, [activeThreadId, publicMessages, privateMessages]);
 
   const unreadByThread = useMemo(() => {
     const map: Record<string, boolean> = {};
