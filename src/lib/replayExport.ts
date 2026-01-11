@@ -3,6 +3,7 @@ import { saveAs } from 'file-saver';
 import type { Message, StageState, Character, Asset, Room, ReplayEvent, Participant } from '@/types/trpg';
 import { supabase } from '@/integrations/supabase/client';
 import { loadLocalStageEvents } from '@/lib/localStageEvents';
+import { buildTitleScreenRenderList, hasTitleScreenConfig, loadTitleScreenConfig } from '@/lib/titleScreen';
 
 interface ReplayData {
   room: Room;
@@ -33,6 +34,14 @@ export async function exportReplay(data: ReplayData): Promise<void> {
     .from('assets')
     .select('*')
     .eq('room_id', room.id);
+
+  const titleScreenConfig = loadTitleScreenConfig(room);
+  const titleScreenRender = buildTitleScreenRenderList({
+    config: titleScreenConfig,
+    characters,
+    assets: (assets || []) as Asset[],
+  });
+  const titleScreenEnabled = titleScreenRender.images.length > 0;
 
   // Fetch stage transition events (background/portraits)
   const { data: stageEvents, error: stageEventsError } = await supabase
@@ -114,6 +123,10 @@ export async function exportReplay(data: ReplayData): Promise<void> {
     });
   }
   assets?.forEach(a => mediaUrls.add(a.url));
+  if (titleScreenEnabled) {
+    titleScreenRender.images.forEach((img) => mediaUrls.add(img.url));
+    if (titleScreenRender.bgmUrl) mediaUrls.add(titleScreenRender.bgmUrl);
+  }
   visibleMessages.forEach(m => {
     if (m.speaker_portrait_url) mediaUrls.add(m.speaker_portrait_url);
     // Audio commands embedded in text: [bgm:...] [se:...]
@@ -212,6 +225,17 @@ export async function exportReplay(data: ReplayData): Promise<void> {
   const firstPortraitsFromEvents =
     rewrittenEvents.find(e => e.type === 'portraits' && Array.isArray(e.data?.portraits))?.data?.portraits ?? [];
 
+  const rewrittenTitleScreen = titleScreenEnabled
+    ? {
+        ...titleScreenRender,
+        images: (titleScreenRender.images || []).map((img) => ({
+          ...img,
+          url: rewriteUrl(img.url),
+        })),
+        bgmUrl: titleScreenRender.bgmUrl ? rewriteUrl(titleScreenRender.bgmUrl) : '',
+      }
+    : null;
+
   const fallbackInitialBackground =
     rewriteUrl(stageState?.background_url || null) || null;
   const fallbackInitialPortraits =
@@ -224,6 +248,7 @@ export async function exportReplay(data: ReplayData): Promise<void> {
 
   // Create replay JSON (after url rewrite)
   const replayJson = {
+    roomId: room.id,
     roomName: room.name,
     exportedAt: new Date().toISOString(),
     events: rewrittenEvents,
@@ -237,6 +262,7 @@ export async function exportReplay(data: ReplayData): Promise<void> {
       label: m.label,
       createdAt: m.created_at,
     })),
+    titleScreen: rewrittenTitleScreen,
   };
   const replayJsonString = JSON.stringify(replayJson, null, 2);
 
@@ -270,6 +296,13 @@ function generateReplayHtml(roomName: string, replayJsonString: string): string 
     <div id="background"></div>
     <div id="portraits"></div>
     <div id="choice-overlay" class="hidden"></div>
+    <div id="title-screen" class="hidden">
+      <div id="title-layer"></div>
+      <div class="title-actions">
+        <button id="btn-title-start">はじめから</button>
+        <button id="btn-title-load">つづきから</button>
+      </div>
+    </div>
     <div id="text-window">
       <div id="controls">
         <button id="btn-auto" title="オート再生">▶</button>
@@ -294,6 +327,13 @@ function generateReplayHtml(roomName: string, replayJsonString: string): string 
       <h2>ロード</h2>
       <div id="load-content"></div>
       <button id="close-load">閉じる</button>
+    </div>
+  </div>
+  <div id="save-modal" class="modal hidden">
+    <div class="modal-content">
+      <h2>セーブ</h2>
+      <div id="save-content"></div>
+      <button id="close-save">閉じる</button>
     </div>
   </div>
   <script id="replay-data" type="application/json">${safeJson}</script>
@@ -362,6 +402,49 @@ body {
   display: none;
 }
 
+#title-screen {
+  position: absolute;
+  inset: 0;
+  z-index: 1500;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  pointer-events: auto;
+}
+
+#title-screen.hidden {
+  display: none;
+}
+
+#title-layer {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+
+.title-actions {
+  position: relative;
+  display: flex;
+  gap: 16px;
+  z-index: 1;
+}
+
+.title-actions button {
+  padding: 12px 28px;
+  font-size: 1.05em;
+  font-weight: 700;
+  border-radius: 999px;
+  border: 1px solid rgba(168, 85, 247, 0.55);
+  background: linear-gradient(180deg, rgba(168, 85, 247, 0.28), rgba(17, 24, 39, 0.86));
+  color: rgba(255,255,255,0.95);
+  cursor: pointer;
+}
+
+.title-actions button:hover {
+  background: linear-gradient(180deg, rgba(168, 85, 247, 0.36), rgba(17, 24, 39, 0.86));
+  border-color: rgba(216, 180, 254, 0.75);
+}
+
 .replay-choice-panel {
   width: min(720px, 92vw);
   padding: 18px 14px;
@@ -384,6 +467,10 @@ body {
   border-top: 2px solid rgba(138,43,226,0.5);
   padding: 20px 40px;
   cursor: pointer;
+}
+
+#text-window.hidden {
+  display: none;
 }
 
 #controls {
@@ -557,6 +644,13 @@ body {
   margin-bottom: 20px;
 }
 
+#save-content {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  margin-bottom: 20px;
+}
+
 .load-section-title {
   font-size: 0.95em;
   color: #bb86fc;
@@ -565,8 +659,8 @@ body {
 
 .load-item {
   display: flex;
-  flex-direction: column;
-  gap: 4px;
+  align-items: center;
+  gap: 12px;
   padding: 10px 12px;
   border: 1px solid rgba(255,255,255,0.12);
   border-radius: 8px;
@@ -588,7 +682,47 @@ body {
   color: #b7b7b7;
 }
 
+.save-thumb {
+  width: 120px;
+  height: 68px;
+  border-radius: 6px;
+  border: 1px solid rgba(255,255,255,0.12);
+  background-size: cover;
+  background-position: center;
+  position: relative;
+  overflow: hidden;
+  flex-shrink: 0;
+}
+
+.save-thumb .save-portrait {
+  position: absolute;
+  bottom: 0;
+  max-height: 100%;
+  object-fit: contain;
+}
+
+.save-thumb .pos-left { left: 10%; }
+.save-thumb .pos-center { left: 35%; }
+.save-thumb .pos-right { left: 60%; }
+
+.save-thumb img {
+  position: absolute;
+  bottom: 0;
+  max-height: 100%;
+  object-fit: contain;
+}
+
 #close-load {
+  background: #bb86fc;
+  border: none;
+  color: #000;
+  padding: 10px 30px;
+  border-radius: 5px;
+  cursor: pointer;
+  font-size: 1em;
+}
+
+#close-save {
   background: #bb86fc;
   border: none;
   color: #000;
@@ -609,9 +743,16 @@ function generateReplayJs(): string {
   let autoTimer = null;
   const bgmAudio = new Audio();
   bgmAudio.loop = true;
+  const titleBgmAudio = new Audio();
+  titleBgmAudio.loop = true;
   const seAudio = new Audio();
   let currentBgmUrl = null;
   let secretDecision = null; // 'view' | null
+  let titleScreenActive = false;
+  const SAVE_SLOTS = 6;
+  const BASE_WIDTH = 1200;
+  const BASE_HEIGHT = 675;
+  let returnToTitleOnLoadClose = false;
 
   function showChoiceOverlay(buttons) {
     const overlay = document.getElementById('choice-overlay');
@@ -632,6 +773,122 @@ function generateReplayJs(): string {
     if (!overlay) return;
     overlay.classList.add('hidden');
     overlay.innerHTML = '';
+  }
+
+  function hasTitleScreenData() {
+    const ts = replayData && replayData.titleScreen ? replayData.titleScreen : null;
+    const images = ts && Array.isArray(ts.images) ? ts.images : [];
+    return images.length > 0 || !!(ts && ts.bgmUrl);
+  }
+
+  function renderTitleScreenImages() {
+    const layer = document.getElementById('title-layer');
+    if (!layer) return;
+    layer.innerHTML = '';
+    const ts = replayData && replayData.titleScreen ? replayData.titleScreen : null;
+    const images = ts && Array.isArray(ts.images) ? ts.images : [];
+    images.forEach((img) => {
+      if (!img || !img.url) return;
+      const node = document.createElement('div');
+      node.style.position = 'absolute';
+      const x = typeof img.x === 'number' ? img.x : 0;
+      const y = typeof img.y === 'number' ? img.y : 0;
+      node.style.left = (50 + x * 100) + '%';
+      node.style.top = (50 + y * 100) + '%';
+      node.style.transform = 'translate(-50%, -50%) rotate(' + (img.rotate || 0) + 'deg) scale(' + (img.scale || 1) + ')';
+      node.style.transformOrigin = 'center';
+      node.style.opacity = (typeof img.opacity === 'number') ? String(img.opacity) : '1';
+      node.style.zIndex = String(img.z || 0);
+
+      const image = document.createElement('img');
+      image.src = img.url;
+      image.alt = img.label || '';
+      image.style.maxWidth = BASE_WIDTH + 'px';
+      image.style.maxHeight = BASE_HEIGHT + 'px';
+      image.style.objectFit = 'contain';
+      node.appendChild(image);
+      layer.appendChild(node);
+    });
+  }
+
+  function setTitleScreenVisible(isVisible) {
+    const title = document.getElementById('title-screen');
+    const textWindow = document.getElementById('text-window');
+    if (!title || !textWindow) return;
+    if (isVisible) {
+      title.classList.remove('hidden');
+      textWindow.classList.add('hidden');
+      const ts = replayData && replayData.titleScreen ? replayData.titleScreen : null;
+      const bgm = ts && ts.bgmUrl ? String(ts.bgmUrl) : '';
+      if (bgm) {
+        if (titleBgmAudio.src !== bgm) titleBgmAudio.src = bgm;
+        titleBgmAudio.play().catch(function(){});
+      }
+      try { bgmAudio.pause(); } catch (e) {}
+    } else {
+      title.classList.add('hidden');
+      textWindow.classList.remove('hidden');
+      try { titleBgmAudio.pause(); } catch (e) {}
+    }
+  }
+
+  function getSaveStorageKey() {
+    const roomId = replayData && replayData.roomId ? String(replayData.roomId) : '';
+    const roomName = replayData && replayData.roomName ? String(replayData.roomName) : 'replay';
+    return 'replay_saves_' + (roomId || roomName);
+  }
+
+  function loadSaveSlots() {
+    try {
+      const raw = localStorage.getItem(getSaveStorageKey());
+      if (!raw) return Array.from({ length: SAVE_SLOTS }, () => null);
+      const parsed = JSON.parse(raw);
+      if (!Array.isArray(parsed)) return Array.from({ length: SAVE_SLOTS }, () => null);
+      const slots = Array.from({ length: SAVE_SLOTS }, (_, i) => parsed[i] || null);
+      return slots;
+    } catch (e) {
+      return Array.from({ length: SAVE_SLOTS }, () => null);
+    }
+  }
+
+  function writeSaveSlots(slots) {
+    try {
+      localStorage.setItem(getSaveStorageKey(), JSON.stringify(slots));
+    } catch (e) {}
+  }
+
+  function getStageSnapshot() {
+    const step = steps[currentIndex];
+    return {
+      background: step && step.background ? step.background : null,
+      portraits: step && Array.isArray(step.portraits) ? step.portraits : [],
+    };
+  }
+
+  function renderSaveThumb(container, snapshot) {
+    if (!container) return;
+    container.innerHTML = '';
+    if (!snapshot) return;
+    if (snapshot.background) {
+      container.style.backgroundImage = 'url(' + snapshot.background + ')';
+    } else {
+      container.style.backgroundImage = '';
+    }
+    const portraits = Array.isArray(snapshot.portraits) ? snapshot.portraits : [];
+    portraits.forEach((p) => {
+      if (!p || !p.url) return;
+      const img = document.createElement('img');
+      img.src = p.url;
+      img.alt = p.label || '';
+      img.className = 'save-portrait pos-' + ((p.position === 'left' || p.position === 'right' || p.position === 'center') ? p.position : 'center');
+      const scale = (typeof p.scale === 'number') ? p.scale : 1;
+      const offsetX = (typeof p.offsetX === 'number') ? p.offsetX : 0;
+      const offsetY = (typeof p.offsetY === 'number') ? p.offsetY : 0;
+      const thumbScaleX = 120 / BASE_WIDTH;
+      const thumbScaleY = 68 / BASE_HEIGHT;
+      img.style.transform = 'translate(' + (offsetX * thumbScaleX) + 'px,' + (offsetY * thumbScaleY) + 'px) scale(' + scale + ')';
+      container.appendChild(img);
+    });
   }
 
   function applyAudioFromText(rawText) {
@@ -778,6 +1035,13 @@ function generateReplayJs(): string {
       }
     });
     currentIndex = 0;
+
+    if (hasTitleScreenData()) {
+      renderTitleScreenImages();
+      titleScreenActive = true;
+      setTitleScreenVisible(true);
+    }
+
     if (steps.length === 0) {
       // No message steps; show just initial state if any
       if (data && data.initialBackground) {
@@ -787,6 +1051,15 @@ function generateReplayJs(): string {
         renderPortraits(data.initialPortraits);
       }
       setError('（メッセージがありません）');
+      return;
+    }
+    if (titleScreenActive) {
+      if (data && data.initialBackground) {
+        document.getElementById('background').style.backgroundImage = 'url(' + data.initialBackground + ')';
+      }
+      if (data && Array.isArray(data.initialPortraits)) {
+        renderPortraits(data.initialPortraits);
+      }
       return;
     }
     showStep(0);
@@ -927,6 +1200,7 @@ function generateReplayJs(): string {
 
   function nextEvent() {
     if (!replayData) return;
+    if (titleScreenActive) return;
     if (steps[currentIndex] && steps[currentIndex].kind === 'secret_prompt' && secretDecision !== 'view') {
       return;
     }
@@ -937,6 +1211,7 @@ function generateReplayJs(): string {
 
   function prevEvent() {
     if (!replayData) return;
+    if (titleScreenActive) return;
     if (currentIndex > 0) {
       showStep(currentIndex - 1);
     }
@@ -1049,12 +1324,51 @@ function generateReplayJs(): string {
     document.getElementById('log-modal').classList.remove('hidden');
   }
 
-  function saveProgress() {
-    localStorage.setItem('replay_progress', JSON.stringify({ index: currentIndex }));
-    alert('セーブしました');
+  function showSaveModal() {
+    const modal = document.getElementById('save-modal');
+    const content = document.getElementById('save-content');
+    if (!modal || !content) return;
+    content.innerHTML = '';
+    const slots = loadSaveSlots();
+    slots.forEach((slot, idx) => {
+      const item = document.createElement('div');
+      item.className = 'load-item';
+      const thumb = document.createElement('div');
+      thumb.className = 'save-thumb';
+      if (slot && slot.snapshot) {
+        renderSaveThumb(thumb, slot.snapshot);
+      }
+      item.appendChild(thumb);
+
+      const textWrap = document.createElement('div');
+      const title = document.createElement('div');
+      title.className = 'load-item-title';
+      title.textContent = 'スロット ' + (idx + 1);
+      textWrap.appendChild(title);
+      const meta = document.createElement('div');
+      meta.className = 'load-item-meta';
+      meta.textContent = slot && slot.savedAt ? new Date(slot.savedAt).toLocaleString() : '空き';
+      textWrap.appendChild(meta);
+      item.appendChild(textWrap);
+
+      item.onclick = function() {
+        const snapshot = getStageSnapshot();
+        const updated = loadSaveSlots();
+        updated[idx] = {
+          index: currentIndex,
+          savedAt: new Date().toISOString(),
+          snapshot,
+        };
+        writeSaveSlots(updated);
+        modal.classList.add('hidden');
+      };
+      content.appendChild(item);
+    });
+
+    modal.classList.remove('hidden');
   }
 
-  function showLoadModal() {
+  function showLoadModal(fromTitle) {
     const modal = document.getElementById('load-modal');
     const content = document.getElementById('load-content');
     if (!modal || !content) return;
@@ -1070,38 +1384,48 @@ function generateReplayJs(): string {
       content.appendChild(wrapper);
     };
 
-    const makeItem = function(label, meta, onClick) {
+    const makeItem = function(label, meta, onClick, snapshot, withThumb) {
       const item = document.createElement('div');
       item.className = 'load-item';
+      if (withThumb !== false) {
+        const thumb = document.createElement('div');
+        thumb.className = 'save-thumb';
+        if (snapshot) renderSaveThumb(thumb, snapshot);
+        item.appendChild(thumb);
+      }
+      const textWrap = document.createElement('div');
+      textWrap.style.display = 'flex';
+      textWrap.style.flexDirection = 'column';
+      textWrap.style.gap = '2px';
       const t = document.createElement('div');
       t.className = 'load-item-title';
       t.textContent = label;
-      item.appendChild(t);
+      textWrap.appendChild(t);
       if (meta) {
         const m = document.createElement('div');
         m.className = 'load-item-meta';
         m.textContent = meta;
-        item.appendChild(m);
+        textWrap.appendChild(m);
       }
+      item.appendChild(textWrap);
       item.onclick = onClick;
       return item;
     };
 
-    const saved = localStorage.getItem('replay_progress');
-    if (saved) {
-      const parsed = JSON.parse(saved);
-      const index = (parsed && typeof parsed.index === 'number') ? parsed.index : 0;
-      makeSection('セーブデータ', [
-        makeItem('続きからロード', '保存位置へ移動します', function() {
-          showStep(index);
-          modal.classList.add('hidden');
-        }),
-      ]);
-    } else {
-      makeSection('セーブデータ', [
-        makeItem('セーブデータがありません', 'セーブボタンで保存できます', function() {}),
-      ]);
-    }
+    const slots = loadSaveSlots();
+    const saveNodes = slots.map(function(slot, idx) {
+      if (!slot) {
+        return makeItem('スロット ' + (idx + 1), '空き', function() {});
+      }
+      return makeItem('スロット ' + (idx + 1), new Date(slot.savedAt).toLocaleString(), function() {
+        titleScreenActive = false;
+        returnToTitleOnLoadClose = false;
+        setTitleScreenVisible(false);
+        showStep(slot.index || 0);
+        modal.classList.add('hidden');
+      }, slot.snapshot);
+    });
+    makeSection('セーブデータ', saveNodes);
 
     const markups = (replayData && Array.isArray(replayData.markups)) ? replayData.markups : [];
     if (markups.length > 0) {
@@ -1113,27 +1437,30 @@ function generateReplayJs(): string {
           return makeItem(m.label || 'マークアップ', meta, function() {
             showStep(idx);
             modal.classList.add('hidden');
-          });
+          }, null, false);
         })
         .filter(Boolean);
       makeSection('マークアップから再生', nodes);
     } else {
       makeSection('マークアップから再生', [
-        makeItem('マークアップがありません', 'GMがログから追加できます', function() {}),
+        makeItem('マークアップがありません', 'GMがログから追加できます', function() {}, null, false),
       ]);
     }
 
+    returnToTitleOnLoadClose = !!fromTitle;
     modal.classList.remove('hidden');
   }
 
   // Event listeners
   document.getElementById('text-window').addEventListener('click', function(e) {
+    if (titleScreenActive) return;
     if (e.target.closest('#controls')) return;
     stopAuto();
     nextEvent();
   });
 
   document.addEventListener('keydown', function(e) {
+    if (titleScreenActive) return;
     if (e.key === ' ' || e.key === 'Enter') {
       e.preventDefault();
       stopAuto();
@@ -1149,13 +1476,30 @@ function generateReplayJs(): string {
 
   document.getElementById('btn-auto').addEventListener('click', toggleAuto);
   document.getElementById('btn-log').addEventListener('click', showLog);
-  document.getElementById('btn-save').addEventListener('click', saveProgress);
-  document.getElementById('btn-load').addEventListener('click', showLoadModal);
+  document.getElementById('btn-save').addEventListener('click', showSaveModal);
+  document.getElementById('btn-load').addEventListener('click', function() { showLoadModal(false); });
   document.getElementById('close-log').addEventListener('click', function() {
     document.getElementById('log-modal').classList.add('hidden');
   });
   document.getElementById('close-load').addEventListener('click', function() {
     document.getElementById('load-modal').classList.add('hidden');
+    if (returnToTitleOnLoadClose && titleScreenActive) {
+      setTitleScreenVisible(true);
+      returnToTitleOnLoadClose = false;
+    }
+  });
+  document.getElementById('close-save').addEventListener('click', function() {
+    document.getElementById('save-modal').classList.add('hidden');
+  });
+  document.getElementById('btn-title-start').addEventListener('click', function() {
+    titleScreenActive = false;
+    setTitleScreenVisible(false);
+    showStep(0);
+  });
+  document.getElementById('btn-title-load').addEventListener('click', function() {
+    if (!titleScreenActive) return;
+    setTitleScreenVisible(false);
+    showLoadModal(true);
   });
 })();`;
 }

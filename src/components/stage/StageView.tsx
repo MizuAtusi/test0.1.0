@@ -1,4 +1,4 @@
-import { useRef, useEffect, useState, useCallback, useLayoutEffect } from 'react';
+import { useRef, useEffect, useState, useCallback, useLayoutEffect, useMemo } from 'react';
 import type { Message, StageState, Participant, Room, Character, Asset } from '@/types/trpg';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Button } from '@/components/ui/button';
@@ -13,6 +13,7 @@ import {
   shouldTriggerOtherEffectsForMessage,
   type EffectImage,
 } from '@/lib/effects';
+import { buildTitleScreenRenderList, hasTitleScreenConfig, loadTitleScreenConfig } from '@/lib/titleScreen';
 
 const EFFECT_BASE_WIDTH = 1200;
 const EFFECT_BASE_HEIGHT = 675;
@@ -31,6 +32,8 @@ interface StageViewProps {
   characters: Character[];
   onUpdateRoom: (updates: Partial<Room>) => void;
   textLayout?: 'overlay' | 'none';
+  textWindowVisible: boolean;
+  onToggleTextWindow: (next: boolean) => void;
 }
 
 export function StageView({ 
@@ -47,23 +50,32 @@ export function StageView({
   characters,
   onUpdateRoom,
   textLayout = 'overlay',
+  textWindowVisible,
+  onToggleTextWindow,
 }: StageViewProps) {
   const stageRootRef = useRef<HTMLDivElement>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
   const scrollContentRef = useRef<HTMLDivElement>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const bgmRef = useRef<HTMLAudioElement>(null);
+  const titleBgmRef = useRef<HTMLAudioElement>(null);
   const seRef = useRef<HTMLAudioElement>(null);
   const effectsSeRef = useRef<HTMLAudioElement>(null);
-  const roomId = room?.id || '';
-  const textWindowStorageKey = roomId ? `trpg:textWindowVisible:${roomId}` : null;
-  const [textWindowVisible, setTextWindowVisible] = useState(true);
   const [audioNeedsUnlock, setAudioNeedsUnlock] = useState(false);
   const [portraitAssets, setPortraitAssets] = useState<Asset[]>([]);
   const lastHandledMessageIdRef = useRef<string | null>(null);
   const [effectOverlay, setEffectOverlay] = useState<{ nonce: number; images: EffectImage[]; seUrl: string; durationMs: number } | null>(null);
   const [effectFading, setEffectFading] = useState(false);
   const [stageSize, setStageSize] = useState<{ width: number; height: number }>({ width: 1200, height: 675 });
+  const titleScreenConfig = useMemo(() => loadTitleScreenConfig(room), [room]);
+  const titleScreenRender = useMemo(
+    () => buildTitleScreenRenderList({ config: titleScreenConfig, characters, assets: portraitAssets }),
+    [titleScreenConfig, characters, portraitAssets]
+  );
+  const titleScreenVisible = useMemo(
+    () => !!room?.title_screen_visible && hasTitleScreenConfig(titleScreenConfig),
+    [room?.title_screen_visible, titleScreenConfig]
+  );
   const overlayTextHeightPx = (() => {
     // Keep the overlay window from covering the entire stage when the stage gets small.
     const desired = stageSize.height * 0.33;
@@ -72,17 +84,6 @@ export function StageView({
   })();
 
   // Load per-room visibility preference once room id becomes available
-  useEffect(() => {
-    if (!textWindowStorageKey) return;
-    try {
-      const raw = localStorage.getItem(textWindowStorageKey);
-      if (raw === null) return; // default: visible
-      setTextWindowVisible(raw === '1');
-    } catch {
-      // ignore
-    }
-  }, [textWindowStorageKey]);
-
   // Track stage size for relative positioning
   useEffect(() => {
     const el = stageRootRef.current;
@@ -121,6 +122,45 @@ export function StageView({
       () => setAudioNeedsUnlock(true)
     );
   }, [bgmUrl]);
+
+  // Title screen BGM playback (separate from stage BGM)
+  useEffect(() => {
+    const titleAudio = titleBgmRef.current;
+    if (!titleAudio) return;
+
+    if (!titleScreenVisible || !titleScreenRender.bgmUrl) {
+      try {
+        titleAudio.pause();
+        titleAudio.removeAttribute('src');
+        titleAudio.load();
+      } catch {
+        // ignore
+      }
+      // Resume stage BGM if title screen is hidden
+      if (!titleScreenVisible && bgmUrl && bgmRef.current) {
+        bgmRef.current.play().catch(() => setAudioNeedsUnlock(true));
+      }
+      return;
+    }
+
+    // Pause stage BGM while title BGM is active
+    if (bgmRef.current) {
+      try {
+        bgmRef.current.pause();
+      } catch {
+        // ignore
+      }
+    }
+
+    if (titleAudio.src !== titleScreenRender.bgmUrl) {
+      titleAudio.src = titleScreenRender.bgmUrl;
+    }
+    titleAudio.loop = true;
+    titleAudio.play().then(
+      () => setAudioNeedsUnlock(false),
+      () => setAudioNeedsUnlock(true)
+    );
+  }, [titleScreenVisible, titleScreenRender.bgmUrl, bgmUrl]);
 
   // SE playback (one-shot)
   useEffect(() => {
@@ -187,33 +227,6 @@ export function StageView({
     }
   };
 
-  // Toggle text window visibility (local only, overlay layout only)
-  // Note: Cmd+H is reserved by macOS ("Hide app") and usually won't reach the browser.
-  useEffect(() => {
-    if (textLayout !== 'overlay') return;
-    const handler = (e: KeyboardEvent) => {
-      if (e.key.toLowerCase() !== 'h') return;
-      const isCtrlH = e.ctrlKey && !e.shiftKey && !e.altKey && !e.metaKey;
-      const isCtrlShiftH = e.ctrlKey && e.shiftKey && !e.altKey && !e.metaKey;
-      const isCmdShiftH = e.metaKey && e.shiftKey;
-      if (!(isCtrlH || isCtrlShiftH || isCmdShiftH)) return;
-      e.preventDefault();
-      setTextWindowVisible(prev => {
-        const next = !prev;
-        if (textWindowStorageKey) {
-          try {
-            localStorage.setItem(textWindowStorageKey, next ? '1' : '0');
-          } catch {
-            // ignore
-          }
-        }
-        return next;
-      });
-    };
-    window.addEventListener('keydown', handler);
-    return () => window.removeEventListener('keydown', handler);
-  }, [textWindowStorageKey, textLayout]);
-
   // Filter messages for secret channel
   const visibleMessages = messages.filter(msg => {
     if (msg.channel === 'public') return true;
@@ -239,7 +252,7 @@ export function StageView({
 
   // Keep scroll pinned to bottom even when the viewport/content size changes
   useEffect(() => {
-    if (textLayout !== 'overlay' || !textWindowVisible || showSecretOverlay) return;
+    if (textLayout !== 'overlay' || !textWindowVisible || showSecretOverlay || titleScreenVisible) return;
     const root = scrollRef.current;
     const viewport = (root?.querySelector?.('[data-radix-scroll-area-viewport]') ?? null) as HTMLElement | null;
     const content = scrollContentRef.current;
@@ -260,7 +273,7 @@ export function StageView({
       if (raf) cancelAnimationFrame(raf);
       ro.disconnect();
     };
-  }, [scrollToBottom, showSecretOverlay, textLayout, textWindowVisible]);
+  }, [scrollToBottom, showSecretOverlay, textLayout, textWindowVisible, titleScreenVisible]);
 
   // Always keep the newest message visible (including on first load/join)
   const lastVisibleCountRef = useRef(0);
@@ -390,6 +403,7 @@ export function StageView({
   return (
     <div ref={stageRootRef} className="relative h-full w-full overflow-hidden rounded-t-lg rounded-b-none bg-cthulhu-deep">
       <audio ref={bgmRef} className="hidden" />
+      <audio ref={titleBgmRef} className="hidden" />
       <audio ref={seRef} className="hidden" />
       <audio ref={effectsSeRef} className="hidden" />
       {/* Background Layer */}
@@ -481,6 +495,43 @@ export function StageView({
         </div>
       )}
 
+      {/* Title Screen Overlay */}
+      {titleScreenVisible && titleScreenRender.images.length > 0 && (
+        <div className="absolute inset-0 z-20 pointer-events-none">
+          <div
+            className="absolute left-0 top-0"
+            style={{
+              width: EFFECT_BASE_WIDTH,
+              height: EFFECT_BASE_HEIGHT,
+              transform: `scale(${stageSize.width / EFFECT_BASE_WIDTH}, ${stageSize.height / EFFECT_BASE_HEIGHT})`,
+              transformOrigin: 'top left',
+            }}
+          >
+            {titleScreenRender.images.map((item) => (
+              <div
+                key={item.id}
+                className="absolute"
+                style={{
+                  left: EFFECT_BASE_WIDTH / 2 + item.x * EFFECT_BASE_WIDTH,
+                  top: EFFECT_BASE_HEIGHT / 2 + item.y * EFFECT_BASE_HEIGHT,
+                  transform: `translate(-50%, -50%) rotate(${item.rotate}deg) scale(${item.scale})`,
+                  transformOrigin: 'center',
+                  opacity: item.opacity,
+                  zIndex: item.z,
+                }}
+              >
+                <img
+                  src={item.url}
+                  alt={item.label}
+                  className="object-contain"
+                  style={{ maxWidth: EFFECT_BASE_WIDTH, maxHeight: EFFECT_BASE_HEIGHT }}
+                />
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
       {/* Secret Overlay */}
       {showSecretOverlay && (
         <div className="secret-overlay">
@@ -497,13 +548,13 @@ export function StageView({
       )}
 
       {/* Local-only toggle button when hidden (overlay layout only) */}
-      {textLayout === 'overlay' && !textWindowVisible && (
+      {textLayout === 'overlay' && !textWindowVisible && !titleScreenVisible && (
         <div className="absolute bottom-3 right-3 z-30">
           <Button
             variant="secondary"
             size="sm"
-            onClick={() => setTextWindowVisible(true)}
-            title="Ctrl+H / Ctrl+Shift+H (または Cmd+Shift+H) で表示/非表示"
+            onClick={() => onToggleTextWindow(true)}
+            title="Ctrl/Cmd+Shift+Y で表示/非表示"
           >
             テキスト表示
           </Button>
@@ -548,6 +599,7 @@ export function StageView({
         </ScrollArea>
         </div>
       )}
+
     </div>
   );
 }

@@ -8,6 +8,8 @@ export interface Room {
   current_background_url?: string;
   theme?: RoomTheme;
   effects?: any;
+  title_screen?: any;
+  title_screen_visible?: boolean;
   house_rules?: string;
   created_at: string;
 }

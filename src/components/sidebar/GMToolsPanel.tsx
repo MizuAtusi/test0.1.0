@@ -18,9 +18,11 @@ import { useToast } from '@/hooks/use-toast';
 import { ThemeSettings } from './ThemeSettings';
 import { EffectsEditorDialog } from './EffectsEditorDialog';
 import { OtherEffectsEditorDialog } from './OtherEffectsEditorDialog';
+import { TitleScreenEditorDialog } from './TitleScreenEditorDialog';
 import { getDisplayText } from '@/lib/expressionTag';
 import { getPortraitTransformRel } from '@/lib/portraitTransformsShared';
 import { loadEffectsConfig, normalizeEffectsConfig } from '@/lib/effects';
+import { loadTitleScreenConfig, hasTitleScreenConfig } from '@/lib/titleScreen';
 import type { Participant, Character, StageState, Macro, Room, Asset, ActivePortrait, RoomPublicSettings, RoomJoinRequest, Profile } from '@/types/trpg';
 import { useAuth } from '@/hooks/useAuth';
 
@@ -328,6 +330,7 @@ export function GMToolsPanel({
   const [otherEffectsCreateNonce, setOtherEffectsCreateNonce] = useState(0);
   const [otherEffectsActiveId, setOtherEffectsActiveId] = useState<string | null>(null);
   const [effectsVersion, setEffectsVersion] = useState(0);
+  const [titleScreenEditorOpen, setTitleScreenEditorOpen] = useState(false);
   const [bgAddOpen, setBgAddOpen] = useState(false);
   const [bgmAddOpen, setBgmAddOpen] = useState(false);
   const [seAddOpen, setSeAddOpen] = useState(false);
@@ -1486,6 +1489,9 @@ export function GMToolsPanel({
   const otherEffectsTriggers = useMemo(() => {
     return normalizeEffectsConfig(loadEffectsConfig(room)).other?.triggers || [];
   }, [room?.effects, room?.id, effectsVersion]);
+  const titleScreenConfig = useMemo(() => loadTitleScreenConfig(room), [room?.title_screen, room?.id]);
+  const hasTitleScreen = hasTitleScreenConfig(titleScreenConfig);
+  const titleScreenVisible = !!room?.title_screen_visible;
 
   const buildPublicSnapshot = () => {
     return {
@@ -1796,6 +1802,52 @@ export function GMToolsPanel({
             <Palette className="w-4 h-4 mr-2" />
             テーマ設定
           </Button>
+
+          <Collapsible>
+            <CollapsibleTrigger asChild>
+              <Button variant="ghost" className="w-full justify-start">
+                <Image className="w-4 h-4 mr-2" />
+                タイトル画面
+              </Button>
+            </CollapsibleTrigger>
+            <CollapsibleContent className="pt-2 space-y-2">
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                className="w-full"
+                onClick={() => setTitleScreenEditorOpen(true)}
+              >
+                {hasTitleScreen ? 'タイトル画面を編集' : 'タイトル画面を作成'}
+              </Button>
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                className="w-full"
+                disabled={!hasTitleScreen}
+                onClick={() => {
+                  onUpdateRoom({ title_screen_visible: !titleScreenVisible } as any);
+                }}
+              >
+                {titleScreenVisible ? 'タイトル画面を非表示' : 'タイトル画面を表示'}
+              </Button>
+              {hasTitleScreen && (
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  className="w-full"
+                  onClick={() => {
+                    onUpdateRoom({ title_screen: {}, title_screen_visible: false } as any);
+                  }}
+                >
+                  <Trash2 className="w-4 h-4 mr-2" />
+                  タイトル画面を削除
+                </Button>
+              )}
+            </CollapsibleContent>
+          </Collapsible>
 
           <Collapsible>
             <CollapsibleTrigger asChild>
@@ -2351,6 +2403,17 @@ export function GMToolsPanel({
         onOpenChange={setShowThemeSettings}
         room={room}
         onUpdateRoom={onUpdateRoom}
+      />
+
+      <TitleScreenEditorDialog
+        open={titleScreenEditorOpen}
+        onOpenChange={setTitleScreenEditorOpen}
+        room={room}
+        characters={characters}
+        assets={assets}
+        onSaved={(next) => {
+          onUpdateRoom({ title_screen: next } as any);
+        }}
       />
 
       <EffectsEditorDialog

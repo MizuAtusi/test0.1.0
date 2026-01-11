@@ -30,6 +30,7 @@ const INPUT_BAR_HEIGHT_PX = 64;
 const STAGE_AREA_PADDING_Y_PX = 16 + 8; // pt-4 + pb-2 (approx)
 const STAGE_STACKED_ASPECT_THRESHOLD = 0.66; // availableStageHeight / stageColumnWidth
 const ROOM_LAST_SEEN_STORAGE_KEY = 'trpg:lastSeenRoomMessages';
+const TEXT_WINDOW_VISIBLE_PREFIX = 'trpg:textWindowVisible:';
 
 export default function RoomPage() {
   const { roomId } = useParams<{ roomId: string }>();
@@ -93,6 +94,8 @@ export default function RoomPage() {
     refreshCharacters,
   } = useRoom(roomId || null);
   const { user } = useAuth();
+  const textWindowStorageKey = roomId ? `${TEXT_WINDOW_VISIBLE_PREFIX}${roomId}` : null;
+  const [textWindowVisible, setTextWindowVisible] = useState(true);
 
   useEffect(() => {
     if (!roomId) return;
@@ -111,6 +114,48 @@ export default function RoomPage() {
       // ignore
     }
   }, [roomId, messages]);
+
+  useEffect(() => {
+    if (!textWindowStorageKey) return;
+    try {
+      const raw = localStorage.getItem(textWindowStorageKey);
+      if (raw === null) return;
+      setTextWindowVisible(raw === '1');
+    } catch {
+      // ignore
+    }
+  }, [textWindowStorageKey]);
+
+  useEffect(() => {
+    if (!textWindowStorageKey) return;
+    try {
+      localStorage.setItem(textWindowStorageKey, textWindowVisible ? '1' : '0');
+    } catch {
+      // ignore
+    }
+  }, [textWindowStorageKey, textWindowVisible]);
+
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      if (e.key.toLowerCase() !== 'y') return;
+      const isCtrlShiftY = e.ctrlKey && e.shiftKey && !e.altKey && !e.metaKey;
+      const isCmdShiftY = e.metaKey && e.shiftKey;
+      if (!(isCtrlShiftY || isCmdShiftY)) return;
+      e.preventDefault();
+      setTextWindowVisible((prev) => !prev);
+    };
+    window.addEventListener('keydown', handler);
+    return () => window.removeEventListener('keydown', handler);
+  }, []);
+
+  const prevTitleVisibleRef = useRef(false);
+  useEffect(() => {
+    const visible = !!room?.title_screen_visible;
+    if (visible && !prevTitleVisibleRef.current) {
+      setTextWindowVisible(false);
+    }
+    prevTitleVisibleRef.current = visible;
+  }, [room?.title_screen_visible]);
 
   const hasSidePanel = !isReadOnlyViewer;
   const activeParticipantCount = participants.filter((p) => p.role === 'PL' || p.role === 'GM').length;
@@ -750,23 +795,27 @@ export default function RoomPage() {
                     isGM={isGM}
                     characters={characters}
                     onUpdateRoom={handleUpdateRoom}
+                    textWindowVisible={textWindowVisible}
+                    onToggleTextWindow={setTextWindowVisible}
                   />
                 </StageFrame>
               </div>
 
               <div className="flex-1 min-h-0">
-                <StageTextPanel
-                  messages={messages.filter(m => m.channel !== 'chat')}
-                  stageState={stageState}
-                  room={room}
-                  participants={participants}
-                  participant={participant}
-                  isSecret={stageState?.is_secret || false}
-                  canViewSecret={canViewSecret || false}
-                  isGM={isGM}
-                  characters={characters}
-                  onUpdateRoom={handleUpdateRoom}
-                />
+                {textWindowVisible && (
+                  <StageTextPanel
+                    messages={messages.filter(m => m.channel !== 'chat')}
+                    stageState={stageState}
+                    room={room}
+                    participants={participants}
+                    participant={participant}
+                    isSecret={stageState?.is_secret || false}
+                    canViewSecret={canViewSecret || false}
+                    isGM={isGM}
+                    characters={characters}
+                    onUpdateRoom={handleUpdateRoom}
+                  />
+                )}
               </div>
             </div>
           ) : (
@@ -785,6 +834,8 @@ export default function RoomPage() {
                   isGM={isGM}
                   characters={characters}
                   onUpdateRoom={handleUpdateRoom}
+                  textWindowVisible={textWindowVisible}
+                  onToggleTextWindow={setTextWindowVisible}
                 />
               </StageFrame>
             </div>
