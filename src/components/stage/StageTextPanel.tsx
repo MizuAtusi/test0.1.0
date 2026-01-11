@@ -4,6 +4,7 @@ import type { CSSProperties } from 'react';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { StageToolbar } from './StageToolbar';
 import { MessageBubble } from './MessageBubble';
+import { getDisplayText } from '@/lib/expressionTag';
 
 export function StageTextPanel(props: {
   messages: Message[];
@@ -32,6 +33,14 @@ export function StageTextPanel(props: {
 
   const showSecretOverlay = isSecret && !canViewSecret;
   const visibleMessages = messages.filter((msg) => {
+    if (
+      msg.type === 'system'
+      && /\[(bg|portrait|bgm|se|speaker|npc_disclosure|effects_config|effects_other|portrait_transform):[^\]]+\]/i.test(msg.text)
+    ) {
+      return false;
+    }
+    const displayText = getDisplayText(msg.text);
+    if (!displayText && msg.type !== 'dice') return false;
     if (msg.channel === 'public') return true;
     if (msg.channel === 'secret') {
       if (canViewSecret) return true;
