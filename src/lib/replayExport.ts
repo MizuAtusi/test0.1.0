@@ -305,10 +305,11 @@ function generateReplayHtml(roomName: string, replayJsonString: string): string 
     </div>
     <div id="text-window">
       <div id="controls">
-        <button id="btn-auto" title="オート再生">▶</button>
-        <button id="btn-log" title="バックログ">📜</button>
-        <button id="btn-save" title="セーブ">💾</button>
-        <button id="btn-load" title="ロード">📂</button>
+        <button id="btn-auto">オート</button>
+        <button id="btn-log">ログ</button>
+        <button id="btn-save">セーブ</button>
+        <button id="btn-load">ロード</button>
+        <button id="btn-title">タイトル</button>
       </div>
       <div id="speaker-name"></div>
       <div id="message-text"></div>
@@ -334,6 +335,16 @@ function generateReplayHtml(roomName: string, replayJsonString: string): string 
       <h2>セーブ</h2>
       <div id="save-content"></div>
       <button id="close-save">閉じる</button>
+    </div>
+  </div>
+  <div id="title-modal" class="modal hidden">
+    <div class="modal-content">
+      <h2>タイトル</h2>
+      <div class="text-muted">タイトル画面に戻りますか？</div>
+      <div class="modal-actions">
+        <button id="confirm-title">戻る</button>
+        <button id="close-title">閉じる</button>
+      </div>
     </div>
   </div>
   <script id="replay-data" type="application/json">${safeJson}</script>
@@ -485,10 +496,12 @@ body {
   background: rgba(255,255,255,0.1);
   border: 1px solid rgba(255,255,255,0.2);
   color: #fff;
-  padding: 8px 12px;
-  border-radius: 4px;
+  padding: 6px 12px;
+  border-radius: 999px;
   cursor: pointer;
   transition: background 0.2s;
+  font-size: 0.9em;
+  font-weight: 700;
 }
 
 #controls button:hover {
@@ -497,6 +510,13 @@ body {
 
 #controls button.active {
   background: rgba(138,43,226,0.5);
+}
+
+.modal-actions {
+  display: flex;
+  justify-content: center;
+  gap: 12px;
+  margin-top: 16px;
 }
 
 #speaker-name {
@@ -1478,6 +1498,10 @@ function generateReplayJs(): string {
   document.getElementById('btn-log').addEventListener('click', showLog);
   document.getElementById('btn-save').addEventListener('click', showSaveModal);
   document.getElementById('btn-load').addEventListener('click', function() { showLoadModal(false); });
+  document.getElementById('btn-title').addEventListener('click', function() {
+    const modal = document.getElementById('title-modal');
+    if (modal) modal.classList.remove('hidden');
+  });
   document.getElementById('close-log').addEventListener('click', function() {
     document.getElementById('log-modal').classList.add('hidden');
   });
@@ -1490,6 +1514,16 @@ function generateReplayJs(): string {
   });
   document.getElementById('close-save').addEventListener('click', function() {
     document.getElementById('save-modal').classList.add('hidden');
+  });
+  document.getElementById('close-title').addEventListener('click', function() {
+    document.getElementById('title-modal').classList.add('hidden');
+  });
+  document.getElementById('confirm-title').addEventListener('click', function() {
+    document.getElementById('title-modal').classList.add('hidden');
+    stopAuto();
+    titleScreenActive = true;
+    renderTitleScreenImages();
+    setTitleScreenVisible(true);
   });
   document.getElementById('btn-title-start').addEventListener('click', function() {
     titleScreenActive = false;
