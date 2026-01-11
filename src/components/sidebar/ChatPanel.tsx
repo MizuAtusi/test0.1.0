@@ -207,6 +207,18 @@ export function ChatPanel({ roomId, messages, participant, onSendMessage }: Chat
     ? threads.find((t) => t.id === activeThreadId)?.color ?? '#7c3aed'
     : '#7c3aed';
 
+  const markThreadSeen = (threadId: string | null) => {
+    const key = threadId || 'public';
+    const lastMessage = threadId
+      ? privateMessages.filter((m) => m.thread_id === threadId).slice(-1)[0]
+      : publicMessages[publicMessages.length - 1];
+    const ts = lastMessage ? new Date(lastMessage.created_at).getTime() : Date.now();
+    setLastSeenByThread((prev) => ({
+      ...prev,
+      [key]: Math.max(prev[key] ?? 0, ts),
+    }));
+  };
+
   return (
     <div className="h-full flex">
       <div className="w-12 border-r border-sidebar-border flex flex-col items-center py-2 gap-2 bg-sidebar overflow-visible">
@@ -220,7 +232,10 @@ export function ChatPanel({ roomId, messages, participant, onSendMessage }: Chat
               ? 'bg-secondary/70 border-sidebar-border rounded-l-md rounded-r-none -mr-px'
               : 'bg-transparent rounded-md'
           }`}
-          onClick={() => setActiveThreadId(null)}
+          onClick={() => {
+            setActiveThreadId(null);
+            markThreadSeen(null);
+          }}
           aria-label="全体チャット"
         >
           <span
@@ -241,7 +256,10 @@ export function ChatPanel({ roomId, messages, participant, onSendMessage }: Chat
                   ? 'bg-secondary/70 border-sidebar-border rounded-l-md rounded-r-none -mr-px'
                   : 'bg-transparent rounded-md'
               }`}
-              onClick={() => setActiveThreadId(thread.id)}
+              onClick={() => {
+                setActiveThreadId(thread.id);
+                markThreadSeen(thread.id);
+              }}
               aria-label={thread.title}
             >
               <span
