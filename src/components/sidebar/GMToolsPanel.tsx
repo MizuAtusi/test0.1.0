@@ -2199,6 +2199,7 @@ export function GMToolsPanel({
                   定型文を追加
                 </Button>
               </div>
+          </div>
 
           {/* Participants List */}
           <div className="space-y-2">
