@@ -282,141 +282,14 @@ export function TitleScreenEditorDialog(props: {
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-4xl max-h-[85vh] flex flex-col overflow-y-auto">
+      <DialogContent className="max-w-6xl h-[90vh] flex flex-col">
         <DialogHeader>
-          <DialogTitle>タイトル画面を編集</DialogTitle>
+          <DialogTitle>タイトル画面</DialogTitle>
         </DialogHeader>
 
-        <div className="space-y-4">
-          <div className="grid gap-4 lg:grid-cols-[260px,1fr]">
-            <div className="space-y-3">
-              <div className="space-y-2">
-                <Label className="text-xs text-muted-foreground">画像一覧</Label>
-                <div className="flex gap-2">
-                  <Button
-                    type="button"
-                    variant="outline"
-                    size="sm"
-                    className="flex-1"
-                    disabled={uploading}
-                    onClick={() => imgFileRef.current?.click()}
-                  >
-                    <Upload className="w-4 h-4 mr-2" />
-                    画像を追加
-                  </Button>
-                  <input
-                    ref={imgFileRef}
-                    type="file"
-                    accept="image/*"
-                    className="hidden"
-                    onChange={(e) => {
-                      const file = e.target.files?.[0];
-                      if (file) void handleUploadImage(file);
-                      e.currentTarget.value = '';
-                    }}
-                  />
-                </div>
-                <div className="max-h-52 overflow-y-auto space-y-2 rounded-md border border-border/40 p-2">
-                  {(config.images || []).length === 0 ? (
-                    <div className="text-xs text-muted-foreground">画像がありません</div>
-                  ) : (
-                    (config.images || []).map((img) => (
-                      <button
-                        key={img.id}
-                        type="button"
-                        className={`w-full flex items-center gap-2 rounded-md border px-2 py-1 text-left text-sm ${
-                          selectedTarget?.kind === 'image' && selectedTarget.imageId === img.id
-                            ? 'border-primary text-primary'
-                            : 'border-border/40'
-                        }`}
-                        onClick={() => setSelectedTarget({ kind: 'image', imageId: img.id })}
-                      >
-                        <div className="h-8 w-8 rounded bg-cover bg-center border border-border/40" style={{ backgroundImage: `url(${img.url})` }} />
-                        <div className="flex-1 truncate">{img.label || '画像'}</div>
-                        <Button
-                          type="button"
-                          variant="ghost"
-                          size="icon"
-                          className="h-6 w-6"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            deleteImage(img.id);
-                          }}
-                        >
-                          <Trash2 className="h-3 w-3" />
-                        </Button>
-                      </button>
-                    ))
-                  )}
-                </div>
-              </div>
-
-              <div className="space-y-2">
-                <Label className="text-xs text-muted-foreground">PC画像（PCごと）</Label>
-                {pcCharacters.length === 0 ? (
-                  <div className="text-xs text-muted-foreground">PCがありません</div>
-                ) : (
-                  <div className="space-y-2">
-                    {pcCharacters.map((pc) => {
-                      const eff = (config.pc || {})[pc.id] || { ...DEFAULT_PC };
-                      const options = portraitOptionsByPc.get(pc.id) || [];
-                      return (
-                        <div
-                          key={pc.id}
-                          className={`rounded-md border px-2 py-2 text-sm ${
-                            selectedTarget?.kind === 'pc' && selectedTarget.characterId === pc.id
-                              ? 'border-primary text-primary'
-                              : 'border-border/40'
-                          }`}
-                        >
-                          <div className="flex items-center justify-between">
-                            <button
-                              type="button"
-                              className="flex-1 text-left truncate"
-                              onClick={() => setSelectedTarget({ kind: 'pc', characterId: pc.id })}
-                            >
-                              {pc.name}
-                            </button>
-                            {eff.tag && (
-                              <Button
-                                type="button"
-                                variant="ghost"
-                                size="icon"
-                                className="h-6 w-6"
-                                onClick={() => updatePc(pc.id, { tag: '' })}
-                              >
-                                <Trash2 className="h-3 w-3" />
-                              </Button>
-                            )}
-                          </div>
-                          <div className="mt-2">
-                            <Select
-                              value={eff.tag || 'none'}
-                              onValueChange={(v) => {
-                                updatePc(pc.id, { tag: v === 'none' ? '' : v });
-                                setSelectedTarget({ kind: 'pc', characterId: pc.id });
-                              }}
-                            >
-                              <SelectTrigger className="h-7 text-xs">
-                                <SelectValue placeholder="立ち絵タグを選択" />
-                              </SelectTrigger>
-                              <SelectContent>
-                                <SelectItem value="none">表示しない</SelectItem>
-                                {options.map((opt) => (
-                                  <SelectItem key={opt.key} value={opt.key}>
-                                    {opt.label}
-                                  </SelectItem>
-                                ))}
-                              </SelectContent>
-                            </Select>
-                          </div>
-                        </div>
-                      );
-                    })}
-                  </div>
-                )}
-              </div>
-
+        <div className="flex-1 min-h-0 overflow-auto">
+          <div className="grid grid-cols-6 gap-4 min-h-0">
+            <div className="col-span-6 space-y-3 min-h-0 flex flex-col">
               <div className="space-y-2">
                 <Label className="text-xs text-muted-foreground">タイトル画面BGM</Label>
                 <Select
@@ -446,7 +319,6 @@ export function TitleScreenEditorDialog(props: {
                 <Button
                   type="button"
                   variant="outline"
-                  size="sm"
                   className="w-full"
                   disabled={uploading}
                   onClick={() => bgmFileRef.current?.click()}
@@ -466,14 +338,247 @@ export function TitleScreenEditorDialog(props: {
                   }}
                 />
               </div>
+
+              <div className="grid gap-3 md:grid-cols-2">
+                <div className="space-y-2">
+                  <Label className="text-xs text-muted-foreground">画像一覧</Label>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    className="w-full"
+                    disabled={uploading}
+                    onClick={() => imgFileRef.current?.click()}
+                  >
+                    <Upload className="w-4 h-4 mr-2" />
+                    画像を追加
+                  </Button>
+                  <input
+                    ref={imgFileRef}
+                    type="file"
+                    accept="image/*"
+                    className="hidden"
+                    onChange={(e) => {
+                      const file = e.target.files?.[0];
+                      if (file) void handleUploadImage(file);
+                      e.currentTarget.value = '';
+                    }}
+                  />
+                  <div className="max-h-56 overflow-y-auto space-y-2 rounded border border-border p-2">
+                    {(config.images || []).length === 0 ? (
+                      <div className="text-xs text-muted-foreground">画像がありません</div>
+                    ) : (
+                      (config.images || []).map((img) => (
+                        <button
+                          key={img.id}
+                          type="button"
+                          className={`w-full flex items-center gap-2 rounded-md border px-2 py-1 text-left text-sm ${
+                            selectedTarget?.kind === 'image' && selectedTarget.imageId === img.id
+                              ? 'border-primary text-primary'
+                              : 'border-border/40'
+                          }`}
+                          onClick={() => setSelectedTarget({ kind: 'image', imageId: img.id })}
+                        >
+                          <div className="h-8 w-8 rounded bg-cover bg-center border border-border/40" style={{ backgroundImage: `url(${img.url})` }} />
+                          <div className="flex-1 truncate">{img.label || '画像'}</div>
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            size="icon"
+                            className="h-6 w-6"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              deleteImage(img.id);
+                            }}
+                          >
+                            <Trash2 className="h-3 w-3" />
+                          </Button>
+                        </button>
+                      ))
+                    )}
+                  </div>
+                </div>
+
+                <div className="space-y-2">
+                  <Label className="text-xs text-muted-foreground">PC画像（複数表示可）</Label>
+                  {pcCharacters.length === 0 ? (
+                    <div className="text-xs text-muted-foreground">PCがありません</div>
+                  ) : (
+                    <div className="space-y-2 max-h-56 overflow-y-auto">
+                      {pcCharacters.map((pc) => {
+                        const eff = (config.pc || {})[pc.id] || { ...DEFAULT_PC };
+                        const options = portraitOptionsByPc.get(pc.id) || [];
+                        const isEditing = selectedTarget?.kind === 'pc' && selectedTarget.characterId === pc.id;
+                        return (
+                          <div
+                            key={pc.id}
+                            className={`rounded-md border px-2 py-2 text-sm flex items-center gap-2 ${
+                              isEditing ? 'border-primary text-primary' : 'border-border/40'
+                            }`}
+                          >
+                            <button
+                              type="button"
+                              className="text-sm w-24 truncate text-left"
+                              onClick={() => setSelectedTarget({ kind: 'pc', characterId: pc.id })}
+                            >
+                              {pc.name}
+                            </button>
+                            <Select
+                              value={eff.tag || 'none'}
+                              onValueChange={(v) => {
+                                updatePc(pc.id, { tag: v === 'none' ? '' : v });
+                                setSelectedTarget({ kind: 'pc', characterId: pc.id });
+                              }}
+                            >
+                              <SelectTrigger className="h-8 text-xs flex-1">
+                                <SelectValue placeholder="立ち絵タグを選択" />
+                              </SelectTrigger>
+                              <SelectContent>
+                                <SelectItem value="none">（表示しない）</SelectItem>
+                                {options.map((opt) => (
+                                  <SelectItem key={opt.key} value={opt.key}>
+                                    {opt.label}
+                                  </SelectItem>
+                                ))}
+                              </SelectContent>
+                            </Select>
+                            <Button
+                              type="button"
+                              size="sm"
+                              variant="outline"
+                              onClick={() => setSelectedTarget({ kind: 'pc', characterId: pc.id })}
+                              disabled={!eff.tag}
+                            >
+                              調整
+                            </Button>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              <div className="rounded border border-border p-3 space-y-3">
+                <Label className="text-xs text-muted-foreground">選択中の調整</Label>
+                {selectedImage ? (
+                  <div className="space-y-3">
+                    <div className="flex items-center gap-2">
+                      <Label className="text-xs w-12">名前</Label>
+                      <Input
+                        value={selectedImage.label}
+                        onChange={(e) => updateImage(selectedImage.id, { label: e.target.value })}
+                        className="h-8"
+                      />
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="icon"
+                        className="text-destructive"
+                        onClick={() => deleteImage(selectedImage.id)}
+                        title="削除"
+                      >
+                        <Trash2 className="w-4 h-4" />
+                      </Button>
+                    </div>
+
+                    <div className="grid grid-cols-3 gap-3 text-xs">
+                      <div className="space-y-1">
+                        <Label className="text-xs text-muted-foreground">拡大</Label>
+                        <Slider
+                          min={0.2}
+                          max={3}
+                          step={0.01}
+                          value={[selectedImage.scale]}
+                          onValueChange={(v) => updateImage(selectedImage.id, { scale: v[0] })}
+                        />
+                      </div>
+                      <div className="space-y-1">
+                        <Label className="text-xs text-muted-foreground">回転</Label>
+                        <Slider
+                          min={-180}
+                          max={180}
+                          step={1}
+                          value={[selectedImage.rotate]}
+                          onValueChange={(v) => updateImage(selectedImage.id, { rotate: v[0] })}
+                        />
+                      </div>
+                      <div className="space-y-1">
+                        <Label className="text-xs text-muted-foreground">透明</Label>
+                        <Slider
+                          min={0}
+                          max={1}
+                          step={0.01}
+                          value={[selectedImage.opacity]}
+                          onValueChange={(v) => updateImage(selectedImage.id, { opacity: v[0] })}
+                        />
+                      </div>
+                    </div>
+                  </div>
+                ) : selectedPc && selectedPcEffect ? (
+                  <div className="space-y-3">
+                    <div className="text-sm font-medium">{selectedPc.name}</div>
+                    <Select
+                      value={selectedPcEffect.tag || 'none'}
+                      onValueChange={(v) => updatePc(selectedPc.id, { tag: v === 'none' ? '' : v })}
+                    >
+                      <SelectTrigger className="h-8 text-xs">
+                        <SelectValue placeholder="立ち絵タグを選択" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="none">（表示しない）</SelectItem>
+                        {selectedPcOptions.map((opt) => (
+                          <SelectItem key={opt.key} value={opt.key}>
+                            {opt.label}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                    <div className="grid grid-cols-3 gap-3 text-xs">
+                      <div className="space-y-1">
+                        <Label className="text-xs text-muted-foreground">拡大</Label>
+                        <Slider
+                          min={0.2}
+                          max={3}
+                          step={0.01}
+                          value={[selectedPcEffect.scale]}
+                          onValueChange={(v) => updatePc(selectedPc.id, { scale: v[0] })}
+                        />
+                      </div>
+                      <div className="space-y-1">
+                        <Label className="text-xs text-muted-foreground">回転</Label>
+                        <Slider
+                          min={-180}
+                          max={180}
+                          step={1}
+                          value={[selectedPcEffect.rotate]}
+                          onValueChange={(v) => updatePc(selectedPc.id, { rotate: v[0] })}
+                        />
+                      </div>
+                      <div className="space-y-1">
+                        <Label className="text-xs text-muted-foreground">透明</Label>
+                        <Slider
+                          min={0}
+                          max={1}
+                          step={0.01}
+                          value={[selectedPcEffect.opacity]}
+                          onValueChange={(v) => updatePc(selectedPc.id, { opacity: v[0] })}
+                        />
+                      </div>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="text-xs text-muted-foreground">画像またはPCを選択してください。</div>
+                )}
+              </div>
             </div>
 
-            <div className="space-y-3">
-              <Label className="text-xs text-muted-foreground">プレビュー</Label>
-              <div ref={previewRef} className="w-full">
-                <StageFrame className="w-full" ratio={16 / 9}>
+            <div className="col-span-6 min-h-0 flex flex-col">
+              <div className="text-xs text-muted-foreground mt-1 mb-2">プレビュー（ステージ比率 / ドラッグで移動 / クリックで選択）</div>
+              <div className="w-full h-[520px] max-h-[60vh] min-h-[360px]">
+                <StageFrame ratio={16 / 9} className="w-full h-full">
                   <div
-                    className="relative h-full w-full bg-muted/10"
+                    ref={previewRef}
+                    className="absolute inset-0 rounded-lg border border-border bg-gradient-to-b from-background/70 to-background/30 overflow-hidden"
                     onPointerMove={onPointerMove}
                     onPointerUp={onPointerUp}
                     onPointerLeave={onPointerUp}
@@ -487,133 +592,46 @@ export function TitleScreenEditorDialog(props: {
                         transformOrigin: 'top left',
                       }}
                     >
-                      {renderItems.map((item) => (
-                        <div
-                          key={item.id}
-                          className={`absolute ${selectedTarget && ((selectedTarget.kind === 'image' && item.kind === 'image' && selectedTarget.imageId === item.id) || (selectedTarget.kind === 'pc' && item.kind === 'pc' && selectedTarget.characterId === item.characterId)) ? 'ring-2 ring-primary' : ''}`}
-                          style={{
-                            left: EFFECT_BASE_WIDTH / 2 + item.x * EFFECT_BASE_WIDTH,
-                            top: EFFECT_BASE_HEIGHT / 2 + item.y * EFFECT_BASE_HEIGHT,
-                            transform: `translate(-50%, -50%) rotate(${item.rotate}deg) scale(${item.scale})`,
-                            transformOrigin: 'center',
-                            opacity: item.opacity,
-                            zIndex: item.z,
-                          }}
-                          onPointerDown={(e) =>
-                            onPointerDown(e, {
-                              kind: item.kind,
-                              id: item.id,
-                              characterId: item.characterId,
-                              x: item.x,
-                              y: item.y,
-                            })
-                          }
-                        >
-                          <img
-                            src={item.url}
-                            alt={item.label}
-                            className="object-contain"
-                            style={{ maxWidth: EFFECT_BASE_WIDTH, maxHeight: EFFECT_BASE_HEIGHT }}
-                          />
-                        </div>
-                      ))}
+                      {renderItems.map((item) => {
+                        const isSelected =
+                          (selectedTarget?.kind === 'image' && item.kind === 'image' && selectedTarget.imageId === item.id) ||
+                          (selectedTarget?.kind === 'pc' && item.kind === 'pc' && selectedTarget.characterId === item.characterId);
+                        return (
+                          <div
+                            key={item.id}
+                            className={`absolute ${isSelected ? 'ring-2 ring-primary' : ''}`}
+                            style={{
+                              left: EFFECT_BASE_WIDTH / 2 + item.x * EFFECT_BASE_WIDTH,
+                              top: EFFECT_BASE_HEIGHT / 2 + item.y * EFFECT_BASE_HEIGHT,
+                              transform: `translate(-50%, -50%) rotate(${item.rotate}deg) scale(${item.scale})`,
+                              transformOrigin: 'center',
+                              opacity: item.opacity,
+                              zIndex: item.z,
+                              cursor: 'grab',
+                              userSelect: 'none',
+                            }}
+                            onPointerDown={(e) =>
+                              onPointerDown(e, {
+                                kind: item.kind,
+                                id: item.id,
+                                characterId: item.characterId,
+                                x: item.x,
+                                y: item.y,
+                              })
+                            }
+                          >
+                            <img
+                              src={item.url}
+                              alt={item.label}
+                              className="object-contain pointer-events-none select-none"
+                              style={{ maxWidth: EFFECT_BASE_WIDTH, maxHeight: EFFECT_BASE_HEIGHT }}
+                            />
+                          </div>
+                        );
+                      })}
                     </div>
                   </div>
                 </StageFrame>
-              </div>
-
-              <div className="grid gap-4 md:grid-cols-2">
-                {selectedImage && (
-                  <div className="space-y-3">
-                    <Label className="text-xs text-muted-foreground">選択中の画像</Label>
-                    <Input
-                      value={selectedImage.label}
-                      onChange={(e) => updateImage(selectedImage.id, { label: e.target.value })}
-                    />
-                    <div className="space-y-2">
-                      <Label className="text-xs text-muted-foreground">拡大</Label>
-                      <Slider
-                        min={0.2}
-                        max={3}
-                        step={0.01}
-                        value={[selectedImage.scale]}
-                        onValueChange={(v) => updateImage(selectedImage.id, { scale: v[0] })}
-                      />
-                    </div>
-                    <div className="space-y-2">
-                      <Label className="text-xs text-muted-foreground">回転</Label>
-                      <Slider
-                        min={-180}
-                        max={180}
-                        step={1}
-                        value={[selectedImage.rotate]}
-                        onValueChange={(v) => updateImage(selectedImage.id, { rotate: v[0] })}
-                      />
-                    </div>
-                    <div className="space-y-2">
-                      <Label className="text-xs text-muted-foreground">透明</Label>
-                      <Slider
-                        min={0}
-                        max={1}
-                        step={0.01}
-                        value={[selectedImage.opacity]}
-                        onValueChange={(v) => updateImage(selectedImage.id, { opacity: v[0] })}
-                      />
-                    </div>
-                  </div>
-                )}
-
-                {selectedPc && selectedPcEffect && (
-                  <div className="space-y-3">
-                    <Label className="text-xs text-muted-foreground">選択中のPC</Label>
-                    <Select
-                      value={selectedPcEffect.tag || 'none'}
-                      onValueChange={(v) => updatePc(selectedPc.id, { tag: v === 'none' ? '' : v })}
-                    >
-                      <SelectTrigger className="h-8 text-xs">
-                        <SelectValue placeholder="立ち絵タグを選択" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="none">表示しない</SelectItem>
-                        {selectedPcOptions.map((opt) => (
-                          <SelectItem key={opt.key} value={opt.key}>
-                            {opt.label}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                    <div className="space-y-2">
-                      <Label className="text-xs text-muted-foreground">拡大</Label>
-                      <Slider
-                        min={0.2}
-                        max={3}
-                        step={0.01}
-                        value={[selectedPcEffect.scale]}
-                        onValueChange={(v) => updatePc(selectedPc.id, { scale: v[0] })}
-                      />
-                    </div>
-                    <div className="space-y-2">
-                      <Label className="text-xs text-muted-foreground">回転</Label>
-                      <Slider
-                        min={-180}
-                        max={180}
-                        step={1}
-                        value={[selectedPcEffect.rotate]}
-                        onValueChange={(v) => updatePc(selectedPc.id, { rotate: v[0] })}
-                      />
-                    </div>
-                    <div className="space-y-2">
-                      <Label className="text-xs text-muted-foreground">透明</Label>
-                      <Slider
-                        min={0}
-                        max={1}
-                        step={0.01}
-                        value={[selectedPcEffect.opacity]}
-                        onValueChange={(v) => updatePc(selectedPc.id, { opacity: v[0] })}
-                      />
-                    </div>
-                  </div>
-                )}
               </div>
             </div>
           </div>
@@ -624,7 +642,7 @@ export function TitleScreenEditorDialog(props: {
             閉じる
           </Button>
           <Button onClick={handleSave} disabled={saving}>
-            保存
+            {saving ? '保存中...' : '保存'}
           </Button>
         </DialogFooter>
       </DialogContent>
