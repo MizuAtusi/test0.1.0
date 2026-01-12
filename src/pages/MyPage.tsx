@@ -10,6 +10,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { PlatformShell } from '@/components/navigation/PlatformShell';
+import { ProfileAvatarEditorDialog } from '@/components/profile/ProfileAvatarEditorDialog';
 import { useNavigate } from 'react-router-dom';
 import type { Profile, ProfilePost, ProfileReply, FriendRequest } from '@/types/trpg';
 
@@ -22,6 +23,7 @@ export default function MyPage() {
   const [handle, setHandle] = useState('');
   const [bio, setBio] = useState('');
   const [avatarFile, setAvatarFile] = useState<File | null>(null);
+  const [avatarPreviewUrl, setAvatarPreviewUrl] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [handleInput, setHandleInput] = useState('');
   const [handlePassword, setHandlePassword] = useState('');
@@ -30,6 +32,7 @@ export default function MyPage() {
   const [idEditConfirmOpen, setIdEditConfirmOpen] = useState(false);
   const [idEditUnlocked, setIdEditUnlocked] = useState(false);
   const [idEditVerifying, setIdEditVerifying] = useState(false);
+  const [avatarEditorOpen, setAvatarEditorOpen] = useState(false);
 
   const [posts, setPosts] = useState<ProfilePost[]>([]);
   const [replies, setReplies] = useState<ProfileReply[]>([]);
@@ -59,6 +62,7 @@ export default function MyPage() {
     setDisplayName(source?.display_name || '');
     setBio(source?.bio || '');
     setAvatarFile(null);
+    setAvatarPreviewUrl(null);
   };
 
   useEffect(() => {
@@ -80,6 +84,14 @@ export default function MyPage() {
       canceled = true;
     };
   }, [user?.id]);
+
+  useEffect(() => {
+    return () => {
+      if (avatarPreviewUrl?.startsWith('blob:')) {
+        URL.revokeObjectURL(avatarPreviewUrl);
+      }
+    };
+  }, [avatarPreviewUrl]);
 
   const loadPosts = async () => {
     if (!user?.id) return;
@@ -247,6 +259,7 @@ export default function MyPage() {
       if (error) throw error;
       toast({ title: 'プロフィールを更新しました' });
       setAvatarFile(null);
+      setAvatarPreviewUrl(null);
       setProfile((p) => (p ? { ...p, display_name: displayName.trim(), bio: bio.trim(), avatar_url: avatarUrl } : p));
       setEditingProfile(false);
     } catch (e: any) {
@@ -576,6 +589,7 @@ export default function MyPage() {
   const incomingRequests = friendRequests.filter((r) => r.status === 'pending' && r.receiver_user_id === user?.id);
   const outgoingRequests = friendRequests.filter((r) => r.status === 'pending' && r.requester_user_id === user?.id);
   const friendsList = Object.values(friendsById);
+  const avatarDisplayUrl = avatarPreviewUrl || profile?.avatar_url || '';
 
   return (
     <PlatformShell title="マイページ" onSignOut={signOut}>
@@ -607,8 +621,8 @@ export default function MyPage() {
           <CardContent className="space-y-4">
             <div className="flex items-start gap-4">
               <div className="h-20 w-20 rounded-full bg-secondary/60 overflow-hidden flex items-center justify-center shrink-0">
-                {profile?.avatar_url ? (
-                  <img src={profile.avatar_url} alt="avatar" className="h-full w-full object-cover" />
+                {avatarDisplayUrl ? (
+                  <img src={avatarDisplayUrl} alt="avatar" className="h-full w-full object-cover" />
                 ) : (
                   <ImagePlus className="w-7 h-7 text-muted-foreground" />
                 )}
@@ -644,11 +658,9 @@ export default function MyPage() {
                 />
                 {editingProfile && (
                   <div className="space-y-2">
-                    <Input
-                      type="file"
-                      accept="image/*"
-                      onChange={(e) => setAvatarFile(e.target.files?.[0] ?? null)}
-                    />
+                    <Button type="button" variant="outline" onClick={() => setAvatarEditorOpen(true)}>
+                      プロフィール画像を設定
+                    </Button>
                     {idEditUnlocked && (
                       <div className="space-y-1">
                         <div className="text-xs text-muted-foreground">新しいID（英数字と_のみ）</div>
@@ -671,6 +683,17 @@ export default function MyPage() {
             </div>
           </CardContent>
         </Card>
+
+        <ProfileAvatarEditorDialog
+          open={avatarEditorOpen}
+          onOpenChange={setAvatarEditorOpen}
+          currentUrl={avatarPreviewUrl || profile?.avatar_url || null}
+          onConfirm={(file) => {
+            setAvatarFile(file);
+            const url = URL.createObjectURL(file);
+            setAvatarPreviewUrl(url);
+          }}
+        />
 
         <Dialog open={idEditConfirmOpen} onOpenChange={setIdEditConfirmOpen}>
           <DialogContent className="max-w-md">
