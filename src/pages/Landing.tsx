@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { ArrowRight, Sparkles } from 'lucide-react';
+import { ArrowRight } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { supabase } from '@/integrations/supabase/client';
@@ -66,8 +66,8 @@ export default function LandingPage() {
 
         <header className="relative z-10 mx-auto flex w-full max-w-6xl items-center justify-between px-6 pt-6">
           <div className="flex items-center gap-3">
-            <div className="h-10 w-10 rounded-2xl bg-primary/20 p-2 text-primary">
-              <Sparkles className="h-full w-full" />
+            <div className="h-10 w-10 overflow-hidden rounded-2xl bg-primary/10">
+              <img src="/favicon.ico" alt="TaleRoomPG" className="h-full w-full object-cover" />
             </div>
             <div>
               <p className="font-display text-xl tracking-wide">TaleRoomPG</p>
@@ -113,24 +113,20 @@ export default function LandingPage() {
             </div>
 
             <div className="space-y-4">
-              <Card className="border-border/70 bg-card/80">
-                <CardContent className="flex items-center justify-between p-5">
-                  <div>
+              <div className="grid gap-3 sm:grid-cols-2">
+                <Card className="border-border/70 bg-card/80">
+                  <CardContent className="p-5">
                     <p className="text-xs text-muted-foreground">登録ユーザー</p>
-                    <p className="text-2xl font-semibold">{formattedUsers}</p>
-                  </div>
-                  <div className="text-xs text-muted-foreground">リアルタイム</div>
-                </CardContent>
-              </Card>
-              <Card className="border-border/70 bg-card/80">
-                <CardContent className="flex items-center justify-between p-5">
-                  <div>
+                    <p className="mt-2 text-2xl font-semibold">{formattedUsers}</p>
+                  </CardContent>
+                </Card>
+                <Card className="border-border/70 bg-card/80">
+                  <CardContent className="p-5">
                     <p className="text-xs text-muted-foreground">作成されたルーム</p>
-                    <p className="text-2xl font-semibold">{formattedRooms}</p>
-                  </div>
-                  <div className="text-xs text-muted-foreground">リアルタイム</div>
-                </CardContent>
-              </Card>
+                    <p className="mt-2 text-2xl font-semibold">{formattedRooms}</p>
+                  </CardContent>
+                </Card>
+              </div>
 
               <Card className="border-border/70 bg-card/80">
                 <CardContent className="p-5">
