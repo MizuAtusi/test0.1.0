@@ -12,6 +12,7 @@ import { useToast } from '@/hooks/use-toast';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import type { CharacterDerived, CharacterStats } from '@/types/trpg';
 import { buildDefaultSkills, buildDerivedFromStats, buildSkillPointBreakdownFromTotals, normalizeSkillNameCoc6 } from '@/lib/coc6';
+import { useAuth } from '@/hooks/useAuth';
 
 interface CharacterCreateDialogProps {
   open: boolean;
@@ -32,6 +33,7 @@ export function CharacterCreateDialog({
   isGM,
   onCreated,
 }: CharacterCreateDialogProps) {
+  const { user } = useAuth();
   const [name, setName] = useState('');
   const [isNpc, setIsNpc] = useState(false);
   const [importText, setImportText] = useState('');
@@ -234,6 +236,11 @@ export function CharacterCreateDialog({
   }, [open]);
 
   const handleCreate = async () => {
+    const effectiveOwnerUserId = ownerUserId ?? user?.id ?? null;
+    if (!effectiveOwnerUserId) {
+      toast({ title: 'ログインが必要です', description: 'キャラクター作成にはログインしてください。', variant: 'destructive' });
+      return;
+    }
     if (!name.trim()) {
       toast({ title: 'キャラクター名を入力してください', variant: 'destructive' });
       return;
@@ -245,7 +252,7 @@ export function CharacterCreateDialog({
       room_id: roomId,
       // Ownership is used for edit permissions; NPCs are owned by the creator too.
       owner_participant_id: participantId,
-      owner_user_id: ownerUserId,
+      owner_user_id: effectiveOwnerUserId,
       name: name.trim(),
       is_npc: isNpc,
       stats,
@@ -305,6 +312,11 @@ export function CharacterCreateDialog({
   };
 
   const handleImport = async () => {
+    const effectiveOwnerUserId = ownerUserId ?? user?.id ?? null;
+    if (!effectiveOwnerUserId) {
+      toast({ title: 'ログインが必要です', description: 'キャラクター作成にはログインしてください。', variant: 'destructive' });
+      return;
+    }
     if (!importText.trim()) {
       toast({ title: 'インポートデータを入力してください', variant: 'destructive' });
       return;
@@ -488,7 +500,7 @@ export function CharacterCreateDialog({
             room_id: roomId,
             // Ownership is used for edit permissions; NPCs are owned by the creator too.
             owner_participant_id: participantId,
-            owner_user_id: ownerUserId,
+            owner_user_id: effectiveOwnerUserId,
             name: charName,
             is_npc: isNpc,
             stats,
@@ -510,12 +522,12 @@ export function CharacterCreateDialog({
           const retry = await supabase
             .from('characters')
             .insert({
-              room_id: roomId,
-              owner_participant_id: participantId,
-              owner_user_id: ownerUserId,
-              name: charName,
-              is_npc: isNpc,
-              stats,
+            room_id: roomId,
+            owner_participant_id: participantId,
+            owner_user_id: effectiveOwnerUserId,
+            name: charName,
+            is_npc: isNpc,
+            stats,
               derived,
               skills,
               memo,

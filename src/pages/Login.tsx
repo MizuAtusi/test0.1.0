@@ -107,20 +107,6 @@ export default function LoginPage() {
     toast({ title: '認証メールを送信しました。メールが届かない場合、もう一度登録ボタンを押してみてください。' });
   };
 
-  const signInWithX = async () => {
-    setBusy(true);
-    const { error } = await supabase.auth.signInWithOAuth({
-      provider: 'twitter',
-      options: {
-        redirectTo: window.location.origin,
-      },
-    });
-    setBusy(false);
-    if (error) {
-      toast({ title: 'Xログインに失敗しました', description: error.message, variant: 'destructive' });
-    }
-  };
-
   const handleForgotPassword = async () => {
     if (!resetEmail.trim()) {
       toast({ title: 'メールアドレスを入力してください', variant: 'destructive' });
@@ -197,9 +183,6 @@ export default function LoginPage() {
                 <Button className="w-full" onClick={signIn} disabled={busy}>
                   ログイン
                 </Button>
-                <Button className="w-full" variant="outline" onClick={signInWithX} disabled={busy}>
-                  Xでログイン
-                </Button>
                 {allowDevAuth && (
                   <div className="text-xs text-muted-foreground">
                     テストログイン: メール/パスワードに「test」を入力（テスト用アカウントでログイン）
@@ -231,9 +214,6 @@ export default function LoginPage() {
                 </div>
                 <Button className="w-full" onClick={signUp} disabled={busy}>
                   登録
-                </Button>
-                <Button className="w-full" variant="outline" onClick={signInWithX} disabled={busy}>
-                  Xで登録/ログイン
                 </Button>
               </TabsContent>
             </Tabs>
