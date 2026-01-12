@@ -67,7 +67,7 @@ export default function LandingPage() {
         <header className="relative z-10 mx-auto flex w-full max-w-6xl items-center justify-between px-6 pt-6">
           <div className="flex items-center gap-3">
             <div className="h-10 w-10 overflow-hidden rounded-2xl bg-primary/10">
-              <img src="/favicon.ico" alt="TaleRoomPG" className="h-full w-full object-cover" />
+              <img src="/trpgIcon.png" alt="TaleRoomPG" className="h-full w-full object-cover" />
             </div>
             <div>
               <p className="font-display text-xl tracking-wide">TaleRoomPG</p>
