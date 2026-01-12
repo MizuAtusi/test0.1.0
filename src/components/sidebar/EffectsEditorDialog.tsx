@@ -141,6 +141,44 @@ export function EffectsEditorDialog(props: {
     setSelected((prev) => (prev && prev.kind === 'image' && prev.imageId === imageId ? null : prev));
   };
 
+  const getImageOrder = (imgs: EffectImage[]) =>
+    imgs
+      .map((img, idx) => ({ img, idx }))
+      .sort((a, b) => {
+        const az = Number.isFinite(a.img.z) ? a.img.z : 0;
+        const bz = Number.isFinite(b.img.z) ? b.img.z : 0;
+        if (az !== bz) return az - bz;
+        return a.idx - b.idx;
+      })
+      .map((x) => x.img);
+
+  const canMoveImage = (imageId: string, direction: 'front' | 'back') => {
+    const ordered = getImageOrder(images);
+    const idx = ordered.findIndex((img) => img.id === imageId);
+    if (idx === -1) return false;
+    return direction === 'front' ? idx < ordered.length - 1 : idx > 0;
+  };
+
+  const moveImageLayer = (imageId: string, direction: 'front' | 'back') => {
+    setConfig((prev) => {
+      const next = normalizeEffectsConfig(prev);
+      const ordered = getImageOrder((next[tab]?.images || []) as EffectImage[]);
+      const idx = ordered.findIndex((img) => img.id === imageId);
+      if (idx === -1) return next;
+      const swapWith = direction === 'front' ? idx + 1 : idx - 1;
+      if (swapWith < 0 || swapWith >= ordered.length) return next;
+      const temp = ordered[idx];
+      ordered[idx] = ordered[swapWith];
+      ordered[swapWith] = temp;
+      const zMap = new Map(ordered.map((img, i) => [img.id, i + 1]));
+      (next as any)[tab] = {
+        ...(next as any)[tab],
+        images: (next[tab]?.images || []).map((img) => ({ ...img, z: zMap.get(img.id) ?? img.z })),
+      };
+      return next;
+    });
+  };
+
   const updateTabPatch = (patch: Record<string, any>) => {
     setConfig((prev) => {
       const next = normalizeEffectsConfig(prev);
@@ -556,6 +594,24 @@ export function EffectsEditorDialog(props: {
                           onChange={(e) => updateImage(selectedImage.id, { label: e.target.value })}
                           className="h-8"
                         />
+                        <Button
+                          type="button"
+                          size="sm"
+                          variant="outline"
+                          onClick={() => moveImageLayer(selectedImage.id, 'front')}
+                          disabled={!canMoveImage(selectedImage.id, 'front')}
+                        >
+                          手前に移動
+                        </Button>
+                        <Button
+                          type="button"
+                          size="sm"
+                          variant="outline"
+                          onClick={() => moveImageLayer(selectedImage.id, 'back')}
+                          disabled={!canMoveImage(selectedImage.id, 'back')}
+                        >
+                          奥に移動
+                        </Button>
                         <Button
                           type="button"
                           variant="ghost"
