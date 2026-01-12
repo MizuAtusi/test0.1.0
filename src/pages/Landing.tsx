@@ -1,156 +1,158 @@
-import { useMemo } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { ArrowRight, Sparkles, ShieldCheck, Users, Wand2 } from 'lucide-react';
+import { ArrowRight, Sparkles } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
-import { useAuth } from '@/hooks/useAuth';
+import { supabase } from '@/integrations/supabase/client';
 
-const features = [
-  {
-    title: '演出に強いステージ',
-    description: '立ち絵・背景・BGM/SEを同じ画面で管理。セッションの空気を即座に作れる。',
-    icon: Sparkles,
-  },
-  {
-    title: 'GMツールが一体化',
-    description: 'メモ、マクロ、公開/秘匿の切替まで。必要な操作が右側に集約。',
-    icon: Wand2,
-  },
-  {
-    title: '安心のルーム管理',
-    description: '参加申請・閲覧専用・招待制など、公開範囲を細かく設定できる。',
-    icon: ShieldCheck,
-  },
-];
+type PublicStats = {
+  users_count: number;
+  rooms_count: number;
+};
 
 export default function LandingPage() {
-  const { user } = useAuth();
-  const heroCta = useMemo(() => (user ? { label: 'アプリを開く', to: '/app' } : { label: 'ログイン / 登録', to: '/login' }), [user]);
+  const [stats, setStats] = useState<PublicStats | null>(null);
+  const formattedUsers = useMemo(
+    () => (stats?.users_count ?? null) === null ? '—' : new Intl.NumberFormat('ja-JP').format(stats?.users_count ?? 0),
+    [stats?.users_count]
+  );
+  const formattedRooms = useMemo(
+    () => (stats?.rooms_count ?? null) === null ? '—' : new Intl.NumberFormat('ja-JP').format(stats?.rooms_count ?? 0),
+    [stats?.rooms_count]
+  );
+
+  useEffect(() => {
+    let mounted = true;
+    const fetchStats = async () => {
+      const { data, error } = await supabase
+        .from('public_stats')
+        .select('users_count, rooms_count')
+        .eq('id', 1)
+        .maybeSingle();
+      if (!mounted) return;
+      if (!error && data) setStats(data as PublicStats);
+    };
+
+    fetchStats();
+
+    const channel = supabase
+      .channel('public:stats')
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'public_stats' },
+        (payload) => {
+          const row = (payload.new ?? payload.old) as Partial<PublicStats> | null;
+          if (row && typeof row.users_count === 'number' && typeof row.rooms_count === 'number') {
+            setStats({ users_count: row.users_count, rooms_count: row.rooms_count });
+          } else {
+            fetchStats();
+          }
+        }
+      )
+      .subscribe();
+
+    return () => {
+      mounted = false;
+      supabase.removeChannel(channel);
+    };
+  }, []);
 
   return (
     <div className="min-h-screen bg-background text-foreground">
       <div className="relative overflow-hidden">
-        <div className="absolute inset-0 bg-[radial-gradient(circle_at_top,_rgba(253,186,116,0.25),_transparent_60%),radial-gradient(circle_at_bottom,_rgba(59,130,246,0.18),_transparent_55%)]" />
-        <div className="absolute -top-24 -right-24 h-64 w-64 rounded-full bg-primary/10 blur-3xl" />
-        <div className="absolute top-24 -left-20 h-48 w-48 rounded-full bg-accent/20 blur-3xl" />
+        <div className="absolute inset-0 bg-[radial-gradient(circle_at_top_left,_rgba(251,146,60,0.2),_transparent_55%),radial-gradient(circle_at_bottom_right,_rgba(14,165,233,0.18),_transparent_60%)]" />
+        <div className="absolute -top-20 right-10 h-64 w-64 rounded-full bg-primary/10 blur-3xl" />
+        <div className="absolute bottom-0 left-0 h-64 w-64 rounded-full bg-accent/20 blur-3xl" />
 
         <header className="relative z-10 mx-auto flex w-full max-w-6xl items-center justify-between px-6 pt-6">
           <div className="flex items-center gap-3">
             <div className="h-10 w-10 rounded-2xl bg-primary/20 p-2 text-primary">
-              <Users className="h-full w-full" />
+              <Sparkles className="h-full w-full" />
             </div>
             <div>
-              <p className="font-display text-xl tracking-wide">TRPG Stage</p>
-              <p className="text-xs text-muted-foreground">セッションに演出と進行の一体感を</p>
+              <p className="font-display text-xl tracking-wide">TaleRoomPG</p>
+              <p className="text-xs text-muted-foreground">ノベルゲームライクなオンラインセッションツール</p>
             </div>
           </div>
-          <div className="flex items-center gap-2">
-            <Button asChild variant="ghost" className="hidden sm:inline-flex">
-              <Link to="/login">ログイン</Link>
-            </Button>
-            <Button asChild>
-              <Link to={heroCta.to}>{heroCta.label}</Link>
-            </Button>
-          </div>
+          <Button asChild size="sm">
+            <Link to="/login">ログイン / 登録</Link>
+          </Button>
         </header>
 
-        <main className="relative z-10 mx-auto w-full max-w-6xl px-6 pb-20 pt-14">
-          <div className="grid gap-10 lg:grid-cols-[1.1fr_0.9fr] lg:items-center">
+        <main className="relative z-10 mx-auto w-full max-w-6xl px-6 pb-20 pt-12">
+          <section className="grid gap-10 lg:grid-cols-[1.1fr_0.9fr] lg:items-start">
             <div className="space-y-6">
-              <div className="inline-flex items-center gap-2 rounded-full border border-border/70 bg-card/70 px-4 py-1 text-xs text-muted-foreground">
-                <span className="h-2 w-2 rounded-full bg-primary" />
-                クローズドβ運用中・公開準備中
+              <div className="space-y-2 text-4xl font-semibold leading-tight md:text-5xl">
+                <p>TRPGも</p>
+                <p>ADVも</p>
+                <p>創作も</p>
               </div>
-              <h1 className="font-display text-4xl leading-tight md:text-5xl">
-                セッションの熱量を
-                <span className="block text-primary">ひとつの画面に。</span>
-              </h1>
-              <p className="text-base text-muted-foreground md:text-lg">
-                TRPG Stage は、ルーム管理・チャット・演出・キャラ管理を統合したオンラインセッション基盤。
-                「準備→進行→記録」までをスムーズにつなげます。
-              </p>
+              <div className="space-y-3 text-base text-muted-foreground md:text-lg">
+                <p className="text-foreground">
+                  ノベルゲームライクなオンラインセッションツール
+                  <span className="font-semibold text-primary">TaleRoomPG</span>
+                  にようこそ！
+                </p>
+                <p className="text-sm text-muted-foreground">
+                  対応しているシステムは現時点では
+                  <span className="font-semibold text-foreground">CoC6版のみ</span>
+                  となります。
+                </p>
+              </div>
               <div className="flex flex-wrap gap-3">
                 <Button asChild size="lg" className="gap-2">
-                  <Link to={heroCta.to}>
-                    {heroCta.label}
+                  <Link to="/login">
+                    ログイン / 登録
                     <ArrowRight className="h-4 w-4" />
                   </Link>
                 </Button>
                 <Button asChild size="lg" variant="outline">
-                  <Link to="/login">機能を試す</Link>
+                  <Link to="/app">アプリを開く</Link>
                 </Button>
-              </div>
-              <div className="grid gap-3 sm:grid-cols-3">
-                <Card className="border-border/70 bg-card/70">
-                  <CardContent className="p-4">
-                    <p className="text-xs text-muted-foreground">登録ユーザー</p>
-                    <p className="text-xl font-semibold">近日公開</p>
-                  </CardContent>
-                </Card>
-                <Card className="border-border/70 bg-card/70">
-                  <CardContent className="p-4">
-                    <p className="text-xs text-muted-foreground">進行中ルーム</p>
-                    <p className="text-xl font-semibold">β運用中</p>
-                  </CardContent>
-                </Card>
-                <Card className="border-border/70 bg-card/70">
-                  <CardContent className="p-4">
-                    <p className="text-xs text-muted-foreground">配信予定</p>
-                    <p className="text-xl font-semibold">2026</p>
-                  </CardContent>
-                </Card>
               </div>
             </div>
 
             <div className="space-y-4">
-              {features.map((feature) => (
-                <Card key={feature.title} className="border-border/70 bg-card/70">
-                  <CardContent className="flex gap-4 p-5">
-                    <div className="mt-1 rounded-xl bg-primary/10 p-2 text-primary">
-                      <feature.icon className="h-5 w-5" />
-                    </div>
-                    <div>
-                      <h3 className="text-base font-semibold">{feature.title}</h3>
-                      <p className="mt-1 text-sm text-muted-foreground">{feature.description}</p>
-                    </div>
-                  </CardContent>
-                </Card>
-              ))}
-            </div>
-          </div>
+              <Card className="border-border/70 bg-card/80">
+                <CardContent className="flex items-center justify-between p-5">
+                  <div>
+                    <p className="text-xs text-muted-foreground">登録ユーザー</p>
+                    <p className="text-2xl font-semibold">{formattedUsers}</p>
+                  </div>
+                  <div className="text-xs text-muted-foreground">リアルタイム</div>
+                </CardContent>
+              </Card>
+              <Card className="border-border/70 bg-card/80">
+                <CardContent className="flex items-center justify-between p-5">
+                  <div>
+                    <p className="text-xs text-muted-foreground">作成されたルーム</p>
+                    <p className="text-2xl font-semibold">{formattedRooms}</p>
+                  </div>
+                  <div className="text-xs text-muted-foreground">リアルタイム</div>
+                </CardContent>
+              </Card>
 
-          <section className="mt-16 rounded-3xl border border-border/70 bg-card/60 p-8">
-            <div className="grid gap-8 md:grid-cols-[1.2fr_0.8fr] md:items-center">
-              <div>
-                <h2 className="font-display text-2xl">「セッションの入口」を整える</h2>
-                <p className="mt-3 text-sm text-muted-foreground leading-relaxed">
-                  参加者に「どんな卓か」「どんな雰囲気か」を伝えるためのハブページを用意しています。
-                  ルーム公開設定、参加申請、閲覧専用などの管理もスムーズです。
-                </p>
-              </div>
-              <div className="rounded-2xl border border-border/70 bg-background/60 p-4 text-sm text-muted-foreground">
-                <p className="text-xs uppercase tracking-[0.2em] text-muted-foreground/70">Preview</p>
-                <div className="mt-3 space-y-2">
-                  <div className="h-2 w-2/3 rounded-full bg-muted" />
-                  <div className="h-2 w-1/2 rounded-full bg-muted" />
-                  <div className="h-2 w-3/4 rounded-full bg-muted" />
-                  <div className="h-2 w-1/3 rounded-full bg-muted" />
-                </div>
-              </div>
+              <Card className="border-border/70 bg-card/80">
+                <CardContent className="p-5">
+                  <p className="text-sm font-semibold">特徴</p>
+                  <ol className="mt-3 space-y-3 text-sm text-muted-foreground">
+                    <li>
+                      <span className="font-semibold text-foreground">1.</span>{' '}
+                      まるで本物のノベルゲームのようなプレイ画面
+                    </li>
+                    <li>
+                      <span className="font-semibold text-foreground">2.</span>{' '}
+                      簡単準備・簡単操作 とにかくルームのGMタブとか色々触ってみてください（投げやり）
+                    </li>
+                    <li>
+                      <span className="font-semibold text-foreground">3.</span>{' '}
+                      「プレイ」できるリプレイ リプレイをダウンロードしてHTMLファイルをブラウザにドラッグ&amp;ドロップすれば、
+                      今まで遊んでいたセッションをノベルゲームとしてプレイすることができます。
+                    </li>
+                  </ol>
+                </CardContent>
+              </Card>
             </div>
-          </section>
-
-          <section className="mt-12 flex flex-col items-start justify-between gap-4 rounded-3xl border border-border/70 bg-primary/10 px-8 py-6 sm:flex-row sm:items-center">
-            <div>
-              <p className="text-sm text-muted-foreground">ベータ版の案内を受け取る</p>
-              <p className="font-display text-xl">公開情報をいち早く知りたい方へ</p>
-            </div>
-            <Button asChild variant="secondary" className="gap-2">
-              <Link to="/login">
-                登録して待つ
-                <ArrowRight className="h-4 w-4" />
-              </Link>
-            </Button>
           </section>
         </main>
       </div>
