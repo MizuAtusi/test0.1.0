@@ -568,7 +568,7 @@ export default function RoomPage() {
       <div className="min-h-screen bg-background flex items-center justify-center">
         <div className="text-center">
           <p className="text-xl text-foreground">ルームが見つかりません</p>
-          <Button onClick={() => navigate('/')} className="mt-4">
+          <Button onClick={() => navigate('/app')} className="mt-4">
             <ArrowLeft className="w-4 h-4 mr-2" />
             ロビーに戻る
           </Button>
@@ -582,7 +582,7 @@ export default function RoomPage() {
       <div className="h-screen flex flex-col bg-background overflow-hidden">
         <header className="h-12 border-b border-border bg-card flex items-center justify-between px-4 shrink-0">
           <div className="flex items-center gap-4">
-            <Button variant="ghost" size="sm" onClick={() => navigate('/')}>
+            <Button variant="ghost" size="sm" onClick={() => navigate('/app')}>
               <ArrowLeft className="w-4 h-4 mr-2" />
               戻る
             </Button>
@@ -594,7 +594,7 @@ export default function RoomPage() {
         <Dialog
           open
           onOpenChange={(next) => {
-            if (!next) navigate('/');
+            if (!next) navigate('/app');
           }}
         >
           <DialogContent>
@@ -652,7 +652,7 @@ export default function RoomPage() {
               )}
             </div>
             <DialogFooter className="gap-2">
-              <Button variant="outline" onClick={() => navigate('/')}>いいえ</Button>
+              <Button variant="outline" onClick={() => navigate('/app')}>いいえ</Button>
               {!joinRequest && (
                 <Button
                   onClick={async () => {
@@ -708,7 +708,7 @@ export default function RoomPage() {
       {/* Header */}
       <header className="h-12 border-b border-border bg-card flex items-center justify-between px-4 shrink-0">
         <div className="flex items-center gap-4">
-          <Button variant="ghost" size="sm" onClick={() => navigate('/')}>
+          <Button variant="ghost" size="sm" onClick={() => navigate('/app')}>
             <ArrowLeft className="w-4 h-4 mr-2" />
             退出
           </Button>

@@ -28,7 +28,7 @@ export default function LoginPage() {
   const testLoginEmail = import.meta.env.VITE_TEST_LOGIN_EMAIL || 'test@example.com';
   const basePath = import.meta.env.BASE_URL || '/';
 
-  const from = typeof location?.state?.from === 'string' ? location.state.from : '/';
+  const from = typeof location?.state?.from === 'string' ? location.state.from : '/app';
 
   useEffect(() => {
     if (!loading && user) {
@@ -183,11 +183,6 @@ export default function LoginPage() {
                 <Button className="w-full" onClick={signIn} disabled={busy}>
                   ログイン
                 </Button>
-                {allowDevAuth && (
-                  <div className="text-xs text-muted-foreground">
-                    テストログイン: メール/パスワードに「test」を入力（テスト用アカウントでログイン）
-                  </div>
-                )}
               </TabsContent>
 
               <TabsContent value="signup" className="mt-4 space-y-4">

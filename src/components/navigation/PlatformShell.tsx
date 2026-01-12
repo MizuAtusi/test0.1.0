@@ -173,7 +173,7 @@ export function PlatformShell({ title, onSignOut, children }: PlatformShellProps
             <SidebarMenuItem>
               <SidebarMenuButton asChild tooltip="ルームで遊ぶ" size="lg" className={menuButtonClass}>
                 <NavLink
-                  to="/"
+                  to="/app"
                   end
                   className={({ isActive }) =>
                     cn(isActive && 'bg-sidebar-accent text-sidebar-accent-foreground')

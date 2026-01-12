@@ -11,7 +11,7 @@ export function MainNav() {
   return (
     <nav className="flex items-center gap-2">
       <NavLink
-        to="/"
+        to="/app"
         end
         className={({ isActive }) => cn(baseClass, isActive ? activeClass : inactiveClass)}
       >
@@ -35,4 +35,3 @@ export function MainNav() {
     </nav>
   );
 }
-

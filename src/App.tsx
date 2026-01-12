@@ -5,6 +5,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { BrowserRouter, Routes, Route } from "react-router-dom";
 import { AuthProvider } from "@/hooks/useAuth";
 import { RequireAuth } from "@/components/auth/RequireAuth";
+import LandingPage from "./pages/Landing";
 import Index from "./pages/Index";
 import RoomPage from "./pages/RoomPage";
 import LoginPage from "./pages/Login";
@@ -29,6 +30,10 @@ const App = () => (
             <Route path="/reset-password" element={<ResetPasswordPage />} />
             <Route
               path="/"
+              element={<LandingPage />}
+            />
+            <Route
+              path="/app"
               element={
                 <RequireAuth>
                   <Index />
