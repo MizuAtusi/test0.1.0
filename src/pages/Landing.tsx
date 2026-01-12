@@ -12,6 +12,7 @@ type PublicStats = {
 
 export default function LandingPage() {
   const [stats, setStats] = useState<PublicStats | null>(null);
+  const baseUrl = import.meta.env.BASE_URL || '/';
   const formattedUsers = useMemo(
     () => (stats?.users_count ?? null) === null ? '—' : new Intl.NumberFormat('ja-JP').format(stats?.users_count ?? 0),
     [stats?.users_count]
@@ -67,7 +68,7 @@ export default function LandingPage() {
         <header className="relative z-10 mx-auto flex w-full max-w-6xl items-center justify-between px-6 pt-6">
           <div className="flex items-center gap-3">
             <div className="h-10 w-10 overflow-hidden rounded-2xl bg-primary/10">
-              <img src="/trpgIcon.png" alt="TaleRoomPG" className="h-full w-full object-cover" />
+              <img src={`${baseUrl}trpgIcon.png`} alt="TaleRoomPG" className="h-full w-full object-cover" />
             </div>
             <div>
               <p className="font-display text-xl tracking-wide">TaleRoomPG</p>
