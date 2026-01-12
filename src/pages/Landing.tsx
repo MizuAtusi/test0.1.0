@@ -65,7 +65,8 @@ export default function LandingPage() {
         <div className="absolute -top-20 right-10 h-64 w-64 rounded-full bg-primary/10 blur-3xl" />
         <div className="absolute bottom-0 left-0 h-64 w-64 rounded-full bg-accent/20 blur-3xl" />
 
-        <header className="relative z-10 mx-auto flex w-full max-w-6xl items-center justify-between px-6 pt-6">
+        <header className="sticky top-0 z-20 w-full border-b border-border/60 bg-background/85 backdrop-blur">
+          <div className="mx-auto flex w-full max-w-6xl items-center justify-between px-6 py-4">
           <div className="flex items-center gap-3">
             <div className="h-10 w-10 overflow-hidden rounded-2xl bg-primary/10">
               <img src={`${baseUrl}trpgIcon.png`} alt="TaleRoomPG" className="h-full w-full object-cover" />
@@ -78,6 +79,7 @@ export default function LandingPage() {
           <Button asChild size="sm">
             <Link to="/login">ログイン / 登録</Link>
           </Button>
+          </div>
         </header>
 
         <main className="relative z-10 mx-auto w-full max-w-6xl px-6 pb-20 pt-12">
