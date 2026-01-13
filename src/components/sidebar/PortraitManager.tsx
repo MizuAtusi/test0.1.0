@@ -374,6 +374,17 @@ export function PortraitManager({
     return () => ro.disconnect();
   }, [open]);
 
+  useEffect(() => {
+    if (!open) return;
+    const el = previewRef.current;
+    if (!el) return;
+    const id = window.requestAnimationFrame(() => {
+      const rect = el.getBoundingClientRect();
+      setPreviewSize({ width: Math.max(1, rect.width), height: Math.max(1, rect.height) });
+    });
+    return () => window.cancelAnimationFrame(id);
+  }, [open]);
+
   const onPreviewPointerDown = (pos: 'left' | 'center' | 'right') => (e: React.PointerEvent) => {
     if (!selectedVariant) return;
     e.preventDefault();

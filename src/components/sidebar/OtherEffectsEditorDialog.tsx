@@ -412,6 +412,17 @@ export function OtherEffectsEditorDialog(props: {
     return () => ro.disconnect();
   }, [open, selectedId]);
 
+  useEffect(() => {
+    if (!open) return;
+    const el = previewRef.current;
+    if (!el) return;
+    const id = window.requestAnimationFrame(() => {
+      const rect = el.getBoundingClientRect();
+      setPreviewSize({ width: Math.max(1, rect.width), height: Math.max(1, rect.height) });
+    });
+    return () => window.cancelAnimationFrame(id);
+  }, [open, selectedId]);
+
   const draggingRef = useRef<{
     target: SelectedTarget;
     startX: number;
