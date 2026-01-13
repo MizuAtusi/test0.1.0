@@ -480,15 +480,25 @@ export function StageView({
               transformOrigin: 'top left',
             }}
           >
-            {effectOverlay.images.map((item) => (
+            {effectOverlay.images.map((item) => {
+              const anchor = item.anchor === 'top-left' ? 'top-left' : 'center';
+              const left = anchor === 'top-left'
+                ? item.x * EFFECT_BASE_WIDTH
+                : EFFECT_BASE_WIDTH / 2 + item.x * EFFECT_BASE_WIDTH;
+              const top = anchor === 'top-left'
+                ? item.y * EFFECT_BASE_HEIGHT
+                : EFFECT_BASE_HEIGHT / 2 + item.y * EFFECT_BASE_HEIGHT;
+              const baseTransform = anchor === 'top-left' ? 'translate(0, 0)' : 'translate(-50%, -50%)';
+              const transformOrigin = anchor === 'top-left' ? 'top left' : 'center';
+              return (
               <div
                 key={item.id}
                 className="absolute"
                 style={{
-                  left: EFFECT_BASE_WIDTH / 2 + item.x * EFFECT_BASE_WIDTH,
-                  top: EFFECT_BASE_HEIGHT / 2 + item.y * EFFECT_BASE_HEIGHT,
-                  transform: `translate(-50%, -50%) rotate(${item.rotate}deg) scale(${item.scale})`,
-                  transformOrigin: 'center',
+                  left,
+                  top,
+                  transform: `${baseTransform} rotate(${item.rotate}deg) scale(${item.scale})`,
+                  transformOrigin,
                   opacity: item.opacity,
                   zIndex: item.z,
                 }}
@@ -500,7 +510,8 @@ export function StageView({
                   style={{ maxWidth: EFFECT_BASE_WIDTH, maxHeight: EFFECT_BASE_HEIGHT }}
                 />
               </div>
-            ))}
+              );
+            })}
           </div>
         </div>
       )}
@@ -517,15 +528,25 @@ export function StageView({
               transformOrigin: 'top left',
             }}
           >
-            {titleScreenRender.images.map((item) => (
+            {titleScreenRender.images.map((item) => {
+              const anchor = item.anchor === 'top-left' ? 'top-left' : 'center';
+              const left = anchor === 'top-left'
+                ? item.x * EFFECT_BASE_WIDTH
+                : EFFECT_BASE_WIDTH / 2 + item.x * EFFECT_BASE_WIDTH;
+              const top = anchor === 'top-left'
+                ? item.y * EFFECT_BASE_HEIGHT
+                : EFFECT_BASE_HEIGHT / 2 + item.y * EFFECT_BASE_HEIGHT;
+              const baseTransform = anchor === 'top-left' ? 'translate(0, 0)' : 'translate(-50%, -50%)';
+              const transformOrigin = anchor === 'top-left' ? 'top left' : 'center';
+              return (
               <div
                 key={item.id}
                 className="absolute"
                 style={{
-                  left: EFFECT_BASE_WIDTH / 2 + item.x * EFFECT_BASE_WIDTH,
-                  top: EFFECT_BASE_HEIGHT / 2 + item.y * EFFECT_BASE_HEIGHT,
-                  transform: `translate(-50%, -50%) rotate(${item.rotate}deg) scale(${item.scale})`,
-                  transformOrigin: 'center',
+                  left,
+                  top,
+                  transform: `${baseTransform} rotate(${item.rotate}deg) scale(${item.scale})`,
+                  transformOrigin,
                   opacity: item.opacity,
                   zIndex: item.z,
                 }}
@@ -537,7 +558,8 @@ export function StageView({
                   style={{ maxWidth: EFFECT_BASE_WIDTH, maxHeight: EFFECT_BASE_HEIGHT }}
                 />
               </div>
-            ))}
+              );
+            })}
           </div>
         </div>
       )}

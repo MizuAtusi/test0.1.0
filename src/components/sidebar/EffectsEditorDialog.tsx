@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { Label } from '@/components/ui/label';
@@ -24,6 +24,8 @@ import {
   resolvePortraitTagToUrl,
   saveEffectsConfigLocal,
 } from '@/lib/effects';
+import { getImageSize } from '@/lib/imageSize';
+import { convertCenterRelToTopLeftRel } from '@/lib/effectsPosition';
 
 const EFFECT_BASE_WIDTH = 1200;
 const EFFECT_BASE_HEIGHT = 675;
@@ -64,12 +66,81 @@ export function EffectsEditorDialog(props: {
 
   const pcCharacters = useMemo(() => characters.filter((c) => !c.is_npc), [characters]);
 
+  const convertImageToTopLeft = useCallback(async (img: EffectImage) => {
+    if (!img?.url) return img;
+    if (img.anchor === 'top-left') return img;
+    const size = await getImageSize(img.url);
+    if (!size) return img;
+    const next = convertCenterRelToTopLeftRel({
+      x: img.x,
+      y: img.y,
+      scale: img.scale ?? 1,
+      size,
+      baseWidth: EFFECT_BASE_WIDTH,
+      baseHeight: EFFECT_BASE_HEIGHT,
+    });
+    return { ...img, x: next.x, y: next.y, anchor: 'top-left' };
+  }, []);
+
+  const convertPcToTopLeft = useCallback(
+    async (pc: any, characterId: string) => {
+      if (!pc?.tag || pc.anchor === 'top-left') return pc;
+      const resolved = resolvePortraitTagToUrl(assets, characterId, pc.tag);
+      if (!resolved?.url) return pc;
+      const size = await getImageSize(resolved.url);
+      if (!size) return pc;
+      const next = convertCenterRelToTopLeftRel({
+        x: pc.x,
+        y: pc.y,
+        scale: pc.scale ?? 1,
+        size,
+        baseWidth: EFFECT_BASE_WIDTH,
+        baseHeight: EFFECT_BASE_HEIGHT,
+      });
+      return { ...pc, x: next.x, y: next.y, anchor: 'top-left' };
+    },
+    [assets]
+  );
+
   useEffect(() => {
     if (!open) return;
-    setConfig(normalizeEffectsConfig(loadEffectsConfig(room)) ?? DEFAULT_EFFECTS);
+    const base = normalizeEffectsConfig(loadEffectsConfig(room)) ?? DEFAULT_EFFECTS;
+    setConfig(base);
     setSelected(null);
     setTab('critical');
-  }, [open, roomId]);
+    let cancelled = false;
+    const run = async () => {
+      const normalizeKind = async (kind: EffectKind) => {
+        const images = await Promise.all(((base as any)[kind]?.images || []).map(convertImageToTopLeft));
+        return { ...(base as any)[kind], images };
+      };
+      const [critical, fumble] = await Promise.all([normalizeKind('critical'), normalizeKind('fumble')]);
+      const pcEntries = Object.entries(base.pc || {});
+      const pcConverted = await Promise.all(
+        pcEntries.map(async ([characterId, entry]) => {
+          const criticalPc = (entry as any)?.critical ? await convertPcToTopLeft((entry as any).critical, characterId) : undefined;
+          const fumblePc = (entry as any)?.fumble ? await convertPcToTopLeft((entry as any).fumble, characterId) : undefined;
+          return [characterId, { ...entry, critical: criticalPc, fumble: fumblePc }] as const;
+        })
+      );
+      const pc = pcConverted.reduce<Record<string, any>>((acc, [id, value]) => {
+        acc[id] = value;
+        return acc;
+      }, {});
+      if (!cancelled) {
+        setConfig({
+          ...base,
+          critical,
+          fumble,
+          pc,
+        });
+      }
+    };
+    run();
+    return () => {
+      cancelled = true;
+    };
+  }, [open, roomId, convertImageToTopLeft, convertPcToTopLeft]);
 
   const images = (config[tab]?.images || []) as EffectImage[];
   const seUrl = String(config[tab]?.seUrl || '');
@@ -88,7 +159,7 @@ export function EffectsEditorDialog(props: {
   const pcEffect = useMemo(() => {
     if (!selectedPc) return null;
     const entry = config.pc?.[selectedPc.id]?.[tab];
-    return entry || { tag: '', x: 0, y: 0, scale: 1, rotate: 0, opacity: 1, z: 0 };
+    return entry || { tag: '', x: 0, y: 0, anchor: 'top-left', scale: 1, rotate: 0, opacity: 1, z: 0 };
   }, [config.pc, selectedPc, tab]);
 
   const portraitOptionsByPc = useMemo(() => {
@@ -126,6 +197,7 @@ export function EffectsEditorDialog(props: {
         url,
         x: 0,
         y: 0,
+        anchor: 'top-left',
         scale: 1,
         rotate: 0,
         opacity: 1,
@@ -158,7 +230,7 @@ export function EffectsEditorDialog(props: {
       const next = normalizeEffectsConfig(prev);
       const pc = { ...(next.pc || {}) };
       const current = pc[characterId] || {};
-      const currentEffect = (current as any)[tab] || { tag: '', x: 0, y: 0, scale: 1, rotate: 0, opacity: 1, z: 0 };
+      const currentEffect = (current as any)[tab] || { tag: '', x: 0, y: 0, anchor: 'top-left', scale: 1, rotate: 0, opacity: 1, z: 0 };
       (current as any)[tab] = { ...currentEffect, ...patch };
       pc[characterId] = current;
       next.pc = pc;
@@ -190,6 +262,7 @@ export function EffectsEditorDialog(props: {
         url: resolved?.url ?? '',
         x: eff.x,
         y: eff.y,
+        anchor: eff.anchor,
         scale: eff.scale,
         rotate: eff.rotate,
         opacity: eff.opacity,
@@ -283,7 +356,7 @@ export function EffectsEditorDialog(props: {
         const cur = pc[c.id] || {};
         if ((cur as any)[tab]) return;
         const x = (added + idx - (pcCharacters.length - 1) / 2) * spacing;
-        (cur as any)[tab] = { tag: '', x, y, scale: 1, rotate: 0, opacity: 1, z: 100 };
+        (cur as any)[tab] = { tag: '', x, y, anchor: 'top-left', scale: 1, rotate: 0, opacity: 1, z: 100 };
         pc[c.id] = cur;
       });
       next.pc = pc;
@@ -674,15 +747,24 @@ export function EffectsEditorDialog(props: {
                       const isSelected =
                         (selected?.kind === 'image' && item.kind === 'image' && selected.imageId === item.id) ||
                         (selected?.kind === 'pc' && item.kind === 'pc' && selected.characterId === item.characterId);
+                      const anchor = item.anchor === 'top-left' ? 'top-left' : 'center';
+                      const left = anchor === 'top-left'
+                        ? item.x * EFFECT_BASE_WIDTH
+                        : EFFECT_BASE_WIDTH / 2 + item.x * EFFECT_BASE_WIDTH;
+                      const top = anchor === 'top-left'
+                        ? item.y * EFFECT_BASE_HEIGHT
+                        : EFFECT_BASE_HEIGHT / 2 + item.y * EFFECT_BASE_HEIGHT;
+                      const baseTransform = anchor === 'top-left' ? 'translate(0, 0)' : 'translate(-50%, -50%)';
+                      const transformOrigin = anchor === 'top-left' ? 'top left' : 'center';
                       return (
                         <div
                           key={item.id}
                           className={`absolute ${isSelected ? 'ring-2 ring-primary' : ''}`}
                           style={{
-                            left: EFFECT_BASE_WIDTH / 2 + item.x * EFFECT_BASE_WIDTH,
-                            top: EFFECT_BASE_HEIGHT / 2 + item.y * EFFECT_BASE_HEIGHT,
-                            transform: `translate(-50%, -50%) rotate(${item.rotate}deg) scale(${item.scale})`,
-                            transformOrigin: 'center',
+                            left,
+                            top,
+                            transform: `${baseTransform} rotate(${item.rotate}deg) scale(${item.scale})`,
+                            transformOrigin,
                             opacity: item.opacity,
                             zIndex: item.z,
                             cursor: 'grab',

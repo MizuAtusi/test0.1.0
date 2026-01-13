@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { Label } from '@/components/ui/label';
@@ -22,6 +22,8 @@ import {
   normalizeTitleScreenConfig,
   loadTitleScreenConfig,
 } from '@/lib/titleScreen';
+import { getImageSize } from '@/lib/imageSize';
+import { convertCenterRelToTopLeftRel } from '@/lib/effectsPosition';
 
 const EFFECT_BASE_WIDTH = 1200;
 const EFFECT_BASE_HEIGHT = 675;
@@ -31,7 +33,7 @@ type SelectedTarget =
   | { kind: 'pc'; characterId: string }
   | null;
 
-const DEFAULT_PC: PcEffect = { tag: '', x: 0, y: 0, scale: 1, rotate: 0, opacity: 1, z: 0 };
+const DEFAULT_PC: PcEffect = { tag: '', x: 0, y: 0, anchor: 'top-left', scale: 1, rotate: 0, opacity: 1, z: 0 };
 
 export function TitleScreenEditorDialog(props: {
   open: boolean;
@@ -74,11 +76,68 @@ export function TitleScreenEditorDialog(props: {
     return map;
   }, [assets, pcCharacters]);
 
+  const convertImageToTopLeft = useCallback(async (img: EffectImage) => {
+    if (!img?.url) return img;
+    if (img.anchor === 'top-left') return img;
+    const size = await getImageSize(img.url);
+    if (!size) return img;
+    const next = convertCenterRelToTopLeftRel({
+      x: img.x,
+      y: img.y,
+      scale: img.scale ?? 1,
+      size,
+      baseWidth: EFFECT_BASE_WIDTH,
+      baseHeight: EFFECT_BASE_HEIGHT,
+    });
+    return { ...img, x: next.x, y: next.y, anchor: 'top-left' };
+  }, []);
+
+  const convertPcToTopLeft = useCallback(
+    async (pc: PcEffect, characterId: string) => {
+      if (!pc?.tag || pc.anchor === 'top-left') return pc;
+      const resolved = resolvePortraitTagToUrl(assets, characterId, pc.tag);
+      if (!resolved?.url) return pc;
+      const size = await getImageSize(resolved.url);
+      if (!size) return pc;
+      const next = convertCenterRelToTopLeftRel({
+        x: pc.x,
+        y: pc.y,
+        scale: pc.scale ?? 1,
+        size,
+        baseWidth: EFFECT_BASE_WIDTH,
+        baseHeight: EFFECT_BASE_HEIGHT,
+      });
+      return { ...pc, x: next.x, y: next.y, anchor: 'top-left' };
+    },
+    [assets]
+  );
+
   useEffect(() => {
     if (!open) return;
-    setConfig(loadTitleScreenConfig(room));
+    const base = loadTitleScreenConfig(room);
+    setConfig(base);
     setSelectedTarget(null);
-  }, [open, roomId]);
+    let cancelled = false;
+    const run = async () => {
+      const normalized = normalizeTitleScreenConfig(base);
+      const images = await Promise.all((normalized.images || []).map(convertImageToTopLeft));
+      const pcEntries = Object.entries(normalized.pc || {});
+      const pcConverted = await Promise.all(
+        pcEntries.map(async ([characterId, pc]) => [characterId, await convertPcToTopLeft(pc, characterId)] as const)
+      );
+      const pc = pcConverted.reduce<Record<string, PcEffect>>((acc, [id, value]) => {
+        acc[id] = value;
+        return acc;
+      }, {});
+      if (!cancelled) {
+        setConfig({ ...normalized, images, pc });
+      }
+    };
+    run();
+    return () => {
+      cancelled = true;
+    };
+  }, [open, roomId, convertImageToTopLeft, convertPcToTopLeft]);
 
   useEffect(() => {
     const el = previewRef.current;
@@ -108,6 +167,7 @@ export function TitleScreenEditorDialog(props: {
         url,
         x: 0,
         y: 0,
+        anchor: 'top-left',
         scale: 1,
         rotate: 0,
         opacity: 1,
@@ -272,6 +332,7 @@ export function TitleScreenEditorDialog(props: {
         url: resolved.url,
         x: eff.x,
         y: eff.y,
+        anchor: eff.anchor,
         scale: eff.scale,
         rotate: eff.rotate,
         opacity: eff.opacity,
@@ -600,15 +661,24 @@ export function TitleScreenEditorDialog(props: {
                         const isSelected =
                           (selectedTarget?.kind === 'image' && item.kind === 'image' && selectedTarget.imageId === item.id) ||
                           (selectedTarget?.kind === 'pc' && item.kind === 'pc' && selectedTarget.characterId === item.characterId);
+                        const anchor = item.anchor === 'top-left' ? 'top-left' : 'center';
+                        const left = anchor === 'top-left'
+                          ? item.x * EFFECT_BASE_WIDTH
+                          : EFFECT_BASE_WIDTH / 2 + item.x * EFFECT_BASE_WIDTH;
+                        const top = anchor === 'top-left'
+                          ? item.y * EFFECT_BASE_HEIGHT
+                          : EFFECT_BASE_HEIGHT / 2 + item.y * EFFECT_BASE_HEIGHT;
+                        const baseTransform = anchor === 'top-left' ? 'translate(0, 0)' : 'translate(-50%, -50%)';
+                        const transformOrigin = anchor === 'top-left' ? 'top left' : 'center';
                         return (
                           <div
                             key={item.id}
                             className={`absolute ${isSelected ? 'ring-2 ring-primary' : ''}`}
                             style={{
-                              left: EFFECT_BASE_WIDTH / 2 + item.x * EFFECT_BASE_WIDTH,
-                              top: EFFECT_BASE_HEIGHT / 2 + item.y * EFFECT_BASE_HEIGHT,
-                              transform: `translate(-50%, -50%) rotate(${item.rotate}deg) scale(${item.scale})`,
-                              transformOrigin: 'center',
+                              left,
+                              top,
+                              transform: `${baseTransform} rotate(${item.rotate}deg) scale(${item.scale})`,
+                              transformOrigin,
                               opacity: item.opacity,
                               zIndex: item.z,
                               cursor: 'grab',

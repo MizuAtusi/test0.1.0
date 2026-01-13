@@ -18,6 +18,7 @@ export type EffectImage = {
   url: string;
   x: number; // relative to stage width (0.1 = 10% of width)
   y: number; // relative to stage height
+  anchor?: 'center' | 'top-left';
   scale: number;
   rotate: number; // deg
   opacity: number; // 0..1
@@ -28,6 +29,7 @@ export type PcEffect = {
   tag: string; // '' means hidden
   x: number; // relative to stage width
   y: number; // relative to stage height
+  anchor?: 'center' | 'top-left';
   scale: number;
   rotate: number;
   opacity: number;
@@ -92,6 +94,7 @@ export function normalizeEffectsConfig(config: EffectsConfig | null | undefined)
         url: String(x?.url || ''),
         x: normalizeRelMaybe(Number.isFinite(x?.x) ? Number(x.x) : 0, 'x'),
         y: normalizeRelMaybe(Number.isFinite(x?.y) ? Number(x.y) : 0, 'y'),
+        anchor: x?.anchor === 'top-left' ? 'top-left' : 'center',
         scale: Number.isFinite(x?.scale) ? Number(x.scale) : 1,
         rotate: Number.isFinite(x?.rotate) ? Number(x.rotate) : 0,
         opacity: Number.isFinite(x?.opacity) ? Math.max(0, Math.min(1, Number(x.opacity))) : 1,
@@ -108,6 +111,7 @@ export function normalizeEffectsConfig(config: EffectsConfig | null | undefined)
         tag: String(x?.tag || ''),
         x: normalizeRelMaybe(Number.isFinite(x?.x) ? Number(x.x) : 0, 'x'),
         y: normalizeRelMaybe(Number.isFinite(x?.y) ? Number(x.y) : 0, 'y'),
+        anchor: x?.anchor === 'top-left' ? 'top-left' : 'center',
         scale: Number.isFinite(x?.scale) ? Number(x.scale) : 1,
         rotate: Number.isFinite(x?.rotate) ? Number(x.rotate) : 0,
         opacity: Number.isFinite(x?.opacity) ? Math.max(0, Math.min(1, Number(x.opacity))) : 1,
@@ -129,6 +133,7 @@ export function normalizeEffectsConfig(config: EffectsConfig | null | undefined)
         tag: String((v as any).tag || ''),
         x: normalizeRelMaybe(Number.isFinite((v as any).x) ? Number((v as any).x) : 0, 'x'),
         y: normalizeRelMaybe(Number.isFinite((v as any).y) ? Number((v as any).y) : 0, 'y'),
+        anchor: (v as any).anchor === 'top-left' ? 'top-left' : 'center',
         scale: Number.isFinite((v as any).scale) ? Number((v as any).scale) : 1,
         rotate: Number.isFinite((v as any).rotate) ? Number((v as any).rotate) : 0,
         opacity: Number.isFinite((v as any).opacity) ? Math.max(0, Math.min(1, Number((v as any).opacity))) : 1,
@@ -352,6 +357,7 @@ export function buildOtherEffectRenderList(params: {
           url: resolved.url,
           x: pc.x,
           y: pc.y,
+          anchor: pc.anchor ?? 'center',
           scale: pc.scale,
           rotate: pc.rotate,
           opacity: pc.opacity,
@@ -403,6 +409,7 @@ export function buildEffectRenderList(params: {
         url: resolved.url,
         x: pc.x,
         y: pc.y,
+        anchor: pc.anchor ?? 'center',
         scale: pc.scale,
         rotate: pc.rotate,
         opacity: pc.opacity,
