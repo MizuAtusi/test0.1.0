@@ -432,8 +432,14 @@ export function StageView({
               const shift = 0.225; // relative to stage width
               const positionShiftXRel = portrait.position === 'left' ? -shift : portrait.position === 'right' ? shift : 0;
               const positionShiftX = stageSize.width * positionShiftXRel;
-              const offsetX = typeof portrait.offsetXRel === 'number' ? portrait.offsetXRel * stageSize.width : (portrait.offsetX ?? 0);
-              const offsetY = typeof portrait.offsetYRel === 'number' ? portrait.offsetYRel * stageSize.height : (portrait.offsetY ?? 0);
+              const offsetXRel = typeof portrait.offsetXRel === 'number'
+                ? portrait.offsetXRel
+                : (typeof portrait.offsetX === 'number' && stageSize.width > 0 ? portrait.offsetX / stageSize.width : 0);
+              const offsetYRel = typeof portrait.offsetYRel === 'number'
+                ? portrait.offsetYRel
+                : (typeof portrait.offsetY === 'number' && stageSize.height > 0 ? portrait.offsetY / stageSize.height : 0);
+              const offsetX = offsetXRel * stageSize.width;
+              const offsetY = offsetYRel * stageSize.height;
               return (
             <div
               key={`${portrait.characterId}-${index}`}
