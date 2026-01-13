@@ -568,8 +568,8 @@ export function PortraitManager({
                     className="portrait-layer cursor-grab select-none"
                     style={{
                       left: '50%',
-                      maxHeight: '95%',
-                      maxWidth: '95%',
+                      maxHeight: '80%',
+                      maxWidth: '80%',
                       transform:
                         previewPos === 'left'
                           ? `translate(-50%, 0) translate(${(selectedVariant.offsetXLeft - 0.225) * previewSize.width}px, ${selectedVariant.offsetYLeft * previewSize.height}px) scale(${selectedVariant.scaleLeft})`

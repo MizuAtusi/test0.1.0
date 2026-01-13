@@ -449,7 +449,7 @@ export function StageView({
               <img
                 src={portrait.url}
                 alt={portrait.label}
-                className="h-auto max-h-[70vh] object-contain animate-fade-in"
+                className="h-auto max-h-full max-w-full object-contain animate-fade-in"
               />
             </div>
               );

@@ -28,17 +28,16 @@ export function StageFrame({
   const size = useMemo(() => {
     const w = available.width;
     const h = available.height;
-    if (mode === 'width') {
-      if (!w) return null;
+    if (!w) return null;
+    if (mode === 'width' || !h) {
       const width = w;
       const height = width / ratio;
       return { width, height };
     }
-    if (!w || !h) return null;
     const width = Math.min(w, h * ratio);
     const height = width / ratio;
     return { width, height };
-  }, [available.width, available.height, ratio]);
+  }, [available.width, available.height, ratio, mode]);
 
   return (
     <div ref={rootRef} className={`flex items-center justify-center ${className ?? ''}`}>
