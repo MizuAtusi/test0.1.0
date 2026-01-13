@@ -434,6 +434,20 @@ export function PortraitManager({
     );
   };
 
+  const alignAllToCenter = () => {
+    setVariants((prev) =>
+      prev.map((v) => ({
+        ...v,
+        scaleLeft: v.scaleCenter,
+        offsetXLeft: v.offsetXCenter,
+        offsetYLeft: v.offsetYCenter,
+        scaleRight: v.scaleCenter,
+        offsetXRight: v.offsetXCenter,
+        offsetYRight: v.offsetYCenter,
+      })),
+    );
+  };
+
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-w-4xl max-h-[85vh] flex flex-col overflow-hidden">
@@ -590,11 +604,16 @@ export function PortraitManager({
                 </div>
               </AspectRatio>
 
-              {variants.length >= 2 && (
-                <div className="flex justify-end">
-                  <Button type="button" variant="outline" size="sm" onClick={alignAllToDefault}>
-                    デフォルトの立ち絵と座標・倍率を合わせる
+              {variants.length >= 1 && (
+                <div className="flex justify-end gap-2">
+                  <Button type="button" variant="outline" size="sm" onClick={alignAllToCenter}>
+                    中央の立ち絵に座標を合わせる
                   </Button>
+                  {variants.length >= 2 && (
+                    <Button type="button" variant="outline" size="sm" onClick={alignAllToDefault}>
+                      デフォルトの立ち絵と座標・倍率を合わせる
+                    </Button>
+                  )}
                 </div>
               )}
 
