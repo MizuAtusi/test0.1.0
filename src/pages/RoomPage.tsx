@@ -29,6 +29,7 @@ const ROOM_HEADER_HEIGHT_PX = 48;
 const INPUT_BAR_HEIGHT_PX = 64;
 const STAGE_AREA_PADDING_Y_PX = 16 + 8; // pt-4 + pb-2 (approx)
 const STAGE_STACKED_ASPECT_THRESHOLD = 0.66; // availableStageHeight / stageColumnWidth
+const STAGE_HEIGHT_RATIO = 0.55; // height proportion of available stage area (shared for stacked / overlay)
 const ROOM_LAST_SEEN_STORAGE_KEY = 'trpg:lastSeenRoomMessages';
 const TEXT_WINDOW_VISIBLE_PREFIX = 'trpg:textWindowVisible:';
 
@@ -175,6 +176,7 @@ export default function RoomPage() {
   );
   const stageAreaAspect = stageColumnWidth > 0 ? (availableStageHeightOverlay / stageColumnWidth) : 0;
   const isStackedLayout = stageColumnWidth > 0 && stageAreaAspect >= STAGE_STACKED_ASPECT_THRESHOLD;
+  const stageHeightPx = Math.max(0, availableStageHeightOverlay * STAGE_HEIGHT_RATIO);
   const resizeStateRef = useRef<{ startX: number; startWidth: number } | null>(null);
   const [joiningRoom, setJoiningRoom] = useState(false);
   const [joinRequest, setJoinRequest] = useState<any>(null);
@@ -784,7 +786,7 @@ export default function RoomPage() {
         <div className="flex-1 flex flex-col min-w-0" style={{ flexBasis: '75%' }}>
           {isStackedLayout ? (
             <div className="flex-1 min-h-0 px-4 pt-4 pb-0 flex flex-col gap-2">
-              <div className="flex-[0_0_55%] min-h-0">
+              <div className="min-h-0" style={{ height: stageHeightPx }}>
                 <StageFrame className="h-full w-full" ratio={16 / 9}>
                   <StageView
                     textLayout="none"
@@ -825,24 +827,26 @@ export default function RoomPage() {
             </div>
           ) : (
             <div className="flex-1 min-h-0 px-4 pt-4 pb-2 flex">
-              <StageFrame className="flex-1 min-h-0 w-full" ratio={16 / 9}>
-                <StageView
-                  messages={messages.filter(m => m.channel !== 'chat')}
-                  stageState={stageState}
-                  bgmUrl={bgmUrl}
-                  se={se}
-                  room={room}
-                  participants={participants}
-                  participant={participant}
-                  isSecret={stageState?.is_secret || false}
-                  canViewSecret={canViewSecret || false}
-                  isGM={isGM}
-                  characters={characters}
-                  onUpdateRoom={handleUpdateRoom}
-                  textWindowVisible={textWindowVisible}
-                  onToggleTextWindow={setTextWindowVisible}
-                />
-              </StageFrame>
+              <div className="w-full" style={{ height: stageHeightPx }}>
+                <StageFrame className="h-full w-full" ratio={16 / 9}>
+                  <StageView
+                    messages={messages.filter(m => m.channel !== 'chat')}
+                    stageState={stageState}
+                    bgmUrl={bgmUrl}
+                    se={se}
+                    room={room}
+                    participants={participants}
+                    participant={participant}
+                    isSecret={stageState?.is_secret || false}
+                    canViewSecret={canViewSecret || false}
+                    isGM={isGM}
+                    characters={characters}
+                    onUpdateRoom={handleUpdateRoom}
+                    textWindowVisible={textWindowVisible}
+                    onToggleTextWindow={setTextWindowVisible}
+                  />
+                </StageFrame>
+              </div>
             </div>
           )}
 
