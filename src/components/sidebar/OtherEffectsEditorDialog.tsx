@@ -71,6 +71,10 @@ export function OtherEffectsEditorDialog(props: {
   const createNonceRef = useRef<number | undefined>(undefined);
   const previewRef = useRef<HTMLDivElement>(null);
   const [previewSize, setPreviewSize] = useState<{ width: number; height: number }>({ width: 720, height: 405 });
+  const previewScale = Math.min(
+    previewSize.width / EFFECT_BASE_WIDTH,
+    previewSize.height / EFFECT_BASE_HEIGHT
+  ) || 1;
   const pcCharacters = useMemo(() => characters.filter((c) => !c.is_npc), [characters]);
   const portraitOptionsByPc = useMemo(() => {
     const map = new Map<string, Array<{ key: string; label: string }>>();
@@ -367,8 +371,8 @@ export function OtherEffectsEditorDialog(props: {
       startY: e.clientY,
       baseXRel: item.x,
       baseYRel: item.y,
-      width: previewSize.width,
-      height: previewSize.height,
+      width: EFFECT_BASE_WIDTH * previewScale,
+      height: EFFECT_BASE_HEIGHT * previewScale,
     };
   };
   const onPointerMove = (e: React.PointerEvent) => {
@@ -834,11 +838,11 @@ export function OtherEffectsEditorDialog(props: {
                           onPointerCancel={onPointerUp}
                         >
                           <div
-                            className="absolute left-0 top-0"
+                            className="absolute left-1/2 top-1/2"
                             style={{
                               width: EFFECT_BASE_WIDTH,
                               height: EFFECT_BASE_HEIGHT,
-                              transform: `scale(${previewSize.width / EFFECT_BASE_WIDTH}, ${previewSize.height / EFFECT_BASE_HEIGHT})`,
+                              transform: `translate(-50%, -50%) scale(${previewScale})`,
                               transformOrigin: 'top left',
                             }}
                           >

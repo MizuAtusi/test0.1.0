@@ -82,6 +82,10 @@ export function StageView({
     const hardCap = Math.max(80, stageSize.height - 40); // leave some stage visible
     return Math.round(Math.min(hardCap, Math.min(280, Math.max(120, desired))));
   })();
+  const overlayScale = Math.min(
+    stageSize.width / EFFECT_BASE_WIDTH,
+    stageSize.height / EFFECT_BASE_HEIGHT
+  );
 
   // Load per-room visibility preference once room id becomes available
   // Track stage size for relative positioning
@@ -462,11 +466,11 @@ export function StageView({
           }`}
         >
           <div
-            className="absolute left-0 top-0"
+            className="absolute left-1/2 top-1/2"
             style={{
               width: EFFECT_BASE_WIDTH,
               height: EFFECT_BASE_HEIGHT,
-              transform: `scale(${stageSize.width / EFFECT_BASE_WIDTH}, ${stageSize.height / EFFECT_BASE_HEIGHT})`,
+              transform: `translate(-50%, -50%) scale(${overlayScale})`,
               transformOrigin: 'top left',
             }}
           >
@@ -499,11 +503,11 @@ export function StageView({
       {titleScreenVisible && titleScreenRender.images.length > 0 && (
         <div className="absolute inset-0 z-20 pointer-events-none">
           <div
-            className="absolute left-0 top-0"
+            className="absolute left-1/2 top-1/2"
             style={{
               width: EFFECT_BASE_WIDTH,
               height: EFFECT_BASE_HEIGHT,
-              transform: `scale(${stageSize.width / EFFECT_BASE_WIDTH}, ${stageSize.height / EFFECT_BASE_HEIGHT})`,
+              transform: `translate(-50%, -50%) scale(${overlayScale})`,
               transformOrigin: 'top left',
             }}
           >
