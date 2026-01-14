@@ -86,6 +86,7 @@ export function StageView({
     stageSize.width / EFFECT_BASE_WIDTH,
     stageSize.height / EFFECT_BASE_HEIGHT
   );
+  const showStageGuide = import.meta.env.DEV;
 
   // Load per-room visibility preference once room id becomes available
   // Track stage size for relative positioning
@@ -423,6 +424,23 @@ export function StageView({
       {/* Gradient Overlay */}
       <div className="absolute inset-0 z-10 bg-gradient-to-t from-background via-transparent to-transparent opacity-60" />
 
+      {showStageGuide && (
+        <div className="absolute inset-0 pointer-events-none" style={{ zIndex: 26 }}>
+          <div className="absolute left-1/2 top-1/2" style={{ transform: 'translate(-50%, -50%)' }}>
+            <div
+              style={{
+                width: EFFECT_BASE_WIDTH,
+                height: EFFECT_BASE_HEIGHT,
+                transform: `scale(${overlayScale})`,
+                transformOrigin: 'top left',
+                border: '1px dashed rgba(255, 255, 255, 0.4)',
+                boxSizing: 'border-box',
+              }}
+            />
+          </div>
+        </div>
+      )}
+
       {/* Portrait Layer */}
       {!showSecretOverlay && stageState?.active_portraits && (
         <div className="absolute inset-0 z-20 pointer-events-none">
@@ -507,44 +525,51 @@ export function StageView({
           <div
             className="absolute left-1/2 top-1/2"
             style={{
-              width: EFFECT_BASE_WIDTH,
-              height: EFFECT_BASE_HEIGHT,
-              transform: `translate(-50%, -50%) scale(${overlayScale})`,
-              transformOrigin: 'top left',
+              transform: 'translate(-50%, -50%)',
             }}
           >
-            {effectOverlay.images.map((item) => {
-              const anchor = item.anchor === 'top-left' ? 'top-left' : 'center';
-              const left = anchor === 'top-left'
-                ? item.x * EFFECT_BASE_WIDTH
-                : EFFECT_BASE_WIDTH / 2 + item.x * EFFECT_BASE_WIDTH;
-              const top = anchor === 'top-left'
-                ? item.y * EFFECT_BASE_HEIGHT
-                : EFFECT_BASE_HEIGHT / 2 + item.y * EFFECT_BASE_HEIGHT;
-              const baseTransform = anchor === 'top-left' ? 'translate(0, 0)' : 'translate(-50%, -50%)';
-              const transformOrigin = anchor === 'top-left' ? 'top left' : 'center';
-              return (
-              <div
-                key={item.id}
-                className="absolute"
-                style={{
-                  left,
-                  top,
-                  transform: `${baseTransform} rotate(${item.rotate}deg) scale(${item.scale})`,
-                  transformOrigin,
-                  opacity: item.opacity,
-                  zIndex: item.z,
-                }}
-              >
-                <img
-                  src={item.url}
-                  alt={item.label}
-                  className="object-contain"
-                  style={{ maxWidth: EFFECT_BASE_WIDTH, maxHeight: EFFECT_BASE_HEIGHT }}
-                />
-              </div>
-              );
-            })}
+            <div
+              className="relative"
+              style={{
+                width: EFFECT_BASE_WIDTH,
+                height: EFFECT_BASE_HEIGHT,
+                transform: `scale(${overlayScale})`,
+                transformOrigin: 'top left',
+              }}
+            >
+              {effectOverlay.images.map((item) => {
+                const anchor = item.anchor === 'top-left' ? 'top-left' : 'center';
+                const left = anchor === 'top-left'
+                  ? item.x * EFFECT_BASE_WIDTH
+                  : EFFECT_BASE_WIDTH / 2 + item.x * EFFECT_BASE_WIDTH;
+                const top = anchor === 'top-left'
+                  ? item.y * EFFECT_BASE_HEIGHT
+                  : EFFECT_BASE_HEIGHT / 2 + item.y * EFFECT_BASE_HEIGHT;
+                const baseTransform = anchor === 'top-left' ? 'translate(0, 0)' : 'translate(-50%, -50%)';
+                const transformOrigin = anchor === 'top-left' ? 'top left' : 'center';
+                return (
+                <div
+                  key={item.id}
+                  className="absolute"
+                  style={{
+                    left,
+                    top,
+                    transform: `${baseTransform} rotate(${item.rotate}deg) scale(${item.scale})`,
+                    transformOrigin,
+                    opacity: item.opacity,
+                    zIndex: item.z,
+                  }}
+                >
+                  <img
+                    src={item.url}
+                    alt={item.label}
+                    className="object-contain"
+                    style={{ maxWidth: EFFECT_BASE_WIDTH, maxHeight: EFFECT_BASE_HEIGHT }}
+                  />
+                </div>
+                );
+              })}
+            </div>
           </div>
         </div>
       )}
@@ -555,44 +580,51 @@ export function StageView({
           <div
             className="absolute left-1/2 top-1/2"
             style={{
-              width: EFFECT_BASE_WIDTH,
-              height: EFFECT_BASE_HEIGHT,
-              transform: `translate(-50%, -50%) scale(${overlayScale})`,
-              transformOrigin: 'top left',
+              transform: 'translate(-50%, -50%)',
             }}
           >
-            {titleScreenRender.images.map((item) => {
-              const anchor = item.anchor === 'top-left' ? 'top-left' : 'center';
-              const left = anchor === 'top-left'
-                ? item.x * EFFECT_BASE_WIDTH
-                : EFFECT_BASE_WIDTH / 2 + item.x * EFFECT_BASE_WIDTH;
-              const top = anchor === 'top-left'
-                ? item.y * EFFECT_BASE_HEIGHT
-                : EFFECT_BASE_HEIGHT / 2 + item.y * EFFECT_BASE_HEIGHT;
-              const baseTransform = anchor === 'top-left' ? 'translate(0, 0)' : 'translate(-50%, -50%)';
-              const transformOrigin = anchor === 'top-left' ? 'top left' : 'center';
-              return (
-              <div
-                key={item.id}
-                className="absolute"
-                style={{
-                  left,
-                  top,
-                  transform: `${baseTransform} rotate(${item.rotate}deg) scale(${item.scale})`,
-                  transformOrigin,
-                  opacity: item.opacity,
-                  zIndex: item.z,
-                }}
-              >
-                <img
-                  src={item.url}
-                  alt={item.label}
-                  className="object-contain"
-                  style={{ maxWidth: EFFECT_BASE_WIDTH, maxHeight: EFFECT_BASE_HEIGHT }}
-                />
-              </div>
-              );
-            })}
+            <div
+              className="relative"
+              style={{
+                width: EFFECT_BASE_WIDTH,
+                height: EFFECT_BASE_HEIGHT,
+                transform: `scale(${overlayScale})`,
+                transformOrigin: 'top left',
+              }}
+            >
+              {titleScreenRender.images.map((item) => {
+                const anchor = item.anchor === 'top-left' ? 'top-left' : 'center';
+                const left = anchor === 'top-left'
+                  ? item.x * EFFECT_BASE_WIDTH
+                  : EFFECT_BASE_WIDTH / 2 + item.x * EFFECT_BASE_WIDTH;
+                const top = anchor === 'top-left'
+                  ? item.y * EFFECT_BASE_HEIGHT
+                  : EFFECT_BASE_HEIGHT / 2 + item.y * EFFECT_BASE_HEIGHT;
+                const baseTransform = anchor === 'top-left' ? 'translate(0, 0)' : 'translate(-50%, -50%)';
+                const transformOrigin = anchor === 'top-left' ? 'top left' : 'center';
+                return (
+                <div
+                  key={item.id}
+                  className="absolute"
+                  style={{
+                    left,
+                    top,
+                    transform: `${baseTransform} rotate(${item.rotate}deg) scale(${item.scale})`,
+                    transformOrigin,
+                    opacity: item.opacity,
+                    zIndex: item.z,
+                  }}
+                >
+                  <img
+                    src={item.url}
+                    alt={item.label}
+                    className="object-contain"
+                    style={{ maxWidth: EFFECT_BASE_WIDTH, maxHeight: EFFECT_BASE_HEIGHT }}
+                  />
+                </div>
+                );
+              })}
+            </div>
           </div>
         </div>
       )}

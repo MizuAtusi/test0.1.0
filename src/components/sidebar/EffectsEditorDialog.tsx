@@ -63,6 +63,7 @@ export function EffectsEditorDialog(props: {
     previewSize.width / EFFECT_BASE_WIDTH,
     previewSize.height / EFFECT_BASE_HEIGHT
   ) || 1;
+  const showStageGuide = import.meta.env.DEV;
 
   const pcCharacters = useMemo(() => characters.filter((c) => !c.is_npc), [characters]);
 
@@ -748,57 +749,77 @@ export function EffectsEditorDialog(props: {
                   <div
                     className="absolute left-1/2 top-1/2"
                     style={{
-                      width: EFFECT_BASE_WIDTH,
-                      height: EFFECT_BASE_HEIGHT,
-                      transform: `translate(-50%, -50%) scale(${previewScale})`,
-                      transformOrigin: 'top left',
+                      transform: 'translate(-50%, -50%)',
                     }}
                   >
-                    {previewItems.map((item) => {
-                      const isSelected =
-                        (selected?.kind === 'image' && item.kind === 'image' && selected.imageId === item.id) ||
-                        (selected?.kind === 'pc' && item.kind === 'pc' && selected.characterId === item.characterId);
-                      const anchor = item.anchor === 'top-left' ? 'top-left' : 'center';
-                      const left = anchor === 'top-left'
-                        ? item.x * EFFECT_BASE_WIDTH
-                        : EFFECT_BASE_WIDTH / 2 + item.x * EFFECT_BASE_WIDTH;
-                      const top = anchor === 'top-left'
-                        ? item.y * EFFECT_BASE_HEIGHT
-                        : EFFECT_BASE_HEIGHT / 2 + item.y * EFFECT_BASE_HEIGHT;
-                      const baseTransform = anchor === 'top-left' ? 'translate(0, 0)' : 'translate(-50%, -50%)';
-                      const transformOrigin = anchor === 'top-left' ? 'top left' : 'center';
-                      return (
-                        <div
-                          key={item.id}
-                          className={`absolute ${isSelected ? 'ring-2 ring-primary' : ''}`}
-                          style={{
-                            left,
-                            top,
-                            transform: `${baseTransform} rotate(${item.rotate}deg) scale(${item.scale})`,
-                            transformOrigin,
-                            opacity: item.opacity,
-                            zIndex: item.z,
-                            cursor: 'grab',
-                            userSelect: 'none',
-                          }}
-                          onPointerDown={(e) => onPointerDown(e, item)}
-                          title={item.label}
-                        >
-                          {item.url ? (
-                            <img
-                              src={item.url}
-                              alt={item.label}
-                              className="object-contain pointer-events-none select-none"
-                              style={{ maxWidth: EFFECT_BASE_WIDTH, maxHeight: EFFECT_BASE_HEIGHT }}
-                            />
-                          ) : (
-                            <div className="w-[200px] h-[120px] rounded bg-background/60 border border-border flex items-center justify-center text-sm">
-                              {item.label}
-                            </div>
-                          )}
-                        </div>
-                      );
-                    })}
+                    {showStageGuide && (
+                      <div
+                        className="absolute left-0 top-0 pointer-events-none"
+                        style={{
+                          width: EFFECT_BASE_WIDTH,
+                          height: EFFECT_BASE_HEIGHT,
+                          transform: `scale(${previewScale})`,
+                          transformOrigin: 'top left',
+                          border: '1px dashed rgba(255, 255, 255, 0.4)',
+                          boxSizing: 'border-box',
+                        }}
+                      />
+                    )}
+                    <div
+                      className="relative"
+                      style={{
+                        width: EFFECT_BASE_WIDTH,
+                        height: EFFECT_BASE_HEIGHT,
+                        transform: `scale(${previewScale})`,
+                        transformOrigin: 'top left',
+                      }}
+                    >
+                      {previewItems.map((item) => {
+                        const isSelected =
+                          (selected?.kind === 'image' && item.kind === 'image' && selected.imageId === item.id) ||
+                          (selected?.kind === 'pc' && item.kind === 'pc' && selected.characterId === item.characterId);
+                        const anchor = item.anchor === 'top-left' ? 'top-left' : 'center';
+                        const left = anchor === 'top-left'
+                          ? item.x * EFFECT_BASE_WIDTH
+                          : EFFECT_BASE_WIDTH / 2 + item.x * EFFECT_BASE_WIDTH;
+                        const top = anchor === 'top-left'
+                          ? item.y * EFFECT_BASE_HEIGHT
+                          : EFFECT_BASE_HEIGHT / 2 + item.y * EFFECT_BASE_HEIGHT;
+                        const baseTransform = anchor === 'top-left' ? 'translate(0, 0)' : 'translate(-50%, -50%)';
+                        const transformOrigin = anchor === 'top-left' ? 'top left' : 'center';
+                        return (
+                          <div
+                            key={item.id}
+                            className={`absolute ${isSelected ? 'ring-2 ring-primary' : ''}`}
+                            style={{
+                              left,
+                              top,
+                              transform: `${baseTransform} rotate(${item.rotate}deg) scale(${item.scale})`,
+                              transformOrigin,
+                              opacity: item.opacity,
+                              zIndex: item.z,
+                              cursor: 'grab',
+                              userSelect: 'none',
+                            }}
+                            onPointerDown={(e) => onPointerDown(e, item)}
+                            title={item.label}
+                          >
+                            {item.url ? (
+                              <img
+                                src={item.url}
+                                alt={item.label}
+                                className="object-contain pointer-events-none select-none"
+                                style={{ maxWidth: EFFECT_BASE_WIDTH, maxHeight: EFFECT_BASE_HEIGHT }}
+                              />
+                            ) : (
+                              <div className="w-[200px] h-[120px] rounded bg-background/60 border border-border flex items-center justify-center text-sm">
+                                {item.label}
+                              </div>
+                            )}
+                          </div>
+                        );
+                      })}
+                    </div>
                   </div>
                 </div>
               </StageFrame>
