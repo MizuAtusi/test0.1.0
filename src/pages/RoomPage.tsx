@@ -436,6 +436,10 @@ export default function RoomPage() {
         })(),
         offsetXRel: shared?.x ?? undefined,
         offsetYRel: shared?.y ?? undefined,
+        rectXRel: shared?.rectX ?? undefined,
+        rectYRel: shared?.rectY ?? undefined,
+        rectWRel: shared?.rectW ?? undefined,
+        rectHRel: shared?.rectH ?? undefined,
         offsetX: (() => {
           if (typeof chosen.offset_x === 'number') return chosen.offset_x;
           const t = getPortraitTransform(speakerCharacter.id, chosen.tag || chosen.label);

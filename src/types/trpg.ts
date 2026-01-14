@@ -158,6 +158,10 @@ export interface ActivePortrait {
   scale?: number;
   offsetXRel?: number;
   offsetYRel?: number;
+  rectXRel?: number;
+  rectYRel?: number;
+  rectWRel?: number;
+  rectHRel?: number;
   offsetX?: number;
   offsetY?: number;
 }

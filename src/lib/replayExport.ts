@@ -917,12 +917,31 @@ function generateReplayJs(): string {
       img.src = p.url;
       img.alt = p.label || '';
       img.className = 'save-portrait pos-' + ((p.position === 'left' || p.position === 'right' || p.position === 'center') ? p.position : 'center');
-      const scale = (typeof p.scale === 'number') ? p.scale : 1;
-      const offsetX = (typeof p.offsetX === 'number') ? p.offsetX : 0;
-      const offsetY = (typeof p.offsetY === 'number') ? p.offsetY : 0;
-      const thumbScaleX = 120 / BASE_WIDTH;
-      const thumbScaleY = 68 / BASE_HEIGHT;
-      img.style.transform = 'translate(' + (offsetX * thumbScaleX) + 'px,' + (offsetY * thumbScaleY) + 'px) scale(' + scale + ')';
+      const rectWRel = (typeof p.rectWRel === 'number') ? p.rectWRel : null;
+      const rectHRel = (typeof p.rectHRel === 'number') ? p.rectHRel : null;
+      if (rectWRel != null && rectHRel != null && rectWRel > 0 && rectHRel > 0) {
+        const rectXRel = (typeof p.rectXRel === 'number') ? p.rectXRel : 0;
+        const rectYRel = (typeof p.rectYRel === 'number') ? p.rectYRel : 0;
+        const left = rectXRel * 120;
+        const top = rectYRel * 68;
+        const width = rectWRel * 120;
+        const height = rectHRel * 68;
+        img.style.left = left + 'px';
+        img.style.top = top + 'px';
+        img.style.width = width + 'px';
+        img.style.height = height + 'px';
+        img.style.maxWidth = 'none';
+        img.style.maxHeight = 'none';
+        img.style.bottom = 'auto';
+        img.style.transform = 'none';
+      } else {
+        const scale = (typeof p.scale === 'number') ? p.scale : 1;
+        const offsetX = (typeof p.offsetX === 'number') ? p.offsetX : 0;
+        const offsetY = (typeof p.offsetY === 'number') ? p.offsetY : 0;
+        const thumbScaleX = 120 / BASE_WIDTH;
+        const thumbScaleY = 68 / BASE_HEIGHT;
+        img.style.transform = 'translate(' + (offsetX * thumbScaleX) + 'px,' + (offsetY * thumbScaleY) + 'px) scale(' + scale + ')';
+      }
       container.appendChild(img);
     });
   }
@@ -984,11 +1003,31 @@ function generateReplayJs(): string {
       img.alt = p.label || '';
       const pos = (p.position === 'left' || p.position === 'center' || p.position === 'right') ? p.position : 'center';
       img.className = 'pos-' + pos;
-      const scale = (typeof p.scale === 'number') ? p.scale : 1;
-      const x = (typeof p.offsetX === 'number') ? p.offsetX : 0;
-      const y = (typeof p.offsetY === 'number') ? p.offsetY : 0;
-      img.style.transform = 'translate(' + x + 'px,' + y + 'px) scale(' + scale + ')';
-      img.style.transformOrigin = 'bottom center';
+      const rectWRel = (typeof p.rectWRel === 'number') ? p.rectWRel : null;
+      const rectHRel = (typeof p.rectHRel === 'number') ? p.rectHRel : null;
+      if (rectWRel != null && rectHRel != null && rectWRel > 0 && rectHRel > 0) {
+        const rectXRel = (typeof p.rectXRel === 'number') ? p.rectXRel : 0;
+        const rectYRel = (typeof p.rectYRel === 'number') ? p.rectYRel : 0;
+        const stageRect = container.getBoundingClientRect();
+        const left = rectXRel * stageRect.width;
+        const top = rectYRel * stageRect.height;
+        const width = rectWRel * stageRect.width;
+        const height = rectHRel * stageRect.height;
+        img.style.left = left + 'px';
+        img.style.top = top + 'px';
+        img.style.width = width + 'px';
+        img.style.height = height + 'px';
+        img.style.maxWidth = 'none';
+        img.style.maxHeight = 'none';
+        img.style.bottom = 'auto';
+        img.style.transform = 'none';
+      } else {
+        const scale = (typeof p.scale === 'number') ? p.scale : 1;
+        const x = (typeof p.offsetX === 'number') ? p.offsetX : 0;
+        const y = (typeof p.offsetY === 'number') ? p.offsetY : 0;
+        img.style.transform = 'translate(' + x + 'px,' + y + 'px) scale(' + scale + ')';
+        img.style.transformOrigin = 'bottom center';
+      }
       container.appendChild(img);
     });
   }

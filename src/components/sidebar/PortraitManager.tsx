@@ -15,6 +15,7 @@ import {
   savePortraitTransformSet,
   loadPortraitTransformSet,
   type PortraitTransformSet,
+  type PortraitPosition,
 } from '@/lib/portraitTransformsShared';
 import { useToast } from '@/hooks/use-toast';
 import type { Asset } from '@/types/trpg';
@@ -58,11 +59,46 @@ export function PortraitManager({
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
   const [selectedIndex, setSelectedIndex] = useState<number>(0);
-  const [previewPos, setPreviewPos] = useState<'left' | 'center' | 'right'>('center');
+  const [previewPos, setPreviewPos] = useState<PortraitPosition>('center');
   const previewRef = useRef<HTMLDivElement>(null);
+  const measureRef = useRef<HTMLDivElement>(null);
   const [previewSize, setPreviewSize] = useState<{ width: number; height: number }>({ width: 1200, height: 675 });
   const fileInputRef = useRef<HTMLInputElement>(null);
   const { toast } = useToast();
+  const previewPositions: PortraitPosition[] = ['left', 'center', 'right'];
+
+  const getVariantTransform = (variant: PortraitVariant, pos: PortraitPosition) => {
+    const shift = pos === 'left' ? -0.225 : pos === 'right' ? 0.225 : 0;
+    if (pos === 'left') {
+      return { shift, scale: variant.scaleLeft, offsetX: variant.offsetXLeft, offsetY: variant.offsetYLeft };
+    }
+    if (pos === 'right') {
+      return { shift, scale: variant.scaleRight, offsetX: variant.offsetXRight, offsetY: variant.offsetYRight };
+    }
+    return { shift, scale: variant.scaleCenter, offsetX: variant.offsetXCenter, offsetY: variant.offsetYCenter };
+  };
+
+  const buildPreviewTransform = (variant: PortraitVariant, pos: PortraitPosition) => {
+    const { shift, scale, offsetX, offsetY } = getVariantTransform(variant, pos);
+    return `translate(-50%, 0) translate(${(offsetX + shift) * previewSize.width}px, ${offsetY * previewSize.height}px) scale(${scale})`;
+  };
+
+  const getNormalizedRect = (variantIndex: number, pos: PortraitPosition) => {
+    const root = measureRef.current;
+    if (!root) return null;
+    const target = root.querySelector<HTMLElement>(`[data-measure="${variantIndex}-${pos}"]`);
+    if (!target) return null;
+    const rootRect = root.getBoundingClientRect();
+    const rect = target.getBoundingClientRect();
+    if (!rootRect.width || !rootRect.height || !rect.width || !rect.height) return null;
+    const round = (n: number) => Math.round(n * 10000) / 10000;
+    return {
+      x: round((rect.left - rootRect.left) / rootRect.width),
+      y: round((rect.top - rootRect.top) / rootRect.height),
+      w: round(rect.width / rootRect.width),
+      h: round(rect.height / rootRect.height),
+    };
+  };
 
   // Fetch existing assets
   const fetchAssets = useCallback(async () => {
@@ -218,6 +254,11 @@ export function PortraitManager({
         variants.length > 0 && !variants.some(v => v.isDefault)
           ? variants.map((v, i) => ({ ...v, isDefault: i === 0 }))
           : variants;
+      const rectsByIndex = normalizedVariants.map((_, index) => ({
+        left: getNormalizedRect(index, 'left'),
+        center: getNormalizedRect(index, 'center'),
+        right: getNormalizedRect(index, 'right'),
+      }));
 
       // Upload files first
       const resolved: Array<{
@@ -304,18 +345,21 @@ export function PortraitManager({
 
       // Persist shared transforms (room-wide) via hidden system message
       const commands: string[] = [];
-      for (const v of normalizedVariants) {
+      normalizedVariants.forEach((v, i) => {
         const key = v.tag.trim() || v.displayName.trim();
-        if (!key) continue;
+        if (!key) return;
+        const rects = rectsByIndex[i];
+        const withRect = (base: { scale: number; x: number; y: number }, rect?: { x: number; y: number; w: number; h: number } | null) =>
+          rect ? { ...base, rectX: rect.x, rectY: rect.y, rectW: rect.w, rectH: rect.h } : base;
         const set: PortraitTransformSet = {
-          left: { scale: v.scaleLeft, x: v.offsetXLeft, y: v.offsetYLeft },
-          center: { scale: v.scaleCenter, x: v.offsetXCenter, y: v.offsetYCenter },
-          right: { scale: v.scaleRight, x: v.offsetXRight, y: v.offsetYRight },
+          left: withRect({ scale: v.scaleLeft, x: v.offsetXLeft, y: v.offsetYLeft }, rects?.left),
+          center: withRect({ scale: v.scaleCenter, x: v.offsetXCenter, y: v.offsetYCenter }, rects?.center),
+          right: withRect({ scale: v.scaleRight, x: v.offsetXRight, y: v.offsetYRight }, rects?.right),
         };
         savePortraitTransformSet(roomId, characterId, key, set);
         const cmd = buildPortraitTransformCommand({ characterId, key, set });
         if (cmd) commands.push(cmd);
-      }
+      });
       if (commands.length > 0) {
         await supabase.from('messages').insert({
           room_id: roomId,
@@ -350,7 +394,7 @@ export function PortraitManager({
 
   const selectedVariant = variants[selectedIndex] ?? null;
   const dragRef = useRef<{
-    pos: 'left' | 'center' | 'right';
+    pos: PortraitPosition;
     startX: number;
     startY: number;
     startOffsetXRel: number;
@@ -385,7 +429,7 @@ export function PortraitManager({
     return () => window.cancelAnimationFrame(id);
   }, [open]);
 
-  const onPreviewPointerDown = (pos: 'left' | 'center' | 'right') => (e: React.PointerEvent) => {
+  const onPreviewPointerDown = (pos: PortraitPosition) => (e: React.PointerEvent) => {
     if (!selectedVariant) return;
     e.preventDefault();
     (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
@@ -572,7 +616,7 @@ export function PortraitManager({
             <div className="shrink-0 mt-2 space-y-2">
               <div className="flex items-center justify-between gap-2">
                 <div className="text-xs text-muted-foreground">プレビュー: ドラッグで位置調整</div>
-                <Tabs value={previewPos} onValueChange={(v) => setPreviewPos(v as any)}>
+                <Tabs value={previewPos} onValueChange={(v) => setPreviewPos(v as PortraitPosition)}>
                   <TabsList className="h-8">
                     <TabsTrigger value="left" className="text-xs">左</TabsTrigger>
                     <TabsTrigger value="center" className="text-xs">中央</TabsTrigger>
@@ -595,12 +639,7 @@ export function PortraitManager({
                       left: '50%',
                       maxHeight: '80%',
                       maxWidth: '80%',
-                      transform:
-                        previewPos === 'left'
-                          ? `translate(-50%, 0) translate(${(selectedVariant.offsetXLeft - 0.225) * previewSize.width}px, ${selectedVariant.offsetYLeft * previewSize.height}px) scale(${selectedVariant.scaleLeft})`
-                          : previewPos === 'right'
-                            ? `translate(-50%, 0) translate(${(selectedVariant.offsetXRight + 0.225) * previewSize.width}px, ${selectedVariant.offsetYRight * previewSize.height}px) scale(${selectedVariant.scaleRight})`
-                            : `translate(-50%, 0) translate(${selectedVariant.offsetXCenter * previewSize.width}px, ${selectedVariant.offsetYCenter * previewSize.height}px) scale(${selectedVariant.scaleCenter})`,
+                      transform: buildPreviewTransform(selectedVariant, previewPos),
                       transformOrigin: 'bottom center',
                     }}
                     onPointerDown={onPreviewPointerDown(previewPos)}
@@ -759,6 +798,54 @@ export function PortraitManager({
             </div>
           )}
         </div>
+
+        {variants.length > 0 && (
+          <div
+            ref={measureRef}
+            aria-hidden="true"
+            className="pointer-events-none"
+            style={{
+              position: 'fixed',
+              left: -10000,
+              top: 0,
+              width: Math.max(1, previewSize.width),
+              height: Math.max(1, previewSize.height),
+              visibility: 'hidden',
+            }}
+          >
+            <div
+              className="relative"
+              style={{ width: Math.max(1, previewSize.width), height: Math.max(1, previewSize.height) }}
+            >
+              {variants.map((variant, index) =>
+                variant.url
+                  ? previewPositions.map((pos) => (
+                      <div
+                        key={`${index}-${pos}`}
+                        data-measure={`${index}-${pos}`}
+                        className="portrait-layer"
+                        style={{
+                          left: '50%',
+                          maxHeight: '80%',
+                          maxWidth: '80%',
+                          transform: buildPreviewTransform(variant, pos),
+                          transformOrigin: 'bottom center',
+                          transition: 'none',
+                        }}
+                      >
+                        <img
+                          src={variant.url}
+                          alt={variant.displayName}
+                          className="pointer-events-none select-none object-contain"
+                          style={{ maxWidth: '100%', maxHeight: '100%', height: 'auto', width: 'auto' }}
+                        />
+                      </div>
+                    ))
+                  : null
+              )}
+            </div>
+          </div>
+        )}
 
         {/* Actions */}
         <div className="flex justify-end gap-2 pt-4 border-t">

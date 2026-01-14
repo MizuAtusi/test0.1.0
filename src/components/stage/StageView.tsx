@@ -428,6 +428,39 @@ export function StageView({
         <div className="absolute inset-0 z-20 pointer-events-none">
           {stageState.active_portraits.map((portrait, index) => (
             (() => {
+              const rectWRel = typeof portrait.rectWRel === 'number' ? portrait.rectWRel : null;
+              const rectHRel = typeof portrait.rectHRel === 'number' ? portrait.rectHRel : null;
+              const useRect = rectWRel != null && rectHRel != null && rectWRel > 0 && rectHRel > 0;
+              if (useRect) {
+                const rectXRel = typeof portrait.rectXRel === 'number' ? portrait.rectXRel : 0;
+                const rectYRel = typeof portrait.rectYRel === 'number' ? portrait.rectYRel : 0;
+                const left = rectXRel * stageSize.width;
+                const top = rectYRel * stageSize.height;
+                const width = rectWRel * stageSize.width;
+                const height = rectHRel * stageSize.height;
+                return (
+                  <div
+                    key={`${portrait.characterId}-${index}`}
+                    className="portrait-layer"
+                    style={{
+                      left,
+                      top,
+                      width,
+                      height,
+                      bottom: 'auto',
+                      zIndex: portrait.layerOrder,
+                      transform: 'none',
+                      transformOrigin: 'top left',
+                    }}
+                  >
+                    <img
+                      src={portrait.url}
+                      alt={portrait.label}
+                      className="h-full w-full object-contain animate-fade-in"
+                    />
+                  </div>
+                );
+              }
               const baseX = 0.5;
               const shift = 0.225; // relative to stage width
               const positionShiftXRel = portrait.position === 'left' ? -shift : portrait.position === 'right' ? shift : 0;

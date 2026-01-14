@@ -4,6 +4,10 @@ export type PortraitTransformRel = {
   scale: number; // dimensionless
   x: number; // relative to stage width (e.g. 0.1 = 10% of width)
   y: number; // relative to stage height
+  rectX?: number; // normalized top-left X
+  rectY?: number; // normalized top-left Y
+  rectW?: number; // normalized width
+  rectH?: number; // normalized height
 };
 
 export type PortraitTransformSet = Record<PortraitPosition, PortraitTransformRel>;
@@ -16,6 +20,11 @@ const STAGE_BASE_HEIGHT = 675;
 function clampNumber(value: unknown, fallback: number) {
   const n = typeof value === 'number' ? value : Number(value);
   return Number.isFinite(n) ? n : fallback;
+}
+
+function toOptionalNumber(value: unknown) {
+  const n = typeof value === 'number' ? value : Number(value);
+  return Number.isFinite(n) ? n : undefined;
 }
 
 function normalizeKey(key: string) {
@@ -36,6 +45,10 @@ function normalizeSet(set: PortraitTransformSet): PortraitTransformSet {
     scale: clampNumber(t.scale, 1),
     x: normalizeRelMaybe(clampNumber(t.x, 0), 'x'),
     y: normalizeRelMaybe(clampNumber(t.y, 0), 'y'),
+    rectX: toOptionalNumber(t.rectX),
+    rectY: toOptionalNumber(t.rectY),
+    rectW: toOptionalNumber(t.rectW),
+    rectH: toOptionalNumber(t.rectH),
   });
   return {
     left: norm(set.left),
@@ -59,6 +72,10 @@ export function loadPortraitTransformSet(roomId: string, characterId: string, ke
       scale: clampNumber(x?.scale, 1),
       x: normalizeRelMaybe(clampNumber(x?.x, 0), 'x'),
       y: normalizeRelMaybe(clampNumber(x?.y, 0), 'y'),
+      rectX: toOptionalNumber(x?.rectX),
+      rectY: toOptionalNumber(x?.rectY),
+      rectW: toOptionalNumber(x?.rectW),
+      rectH: toOptionalNumber(x?.rectH),
     });
     return {
       left: norm(parsed?.left),
@@ -140,6 +157,10 @@ export function applyPortraitTransformCommandsFromText(roomId: string, rawText: 
         scale: clampNumber(x?.scale, 1),
         x: normalizeRelMaybe(clampNumber(x?.x, 0), 'x'),
         y: normalizeRelMaybe(clampNumber(x?.y, 0), 'y'),
+        rectX: toOptionalNumber(x?.rectX),
+        rectY: toOptionalNumber(x?.rectY),
+        rectW: toOptionalNumber(x?.rectW),
+        rectH: toOptionalNumber(x?.rectH),
       });
       const set: PortraitTransformSet = {
         left: norm(parsed?.left),

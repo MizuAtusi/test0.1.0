@@ -800,6 +800,10 @@ export function GMToolsPanel({
             })(),
             offsetXRel: shared?.x ?? undefined,
             offsetYRel: shared?.y ?? undefined,
+            rectXRel: shared?.rectX ?? undefined,
+            rectYRel: shared?.rectY ?? undefined,
+            rectWRel: shared?.rectW ?? undefined,
+            rectHRel: shared?.rectH ?? undefined,
             offsetX: (() => {
               return asset.offset_x ?? 0;
             })(),
