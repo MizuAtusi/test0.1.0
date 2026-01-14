@@ -14,6 +14,7 @@ import {
   type EffectImage,
 } from '@/lib/effects';
 import { buildTitleScreenRenderList, hasTitleScreenConfig, loadTitleScreenConfig } from '@/lib/titleScreen';
+import { getPortraitTransformRel } from '@/lib/portraitTransformsShared';
 
 const EFFECT_BASE_WIDTH = 1200;
 const EFFECT_BASE_HEIGHT = 675;
@@ -67,6 +68,7 @@ export function StageView({
   const [effectOverlay, setEffectOverlay] = useState<{ nonce: number; images: EffectImage[]; seUrl: string; durationMs: number } | null>(null);
   const [effectFading, setEffectFading] = useState(false);
   const [stageSize, setStageSize] = useState<{ width: number; height: number }>({ width: 1200, height: 675 });
+  const [, bumpPortraitTransformNonce] = useState(0);
   const titleScreenConfig = useMemo(() => loadTitleScreenConfig(room), [room]);
   const titleScreenRender = useMemo(
     () => buildTitleScreenRenderList({ config: titleScreenConfig, characters, assets: portraitAssets }),
@@ -102,6 +104,16 @@ export function StageView({
     ro.observe(el);
     return () => ro.disconnect();
   }, []);
+
+  useEffect(() => {
+    const handler = (event: Event) => {
+      const detail = (event as CustomEvent)?.detail as { roomId?: string } | undefined;
+      if (detail?.roomId && room?.id && detail.roomId !== room.id) return;
+      bumpPortraitTransformNonce((prev) => prev + 1);
+    };
+    window.addEventListener('trpg:portraitTransformChanged', handler as EventListener);
+    return () => window.removeEventListener('trpg:portraitTransformChanged', handler as EventListener);
+  }, [room?.id]);
 
   // BGM playback (separate from SE)
   useEffect(() => {
@@ -446,12 +458,30 @@ export function StageView({
         <div className="absolute inset-0 z-20 pointer-events-none">
           {stageState.active_portraits.map((portrait, index) => (
             (() => {
-              const rectWRel = typeof portrait.rectWRel === 'number' ? portrait.rectWRel : null;
-              const rectHRel = typeof portrait.rectHRel === 'number' ? portrait.rectHRel : null;
+              const posKey = portrait.position === 'left' ? 'left' : portrait.position === 'right' ? 'right' : 'center';
+              const sharedKey = portrait.tag || portrait.label;
+              const shared = room?.id && sharedKey
+                ? getPortraitTransformRel({
+                    roomId: room.id,
+                    characterId: portrait.characterId,
+                    key: sharedKey,
+                    position: posKey,
+                  })
+                : null;
+              const rectWRel = typeof shared?.rectW === 'number'
+                ? shared.rectW
+                : (typeof portrait.rectWRel === 'number' ? portrait.rectWRel : null);
+              const rectHRel = typeof shared?.rectH === 'number'
+                ? shared.rectH
+                : (typeof portrait.rectHRel === 'number' ? portrait.rectHRel : null);
               const useRect = rectWRel != null && rectHRel != null && rectWRel > 0 && rectHRel > 0;
               if (useRect) {
-                const rectXRel = typeof portrait.rectXRel === 'number' ? portrait.rectXRel : 0;
-                const rectYRel = typeof portrait.rectYRel === 'number' ? portrait.rectYRel : 0;
+                const rectXRel = typeof shared?.rectX === 'number'
+                  ? shared.rectX
+                  : (typeof portrait.rectXRel === 'number' ? portrait.rectXRel : 0);
+                const rectYRel = typeof shared?.rectY === 'number'
+                  ? shared.rectY
+                  : (typeof portrait.rectYRel === 'number' ? portrait.rectYRel : 0);
                 const left = rectXRel * stageSize.width;
                 const top = rectYRel * stageSize.height;
                 const width = rectWRel * stageSize.width;
@@ -483,14 +513,19 @@ export function StageView({
               const shift = 0.225; // relative to stage width
               const positionShiftXRel = portrait.position === 'left' ? -shift : portrait.position === 'right' ? shift : 0;
               const positionShiftX = stageSize.width * positionShiftXRel;
-              const offsetXRel = typeof portrait.offsetXRel === 'number'
-                ? portrait.offsetXRel
-                : (typeof portrait.offsetX === 'number' && stageSize.width > 0 ? portrait.offsetX / stageSize.width : 0);
-              const offsetYRel = typeof portrait.offsetYRel === 'number'
-                ? portrait.offsetYRel
-                : (typeof portrait.offsetY === 'number' && stageSize.height > 0 ? portrait.offsetY / stageSize.height : 0);
+              const offsetXRel = typeof shared?.x === 'number'
+                ? shared.x
+                : (typeof portrait.offsetXRel === 'number'
+                  ? portrait.offsetXRel
+                  : (typeof portrait.offsetX === 'number' && stageSize.width > 0 ? portrait.offsetX / stageSize.width : 0));
+              const offsetYRel = typeof shared?.y === 'number'
+                ? shared.y
+                : (typeof portrait.offsetYRel === 'number'
+                  ? portrait.offsetYRel
+                  : (typeof portrait.offsetY === 'number' && stageSize.height > 0 ? portrait.offsetY / stageSize.height : 0));
               const offsetX = offsetXRel * stageSize.width;
               const offsetY = offsetYRel * stageSize.height;
+              const scale = typeof shared?.scale === 'number' ? shared.scale : (portrait.scale ?? 1);
               return (
             <div
               key={`${portrait.characterId}-${index}`}
@@ -499,7 +534,7 @@ export function StageView({
                 left: `${baseX * 100}%`,
                 zIndex: portrait.layerOrder,
                 maxHeight: '80%',
-                transform: `translate(-50%, 0) translate(${offsetX + positionShiftX}px, ${offsetY}px) scale(${portrait.scale ?? 1})`,
+                transform: `translate(-50%, 0) translate(${offsetX + positionShiftX}px, ${offsetY}px) scale(${scale})`,
                 transformOrigin: 'bottom center',
               }}
             >
