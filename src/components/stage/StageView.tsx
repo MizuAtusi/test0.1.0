@@ -86,6 +86,8 @@ export function StageView({
     stageSize.width / EFFECT_BASE_WIDTH,
     stageSize.height / EFFECT_BASE_HEIGHT
   );
+  const overlayWidth = EFFECT_BASE_WIDTH * overlayScale;
+  const overlayHeight = EFFECT_BASE_HEIGHT * overlayScale;
   const showStageGuide = import.meta.env.DEV;
 
   // Load per-room visibility preference once room id becomes available
@@ -426,18 +428,16 @@ export function StageView({
 
       {showStageGuide && (
         <div className="absolute inset-0 pointer-events-none" style={{ zIndex: 26 }}>
-          <div className="absolute left-1/2 top-1/2" style={{ transform: 'translate(-50%, -50%)' }}>
-            <div
-              style={{
-                width: EFFECT_BASE_WIDTH,
-                height: EFFECT_BASE_HEIGHT,
-                transform: `scale(${overlayScale})`,
-                transformOrigin: 'top left',
-                border: '1px dashed rgba(255, 255, 255, 0.4)',
-                boxSizing: 'border-box',
-              }}
-            />
-          </div>
+          <div
+            className="absolute left-1/2 top-1/2"
+            style={{
+              width: overlayWidth,
+              height: overlayHeight,
+              transform: 'translate(-50%, -50%)',
+              border: '1px dashed rgba(255, 255, 255, 0.4)',
+              boxSizing: 'border-box',
+            }}
+          />
         </div>
       )}
 
@@ -525,6 +525,8 @@ export function StageView({
           <div
             className="absolute left-1/2 top-1/2"
             style={{
+              width: overlayWidth,
+              height: overlayHeight,
               transform: 'translate(-50%, -50%)',
             }}
           >
@@ -580,6 +582,8 @@ export function StageView({
           <div
             className="absolute left-1/2 top-1/2"
             style={{
+              width: overlayWidth,
+              height: overlayHeight,
               transform: 'translate(-50%, -50%)',
             }}
           >

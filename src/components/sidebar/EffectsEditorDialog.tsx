@@ -63,6 +63,8 @@ export function EffectsEditorDialog(props: {
     previewSize.width / EFFECT_BASE_WIDTH,
     previewSize.height / EFFECT_BASE_HEIGHT
   ) || 1;
+  const previewWidth = EFFECT_BASE_WIDTH * previewScale;
+  const previewHeight = EFFECT_BASE_HEIGHT * previewScale;
   const showStageGuide = import.meta.env.DEV;
 
   const pcCharacters = useMemo(() => characters.filter((c) => !c.is_npc), [characters]);
@@ -749,6 +751,8 @@ export function EffectsEditorDialog(props: {
                   <div
                     className="absolute left-1/2 top-1/2"
                     style={{
+                      width: previewWidth,
+                      height: previewHeight,
                       transform: 'translate(-50%, -50%)',
                     }}
                   >
@@ -756,10 +760,8 @@ export function EffectsEditorDialog(props: {
                       <div
                         className="absolute left-0 top-0 pointer-events-none"
                         style={{
-                          width: EFFECT_BASE_WIDTH,
-                          height: EFFECT_BASE_HEIGHT,
-                          transform: `scale(${previewScale})`,
-                          transformOrigin: 'top left',
+                          width: previewWidth,
+                          height: previewHeight,
                           border: '1px dashed rgba(255, 255, 255, 0.4)',
                           boxSizing: 'border-box',
                         }}
