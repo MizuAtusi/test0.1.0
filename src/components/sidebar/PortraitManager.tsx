@@ -67,6 +67,7 @@ export function PortraitManager({
   const [saving, setSaving] = useState(false);
   const [selectedIndex, setSelectedIndex] = useState<number>(0);
   const [previewPos, setPreviewPos] = useState<PortraitPosition>('center');
+  const previewFrameRef = useRef<HTMLDivElement>(null);
   const previewRef = useRef<HTMLDivElement>(null);
   const measureRef = useRef<HTMLDivElement>(null);
   const [previewSize, setPreviewSize] = useState<{ width: number; height: number }>({ width: 1200, height: 675 });
@@ -514,7 +515,7 @@ export function PortraitManager({
   } | null>(null);
 
   useEffect(() => {
-    const el = previewRef.current;
+    const el = previewFrameRef.current;
     if (!el) return;
     const ro = new ResizeObserver((entries) => {
       const rect = entries[0]?.contentRect;
@@ -530,7 +531,7 @@ export function PortraitManager({
 
   useEffect(() => {
     if (!open) return;
-    const el = previewRef.current;
+    const el = previewFrameRef.current;
     if (!el) return;
     const id = window.requestAnimationFrame(() => {
       const rect = el.getBoundingClientRect();
@@ -543,6 +544,9 @@ export function PortraitManager({
     if (!selectedVariant) return;
     e.preventDefault();
     (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
+    const frameRect = previewFrameRef.current?.getBoundingClientRect();
+    const width = frameRect?.width && frameRect.width > 0 ? frameRect.width : previewSize.width;
+    const height = frameRect?.height && frameRect.height > 0 ? frameRect.height : previewSize.height;
     const base =
       pos === 'left'
         ? { x: selectedVariant.offsetXLeft, y: selectedVariant.offsetYLeft }
@@ -555,8 +559,8 @@ export function PortraitManager({
       startY: e.clientY,
       startOffsetXRel: base.x,
       startOffsetYRel: base.y,
-      width: previewSize.width,
-      height: previewSize.height,
+      width: Math.max(1, width),
+      height: Math.max(1, height),
     };
   };
 
@@ -735,7 +739,7 @@ export function PortraitManager({
                 </Tabs>
               </div>
 
-              <AspectRatio ratio={16 / 9} className="relative w-full">
+              <AspectRatio ref={previewFrameRef} ratio={16 / 9} className="relative w-full">
                 <div
                   ref={previewRef}
                   className="absolute inset-0 rounded border border-border bg-gradient-to-b from-background/70 to-background/30 overflow-hidden"
