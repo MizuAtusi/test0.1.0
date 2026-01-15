@@ -711,7 +711,7 @@ export function StageToolbar({
                     <div className="text-xs text-muted-foreground">
                       {infoById[selectedInfoId]?.visibility === 'public' && '全体公開'}
                       {infoById[selectedInfoId]?.visibility === 'restricted' && '制限付き'}
-                      {infoById[selectedInfoId]?.visibility === 'gm_only' && 'GMのみ'}
+                      {infoById[selectedInfoId]?.visibility === 'gm_only' && 'KPのみ'}
                     </div>
                     {isGM && (
                       <>
@@ -786,7 +786,7 @@ export function StageToolbar({
                                     size="sm"
                                     onClick={() => setInfoEditVisibility('gm_only')}
                                   >
-                                    GMのみ
+                                    KPのみ
                                   </Button>
                                 </div>
                               </div>
@@ -1153,7 +1153,7 @@ export function StageToolbar({
                           size="sm"
                           onClick={() => setInfoVisibility('gm_only')}
                         >
-                          GMのみ
+                          KPのみ
                         </Button>
                       </div>
                     </div>
@@ -1235,7 +1235,7 @@ export function StageToolbar({
                           <span className="text-xs text-muted-foreground flex items-center gap-1">
                             {info.visibility === 'public' && '全体公開'}
                             {info.visibility === 'restricted' && <><Users className="w-3 h-3" />制限付き</>}
-                            {info.visibility === 'gm_only' && <><Lock className="w-3 h-3" />GMのみ</>}
+                            {info.visibility === 'gm_only' && <><Lock className="w-3 h-3" />KPのみ</>}
                           </span>
                         </div>
                       </button>

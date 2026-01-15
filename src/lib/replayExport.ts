@@ -1181,7 +1181,7 @@ function generateReplayJs(): string {
       if (step.kind === 'secret_prompt') {
         stopAuto();
         const names = participantNamesForIds(step.secretAllowList || []);
-        const label = names.length > 0 ? ('プレイヤー：' + names.join('、')) : '（GMのみ）';
+        const label = names.length > 0 ? ('プレイヤー：' + names.join('、')) : '（KPのみ）';
         // Do not show system speaker/text in replay window; choices are rendered on stage overlay.
         document.getElementById('speaker-name').textContent = '';
         document.getElementById('message-text').textContent = '';
@@ -1518,7 +1518,7 @@ function generateReplayJs(): string {
       makeSection('マークアップから再生', nodes);
     } else {
       makeSection('マークアップから再生', [
-        makeItem('マークアップがありません', 'GMがログから追加できます', function() {}, null, false),
+        makeItem('マークアップがありません', 'KPがログから追加できます', function() {}, null, false),
       ]);
     }
 

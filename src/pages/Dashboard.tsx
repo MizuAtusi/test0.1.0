@@ -339,7 +339,7 @@ export default function DashboardPage() {
                       <span className="truncate">{r.name}</span>
                       {hasUnread(r.id) && <span className="h-2 w-2 rounded-full bg-red-500" />}
                     </div>
-                    <div className="text-xs text-muted-foreground">権限: GM</div>
+                    <div className="text-xs text-muted-foreground">権限: KP</div>
                   </div>
                   <div className="flex items-center gap-2">
                     <Button variant="outline" onClick={() => navigate(`/room/${r.id}`)}>

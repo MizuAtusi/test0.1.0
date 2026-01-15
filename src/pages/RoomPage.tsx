@@ -235,7 +235,7 @@ export default function RoomPage() {
           requestedCharacter.owner_participant_id === participant.id)
       : false;
     const speakerCharacter = canUseCharacter ? requestedCharacter : null;
-    const speakerName = isGmSpeaker ? 'GM' : (speakerCharacter?.name || myCharacter?.name || participant.name);
+    const speakerName = isGmSpeaker ? 'KP' : (speakerCharacter?.name || myCharacter?.name || participant.name);
     const speakerAvatarUrl = isGmSpeaker
       ? null
       : (speakerCharacter?.avatar_url || (speakerCharacter ? getCharacterAvatarUrl(speakerCharacter.id) : null));
@@ -649,9 +649,9 @@ export default function RoomPage() {
             <div className="text-sm text-muted-foreground">
               {publicSettings?.is_public
                 ? (publicSettings?.public_scope === 'read_only'
-                    ? 'このルームは閲覧専用で公開されています。参加にはGMの承認が必要です。'
+                    ? 'このルームは閲覧専用で公開されています。参加にはKPの承認が必要です。'
                     : 'このルームは公開されています。参加申請を送ることができます。')
-                : 'このルームは非公開です。参加にはGMの承認が必要です。'}
+                : 'このルームは非公開です。参加にはKPの承認が必要です。'}
             </div>
               {publicSettings?.title && (
               <div className="text-base font-semibold">{publicSettings.title}</div>
@@ -690,7 +690,7 @@ export default function RoomPage() {
                 <Textarea
                   value={joinMessage}
                   onChange={(e) => setJoinMessage(e.target.value)}
-                  placeholder="GMへのコメント（任意）"
+                  placeholder="KPへのコメント（任意）"
                   className="bg-input border-border min-h-[90px]"
                 />
               )}
@@ -760,7 +760,7 @@ export default function RoomPage() {
           <h1 className="font-display text-lg text-foreground">{room.name}</h1>
           {isGM && (
             <span className="text-xs bg-accent text-accent-foreground px-2 py-0.5 rounded">
-              GM
+              KP
             </span>
           )}
           {isReadOnlyViewer && (
@@ -790,7 +790,7 @@ export default function RoomPage() {
       {isReadOnlyViewer && (
         <div className="border-b border-border bg-card px-4 py-2 text-sm flex items-center justify-between gap-3">
           <div className="text-muted-foreground">
-            閲覧専用モードです。参加するにはGMの承認が必要です。
+            閲覧専用モードです。参加するにはKPの承認が必要です。
           </div>
           <div className="flex items-center gap-2">
             {joinRequest?.status === 'pending' && (
@@ -1005,7 +1005,7 @@ export default function RoomPage() {
           <Textarea
             value={joinMessage}
             onChange={(e) => setJoinMessage(e.target.value)}
-            placeholder="GMへのコメント（任意）"
+            placeholder="KPへのコメント（任意）"
             className="bg-input border-border min-h-[90px]"
           />
           <DialogFooter className="gap-2">

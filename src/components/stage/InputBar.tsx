@@ -96,7 +96,7 @@ export function InputBar({
   const paletteText = currentCharacter ? buildPaletteTextIacharaStyle(currentCharacter) : '';
 
   const speakerDisplay = (() => {
-    if (speakerValue === 'gm') return { name: 'GM', role: '権限' };
+    if (speakerValue === 'gm') return { name: 'KP', role: '権限' };
     if (speakerValue === 'participant') return { name: participantName, role: '参加者' };
     const c = characters.find((x) => x.id === speakerValue) ?? null;
     return { name: c?.name || participantName, role: c?.is_npc ? 'NPC' : 'PC' };
@@ -185,9 +185,9 @@ export function InputBar({
             </SelectTrigger>
             <SelectContent>
               {showGmOption && (
-                <SelectItem value="gm" textValue="GM 権限">
+                <SelectItem value="gm" textValue="KP 権限">
                   <span className="flex w-full items-center gap-3">
-                    <span className="min-w-0 flex-1 truncate">GM</span>
+                    <span className="min-w-0 flex-1 truncate">KP</span>
                     <span className="ml-auto text-xs text-muted-foreground shrink-0">権限</span>
                   </span>
                 </SelectItem>

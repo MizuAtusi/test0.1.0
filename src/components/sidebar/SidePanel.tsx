@@ -98,7 +98,7 @@ export function SidePanel({
                 className="tab-gothic rounded-none data-[state=active]:bg-transparent"
               >
                 <Wand2 className="w-4 h-4 mr-2" />
-                GM
+                KP
               </TabsTrigger>
             )}
           </div>

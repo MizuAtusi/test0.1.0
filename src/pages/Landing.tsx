@@ -141,7 +141,7 @@ export default function LandingPage() {
                     </li>
                     <li>
                       <span className="font-semibold text-foreground">2.</span>{' '}
-                      簡単準備・簡単操作 とにかくルームのGMタブとか色々触ってみてください（投げやり）
+                      簡単準備・簡単操作 とにかくルームのKPタブとか色々触ってみてください（投げやり）
                     </li>
                     <li>
                       <span className="font-semibold text-foreground">3.</span>{' '}

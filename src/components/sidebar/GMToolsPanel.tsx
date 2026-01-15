@@ -853,7 +853,7 @@ export function GMToolsPanel({
     // Send message
     if (parseText.trim() || bgmUrl || seUrl || bgUrl || portraitChanges.length > 0) {
       if (speaker.mode === 'gm') {
-        onSendMessage('speech', originalText.trim(), 'GM');
+        onSendMessage('speech', originalText.trim(), 'KP');
       } else {
         const character = characters.find(c => c.id === speaker.characterId) ?? null;
         const speakerName = character?.name || 'NPC';
@@ -2312,7 +2312,7 @@ export function GMToolsPanel({
                         setPromoteTarget({ userId: m.user_id, name });
                       }}
                       disabled={!canPromote}
-                      title={canPromote ? 'クリックしてGM権限を付与' : undefined}
+                      title={canPromote ? 'クリックしてKP権限を付与' : undefined}
                     >
                       <span className="text-sm truncate">{name}</span>
                       <span
@@ -2329,7 +2329,7 @@ export function GMToolsPanel({
             </div>
             {isOwner && (
               <div className="text-xs text-muted-foreground">
-                参加者をクリックしてGM権限を付与できます（ルーム作成者のみ）
+                参加者をクリックしてKP権限を付与できます（ルーム作成者のみ）
               </div>
             )}
             {isGmUser && (
@@ -2686,7 +2686,7 @@ export function GMToolsPanel({
                     <SelectValue placeholder="発言者を選択" />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="gm">GM</SelectItem>
+                    <SelectItem value="gm">KP</SelectItem>
                     {npcCharacters.map((char) => (
                       <SelectItem key={char.id} value={char.id}>
                         {char.name}
@@ -2938,7 +2938,7 @@ export function GMToolsPanel({
                     <SelectValue placeholder="発言者を選択" />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="gm">GM</SelectItem>
+                    <SelectItem value="gm">KP</SelectItem>
                     {npcCharacters.map(char => (
                       <SelectItem key={char.id} value={char.id}>{char.name}</SelectItem>
                     ))}
@@ -3332,7 +3332,7 @@ export function GMToolsPanel({
           </DialogHeader>
           <div className="space-y-3">
             <p className="text-sm text-muted-foreground">
-              選択した参加者は秘匿モード中のステージを閲覧できます。誰も選ばない場合はGMのみ閲覧できます。
+              選択した参加者は秘匿モード中のステージを閲覧できます。誰も選ばない場合はKPのみ閲覧できます。
             </p>
             <div className="space-y-2 max-h-[240px] overflow-auto rounded-md border border-border p-3">
               {nonGmParticipants.length === 0 ? (
@@ -3386,10 +3386,10 @@ export function GMToolsPanel({
       <Dialog open={!!promoteTarget} onOpenChange={(open) => { if (!open) setPromoteTarget(null); }}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>GM権限を付与しますか？</DialogTitle>
+            <DialogTitle>KP権限を付与しますか？</DialogTitle>
           </DialogHeader>
           <div className="text-sm text-muted-foreground">
-            {promoteTarget?.name} にGM権限を付与してもよろしいですか？
+            {promoteTarget?.name} にKP権限を付与してもよろしいですか？
           </div>
           <DialogFooter className="gap-2">
             <Button variant="outline" onClick={() => setPromoteTarget(null)}>いいえ</Button>
@@ -3402,10 +3402,10 @@ export function GMToolsPanel({
                   .eq('room_id', roomId)
                   .eq('user_id', promoteTarget.userId);
                 if (error) {
-                  toast({ title: 'GM権限の付与に失敗しました', description: error.message, variant: 'destructive' });
+                  toast({ title: 'KP権限の付与に失敗しました', description: error.message, variant: 'destructive' });
                   return;
                 }
-                toast({ title: 'GM権限を付与しました' });
+                toast({ title: 'KP権限を付与しました' });
                 setPromoteTarget(null);
               }}
             >

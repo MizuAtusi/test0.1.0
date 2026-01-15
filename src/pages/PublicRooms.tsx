@@ -79,7 +79,7 @@ export default function PublicRoomsPage() {
   const copyToMyRoom = async (r: RoomPublicSettings) => {
     if (!user?.id) return;
     if (!r.allow_copy) {
-      toast({ title: 'このルームは保存できません', description: 'GMがテンプレート頒布を許可していません。', variant: 'destructive' });
+      toast({ title: 'このルームは保存できません', description: 'KPがテンプレート頒布を許可していません。', variant: 'destructive' });
       return;
     }
     setCopyingId(r.room_id);
