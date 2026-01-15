@@ -73,6 +73,13 @@ export function PortraitManager({
   const fileInputRef = useRef<HTMLInputElement>(null);
   const { toast } = useToast();
   const previewPositions: PortraitPosition[] = ['left', 'center', 'right'];
+  const isDefaultTransform = (value: { scale?: number; x?: number; y?: number } | null | undefined) => {
+    if (!value) return true;
+    const scale = typeof value.scale === 'number' ? value.scale : 1;
+    const x = typeof value.x === 'number' ? value.x : 0;
+    const y = typeof value.y === 'number' ? value.y : 0;
+    return Math.abs(scale - 1) < 0.0001 && Math.abs(x) < 0.0001 && Math.abs(y) < 0.0001;
+  };
   const resolveTransform = (
     asset: Asset,
     position: PortraitPosition,
@@ -81,7 +88,15 @@ export function PortraitManager({
   ) => {
     const hasPosition = hasPositionTransformColumns(asset, position);
     const assetRel = getAssetTransformRel(asset, position);
+    const sharedRel = shared?.[position] ?? null;
     if (hasPosition && assetRel) {
+      if (!isDefaultTransform(sharedRel) && isDefaultTransform(assetRel)) {
+        return {
+          scale: sharedRel?.scale ?? 1,
+          x: sharedRel?.x ?? 0,
+          y: sharedRel?.y ?? 0,
+        };
+      }
       return {
         scale: assetRel.scale ?? 1,
         x: assetRel.x ?? 0,
@@ -89,7 +104,6 @@ export function PortraitManager({
       };
     }
 
-    const sharedRel = shared?.[position];
     if (sharedRel) {
       return {
         scale: sharedRel.scale ?? 1,

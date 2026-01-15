@@ -15,6 +15,11 @@ import {
 } from '@/lib/effects';
 import { buildTitleScreenRenderList, hasTitleScreenConfig, loadTitleScreenConfig } from '@/lib/titleScreen';
 import { getPortraitTransformRel } from '@/lib/portraitTransformsShared';
+import {
+  getAssetLegacyTransformRel,
+  getAssetTransformRel,
+  hasPositionTransformColumns,
+} from '@/lib/portraitTransformUtils';
 
 const EFFECT_BASE_WIDTH = 1200;
 const EFFECT_BASE_HEIGHT = 675;
@@ -68,7 +73,7 @@ export function StageView({
   const [effectOverlay, setEffectOverlay] = useState<{ nonce: number; images: EffectImage[]; seUrl: string; durationMs: number } | null>(null);
   const [effectFading, setEffectFading] = useState(false);
   const [stageSize, setStageSize] = useState<{ width: number; height: number }>({ width: 1200, height: 675 });
-  const [, bumpPortraitTransformNonce] = useState(0);
+  const [portraitTransformNonce, bumpPortraitTransformNonce] = useState(0);
   const titleScreenConfig = useMemo(() => loadTitleScreenConfig(room), [room]);
   const titleScreenRender = useMemo(
     () => buildTitleScreenRenderList({ config: titleScreenConfig, characters, assets: portraitAssets }),
@@ -306,6 +311,14 @@ export function StageView({
     return () => window.cancelAnimationFrame(raf);
   }, [visibleMessages.length, scrollToBottom]);
 
+  const portraitAssetById = useMemo(() => {
+    const map = new Map<string, Asset>();
+    portraitAssets.forEach((asset) => {
+      map.set(asset.id, asset);
+    });
+    return map;
+  }, [portraitAssets]);
+
   // Fetch portrait assets for resolving PC tags in effects
   useEffect(() => {
     const roomId = room?.id;
@@ -315,11 +328,60 @@ export function StageView({
     }
     let cancelled = false;
     (async () => {
-      const { data, error } = await supabase
+      const selectWithTransforms = [
+        'id',
+        'room_id',
+        'character_id',
+        'kind',
+        'url',
+        'label',
+        'tag',
+        'is_default',
+        'layer_order',
+        'created_at',
+        'scale',
+        'offset_x',
+        'offset_y',
+        'scale_left',
+        'offset_x_left',
+        'offset_y_left',
+        'scale_center',
+        'offset_x_center',
+        'offset_y_center',
+        'scale_right',
+        'offset_x_right',
+        'offset_y_right',
+      ].join(',');
+      const selectMinimal = [
+        'id',
+        'room_id',
+        'character_id',
+        'kind',
+        'url',
+        'label',
+        'tag',
+        'is_default',
+        'layer_order',
+        'created_at',
+      ].join(',');
+      let { data, error } = await supabase
         .from('assets')
-        .select('id,room_id,character_id,kind,url,label,tag,is_default,layer_order,created_at')
+        .select(selectWithTransforms)
         .eq('room_id', roomId)
         .eq('kind', 'portrait');
+      if (error) {
+        const message = error.message || '';
+        const looksLikeMissingColumns = message.includes('column') && message.includes('does not exist');
+        if (looksLikeMissingColumns) {
+          const retry = await supabase
+            .from('assets')
+            .select(selectMinimal)
+            .eq('room_id', roomId)
+            .eq('kind', 'portrait');
+          data = retry.data as any;
+          error = retry.error as any;
+        }
+      }
       if (cancelled) return;
       if (error) {
         console.warn('Failed to fetch portrait assets for effects:', error);
@@ -331,7 +393,7 @@ export function StageView({
     return () => {
       cancelled = true;
     };
-  }, [room?.id]);
+  }, [room?.id, portraitTransformNonce]);
 
   // Trigger critical/fumble effects on new visible dice messages
   useEffect(() => {
@@ -459,7 +521,19 @@ export function StageView({
           {stageState.active_portraits.map((portrait, index) => (
             (() => {
               const posKey = portrait.position === 'left' ? 'left' : portrait.position === 'right' ? 'right' : 'center';
-              const sharedKey = portrait.tag || portrait.label;
+              const assetById = portrait.assetId ? portraitAssetById.get(portrait.assetId) : undefined;
+              const assetFallback = !assetById
+                ? portraitAssets.find((asset) => {
+                    if (asset.kind !== 'portrait') return false;
+                    if (asset.character_id !== portrait.characterId) return false;
+                    const labelMatch = asset.label && portrait.label && asset.label.toLowerCase() === portrait.label.toLowerCase();
+                    const tagMatch = asset.tag && portrait.tag && asset.tag.toLowerCase() === portrait.tag.toLowerCase();
+                    const urlMatch = asset.url && portrait.url && asset.url === portrait.url;
+                    return Boolean(labelMatch || tagMatch || urlMatch);
+                  })
+                : undefined;
+              const assetForTransform = assetById ?? assetFallback;
+              const sharedKey = portrait.tag || portrait.label || assetForTransform?.tag || assetForTransform?.label;
               const shared = room?.id && sharedKey
                 ? getPortraitTransformRel({
                     roomId: room.id,
@@ -513,19 +587,36 @@ export function StageView({
               const shift = 0.225; // relative to stage width
               const positionShiftXRel = portrait.position === 'left' ? -shift : portrait.position === 'right' ? shift : 0;
               const positionShiftX = stageSize.width * positionShiftXRel;
+              const hasPosition = assetForTransform ? hasPositionTransformColumns(assetForTransform, posKey) : false;
+              const assetPosRel = assetForTransform && hasPosition ? getAssetTransformRel(assetForTransform, posKey) : null;
+              const assetLegacyRel = assetForTransform && !hasPosition ? getAssetLegacyTransformRel(assetForTransform) : null;
               const offsetXRel = typeof shared?.x === 'number'
                 ? shared.x
-                : (typeof portrait.offsetXRel === 'number'
-                  ? portrait.offsetXRel
-                  : (typeof portrait.offsetX === 'number' && stageSize.width > 0 ? portrait.offsetX / stageSize.width : 0));
+                : (typeof assetPosRel?.x === 'number'
+                  ? assetPosRel.x
+                  : (typeof assetLegacyRel?.x === 'number'
+                    ? assetLegacyRel.x
+                    : (typeof portrait.offsetXRel === 'number'
+                      ? portrait.offsetXRel
+                      : (typeof portrait.offsetX === 'number' && stageSize.width > 0 ? portrait.offsetX / stageSize.width : 0))));
               const offsetYRel = typeof shared?.y === 'number'
                 ? shared.y
-                : (typeof portrait.offsetYRel === 'number'
-                  ? portrait.offsetYRel
-                  : (typeof portrait.offsetY === 'number' && stageSize.height > 0 ? portrait.offsetY / stageSize.height : 0));
+                : (typeof assetPosRel?.y === 'number'
+                  ? assetPosRel.y
+                  : (typeof assetLegacyRel?.y === 'number'
+                    ? assetLegacyRel.y
+                    : (typeof portrait.offsetYRel === 'number'
+                      ? portrait.offsetYRel
+                      : (typeof portrait.offsetY === 'number' && stageSize.height > 0 ? portrait.offsetY / stageSize.height : 0))));
               const offsetX = offsetXRel * stageSize.width;
               const offsetY = offsetYRel * stageSize.height;
-              const scale = typeof shared?.scale === 'number' ? shared.scale : (portrait.scale ?? 1);
+              const scale = typeof shared?.scale === 'number'
+                ? shared.scale
+                : (typeof assetPosRel?.scale === 'number'
+                  ? assetPosRel.scale
+                  : (typeof assetLegacyRel?.scale === 'number'
+                    ? assetLegacyRel.scale
+                    : (portrait.scale ?? 1)));
               return (
             <div
               key={`${portrait.characterId}-${index}`}
