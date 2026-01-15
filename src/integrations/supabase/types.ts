@@ -24,9 +24,18 @@ export type Database = {
           label: string
           layer_order: number
           offset_x: number | null
+          offset_x_center: number | null
+          offset_x_left: number | null
+          offset_x_right: number | null
           offset_y: number | null
+          offset_y_center: number | null
+          offset_y_left: number | null
+          offset_y_right: number | null
           room_id: string
           scale: number | null
+          scale_center: number | null
+          scale_left: number | null
+          scale_right: number | null
           tag: string | null
           url: string
         }
@@ -39,9 +48,18 @@ export type Database = {
           label: string
           layer_order?: number
           offset_x?: number | null
+          offset_x_center?: number | null
+          offset_x_left?: number | null
+          offset_x_right?: number | null
           offset_y?: number | null
+          offset_y_center?: number | null
+          offset_y_left?: number | null
+          offset_y_right?: number | null
           room_id: string
           scale?: number | null
+          scale_center?: number | null
+          scale_left?: number | null
+          scale_right?: number | null
           tag?: string | null
           url: string
         }
@@ -54,9 +72,18 @@ export type Database = {
           label?: string
           layer_order?: number
           offset_x?: number | null
+          offset_x_center?: number | null
+          offset_x_left?: number | null
+          offset_x_right?: number | null
           offset_y?: number | null
+          offset_y_center?: number | null
+          offset_y_left?: number | null
+          offset_y_right?: number | null
           room_id?: string
           scale?: number | null
+          scale_center?: number | null
+          scale_left?: number | null
+          scale_right?: number | null
           tag?: string | null
           url?: string
         }

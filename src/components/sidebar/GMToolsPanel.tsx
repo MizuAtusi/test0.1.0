@@ -20,7 +20,14 @@ import { EffectsEditorDialog } from './EffectsEditorDialog';
 import { OtherEffectsEditorDialog } from './OtherEffectsEditorDialog';
 import { TitleScreenEditorDialog } from './TitleScreenEditorDialog';
 import { getDisplayText } from '@/lib/expressionTag';
+import { getPortraitTransform } from '@/lib/portraitTransforms';
 import { getPortraitTransformRel } from '@/lib/portraitTransformsShared';
+import {
+  getAssetLegacyTransformRel,
+  getAssetTransformRel,
+  hasPositionTransformColumns,
+  legacyTransformToRel,
+} from '@/lib/portraitTransformUtils';
 import { loadEffectsConfig, normalizeEffectsConfig } from '@/lib/effects';
 import { loadTitleScreenConfig, hasTitleScreenConfig } from '@/lib/titleScreen';
 import type { Participant, Character, StageState, Macro, Room, Asset, ActivePortrait, RoomPublicSettings, RoomJoinRequest, Profile } from '@/types/trpg';
@@ -786,6 +793,27 @@ export function GMToolsPanel({
             key: asset.tag || asset.label,
             position: posKey,
           });
+          const legacy = getPortraitTransform(change.characterId, asset.tag || asset.label);
+          const legacyRel = legacyTransformToRel(legacy);
+          const hasPosition = hasPositionTransformColumns(asset, posKey);
+          const assetPosRel = hasPosition ? getAssetTransformRel(asset, posKey) : null;
+          const assetLegacyRel = !hasPosition ? getAssetLegacyTransformRel(asset) : null;
+          const resolvedScale =
+            shared?.scale ??
+            assetPosRel?.scale ??
+            assetLegacyRel?.scale ??
+            legacyRel?.scale ??
+            1;
+          const resolvedXRel =
+            shared?.x ??
+            assetPosRel?.x ??
+            assetLegacyRel?.x ??
+            legacyRel?.x;
+          const resolvedYRel =
+            shared?.y ??
+            assetPosRel?.y ??
+            assetLegacyRel?.y ??
+            legacyRel?.y;
           const newPortrait: ActivePortrait = {
             characterId: change.characterId,
             assetId: asset.id,
@@ -794,21 +822,20 @@ export function GMToolsPanel({
             tag: asset.tag,
             position: finalPosition,
             layerOrder: existingIndex >= 0 ? newPortraits[existingIndex].layerOrder : newPortraits.length,
-            scale: (() => {
-              if (shared?.scale != null) return shared.scale;
-              return asset.scale ?? 1;
-            })(),
-            offsetXRel: shared?.x ?? undefined,
-            offsetYRel: shared?.y ?? undefined,
+            scale: resolvedScale,
+            offsetXRel: resolvedXRel ?? undefined,
+            offsetYRel: resolvedYRel ?? undefined,
             rectXRel: shared?.rectX ?? undefined,
             rectYRel: shared?.rectY ?? undefined,
             rectWRel: shared?.rectW ?? undefined,
             rectHRel: shared?.rectH ?? undefined,
             offsetX: (() => {
-              return asset.offset_x ?? 0;
+              if (typeof asset.offset_x === 'number') return asset.offset_x;
+              return legacy?.offsetX ?? 0;
             })(),
             offsetY: (() => {
-              return asset.offset_y ?? 0;
+              if (typeof asset.offset_y === 'number') return asset.offset_y;
+              return legacy?.offsetY ?? 0;
             })(),
           };
           

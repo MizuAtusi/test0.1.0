@@ -17,6 +17,13 @@ import {
   type PortraitTransformSet,
   type PortraitPosition,
 } from '@/lib/portraitTransformsShared';
+import {
+  getAssetTransformRel,
+  hasPositionTransformColumns,
+  legacyTransformToRel,
+  relToBasePxX,
+  relToBasePxY,
+} from '@/lib/portraitTransformUtils';
 import { useToast } from '@/hooks/use-toast';
 import type { Asset } from '@/types/trpg';
 
@@ -66,6 +73,47 @@ export function PortraitManager({
   const fileInputRef = useRef<HTMLInputElement>(null);
   const { toast } = useToast();
   const previewPositions: PortraitPosition[] = ['left', 'center', 'right'];
+  const resolveTransform = (
+    asset: Asset,
+    position: PortraitPosition,
+    shared: PortraitTransformSet | null,
+    legacy: ReturnType<typeof getPortraitTransform>
+  ) => {
+    const hasPosition = hasPositionTransformColumns(asset, position);
+    const assetRel = getAssetTransformRel(asset, position);
+    if (hasPosition && assetRel) {
+      return {
+        scale: assetRel.scale ?? 1,
+        x: assetRel.x ?? 0,
+        y: assetRel.y ?? 0,
+      };
+    }
+
+    const sharedRel = shared?.[position];
+    if (sharedRel) {
+      return {
+        scale: sharedRel.scale ?? 1,
+        x: sharedRel.x ?? 0,
+        y: sharedRel.y ?? 0,
+      };
+    }
+
+    const assetFallback = !hasPosition ? assetRel : null;
+    if (assetFallback) {
+      return {
+        scale: assetFallback.scale ?? 1,
+        x: assetFallback.x ?? 0,
+        y: assetFallback.y ?? 0,
+      };
+    }
+
+    const legacyRel = legacyTransformToRel(legacy);
+    return {
+      scale: legacyRel?.scale ?? 1,
+      x: legacyRel?.x ?? 0,
+      y: legacyRel?.y ?? 0,
+    };
+  };
 
   const getVariantTransform = (variant: PortraitVariant, pos: PortraitPosition) => {
     const shift = pos === 'left' ? -0.225 : pos === 'right' ? 0.225 : 0;
@@ -113,42 +161,31 @@ export function PortraitManager({
 
     if (!error && data) {
       const nextVariants =
-        data.map((a: any) => ({
-          id: a.id,
-          displayName: a.label,
-          tag: a.tag || '',
-          url: a.url,
-          isDefault: a.is_default || false,
-          ...((): PortraitVariant extends infer T ? Partial<PortraitVariant> : never => {
-            const key = a.tag || a.label;
-            const set = loadPortraitTransformSet(roomId, characterId, key);
-            if (set) {
-              return {
-                scaleLeft: set.left.scale,
-                offsetXLeft: set.left.x,
-                offsetYLeft: set.left.y,
-                scaleCenter: set.center.scale,
-                offsetXCenter: set.center.x,
-                offsetYCenter: set.center.y,
-                scaleRight: set.right.scale,
-                offsetXRight: set.right.x,
-                offsetYRight: set.right.y,
-              } as any;
-            }
-            const legacy = getPortraitTransform(characterId, key);
-            return {
-              scaleLeft: legacy?.scale ?? 1,
-              offsetXLeft: 0,
-              offsetYLeft: 0,
-              scaleCenter: legacy?.scale ?? 1,
-              offsetXCenter: 0,
-              offsetYCenter: 0,
-              scaleRight: legacy?.scale ?? 1,
-              offsetXRight: 0,
-              offsetYRight: 0,
-            } as any;
-          })(),
-        }));
+        data.map((raw: any) => {
+          const asset = raw as Asset;
+          const key = asset.tag || asset.label;
+          const shared = key ? loadPortraitTransformSet(roomId, characterId, key) : null;
+          const legacy = key ? getPortraitTransform(characterId, key) : null;
+          const left = resolveTransform(asset, 'left', shared, legacy);
+          const center = resolveTransform(asset, 'center', shared, legacy);
+          const right = resolveTransform(asset, 'right', shared, legacy);
+          return {
+            id: asset.id,
+            displayName: asset.label,
+            tag: asset.tag || '',
+            url: asset.url,
+            isDefault: asset.is_default || false,
+            scaleLeft: left.scale,
+            offsetXLeft: left.x,
+            offsetYLeft: left.y,
+            scaleCenter: center.scale,
+            offsetXCenter: center.x,
+            offsetYCenter: center.y,
+            scaleRight: right.scale,
+            offsetXRight: right.x,
+            offsetYRight: right.y,
+          };
+        });
       setVariants(nextVariants);
       setSelectedIndex((prev) => {
         if (nextVariants.length === 0) return 0;
@@ -273,6 +310,15 @@ export function PortraitManager({
         scale: number;
         offset_x: number;
         offset_y: number;
+        scale_left: number;
+        offset_x_left: number;
+        offset_y_left: number;
+        scale_center: number;
+        offset_x_center: number;
+        offset_y_center: number;
+        scale_right: number;
+        offset_x_right: number;
+        offset_y_right: number;
       }> = [];
       for (let i = 0; i < normalizedVariants.length; i++) {
         const variant = normalizedVariants[i];
@@ -293,6 +339,24 @@ export function PortraitManager({
           url = uploadedUrl;
         }
 
+        const safeScale = (value: number) => (Number.isFinite(value) ? value : 1);
+        const safeRel = (value: number) => (Number.isFinite(value) ? value : 0);
+        const scaleLeft = safeScale(variant.scaleLeft);
+        const scaleCenter = safeScale(variant.scaleCenter);
+        const scaleRight = safeScale(variant.scaleRight);
+        const offsetXLeftRel = safeRel(variant.offsetXLeft);
+        const offsetYLeftRel = safeRel(variant.offsetYLeft);
+        const offsetXCenterRel = safeRel(variant.offsetXCenter);
+        const offsetYCenterRel = safeRel(variant.offsetYCenter);
+        const offsetXRightRel = safeRel(variant.offsetXRight);
+        const offsetYRightRel = safeRel(variant.offsetYRight);
+        const offsetXLeft = relToBasePxX(offsetXLeftRel);
+        const offsetYLeft = relToBasePxY(offsetYLeftRel);
+        const offsetXCenter = relToBasePxX(offsetXCenterRel);
+        const offsetYCenter = relToBasePxY(offsetYCenterRel);
+        const offsetXRight = relToBasePxX(offsetXRightRel);
+        const offsetYRight = relToBasePxY(offsetYRightRel);
+
         resolved.push({
           room_id: roomId,
           character_id: characterId,
@@ -302,9 +366,18 @@ export function PortraitManager({
           url,
           is_default: variant.isDefault,
           layer_order: i,
-          scale: Number.isFinite(variant.scaleCenter) ? variant.scaleCenter : 1,
-          offset_x: 0,
-          offset_y: 0,
+          scale: scaleCenter,
+          offset_x: offsetXCenter,
+          offset_y: offsetYCenter,
+          scale_left: scaleLeft,
+          offset_x_left: offsetXLeft,
+          offset_y_left: offsetYLeft,
+          scale_center: scaleCenter,
+          offset_x_center: offsetXCenter,
+          offset_y_center: offsetYCenter,
+          scale_right: scaleRight,
+          offset_x_right: offsetXRight,
+          offset_y_right: offsetYRight,
         });
       }
 
@@ -322,15 +395,29 @@ export function PortraitManager({
       const insertWithTransforms = await supabase.from('assets').insert(resolved);
       if (insertWithTransforms.error) {
         const message = insertWithTransforms.error.message || '';
-        const looksLikeMissingColumns =
-          message.includes('scale') ||
-          message.includes('offset_x') ||
-          message.includes('offset_y');
-
+        const looksLikeMissingColumns = message.includes('column') && message.includes('does not exist');
         if (!looksLikeMissingColumns) throw insertWithTransforms.error;
-        const minimalRows = resolved.map(({ scale, offset_x, offset_y, ...rest }) => rest);
-        const minimalInsert = await supabase.from('assets').insert(minimalRows as any);
-        if (minimalInsert.error) throw minimalInsert.error;
+        const legacyRows = resolved.map(({
+          scale_left,
+          offset_x_left,
+          offset_y_left,
+          scale_center,
+          offset_x_center,
+          offset_y_center,
+          scale_right,
+          offset_x_right,
+          offset_y_right,
+          ...rest
+        }) => rest);
+        const insertLegacy = await supabase.from('assets').insert(legacyRows as any);
+        if (insertLegacy.error) {
+          const legacyMessage = insertLegacy.error.message || '';
+          const legacyMissingColumns = legacyMessage.includes('column') && legacyMessage.includes('does not exist');
+          if (!legacyMissingColumns) throw insertLegacy.error;
+          const minimalRows = legacyRows.map(({ scale, offset_x, offset_y, ...rest }) => rest);
+          const minimalInsert = await supabase.from('assets').insert(minimalRows as any);
+          if (minimalInsert.error) throw minimalInsert.error;
+        }
       }
 
       // Persist transforms locally (fallback when DB columns are missing)
@@ -339,7 +426,11 @@ export function PortraitManager({
         if (v.tag.trim()) keys.add(v.tag);
         if (v.displayName.trim()) keys.add(v.displayName);
         for (const key of keys) {
-          setPortraitTransform(characterId, key, { scale: v.scaleCenter, offsetX: 0, offsetY: 0 });
+          setPortraitTransform(characterId, key, {
+            scale: Number.isFinite(v.scaleCenter) ? v.scaleCenter : 1,
+            offsetX: relToBasePxX(Number.isFinite(v.offsetXCenter) ? v.offsetXCenter : 0),
+            offsetY: relToBasePxY(Number.isFinite(v.offsetYCenter) ? v.offsetYCenter : 0),
+          });
         }
       }
 
@@ -357,6 +448,11 @@ export function PortraitManager({
           right: withRect({ scale: v.scaleRight, x: v.offsetXRight, y: v.offsetYRight }, rects?.right),
         };
         savePortraitTransformSet(roomId, characterId, key, set);
+        try {
+          window.dispatchEvent(new CustomEvent('trpg:portraitTransformChanged', { detail: { roomId, characterId, key } }));
+        } catch {
+          // ignore
+        }
         const cmd = buildPortraitTransformCommand({ characterId, key, set });
         if (cmd) commands.push(cmd);
       });

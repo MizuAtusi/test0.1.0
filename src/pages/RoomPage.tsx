@@ -13,6 +13,12 @@ import { supabase } from '@/integrations/supabase/client';
 import { getPortraitTransform } from '@/lib/portraitTransforms';
 import { getCharacterAvatarUrl } from '@/lib/characterAvatar';
 import { getPortraitTransformRel } from '@/lib/portraitTransformsShared';
+import {
+  getAssetLegacyTransformRel,
+  getAssetTransformRel,
+  hasPositionTransformColumns,
+  legacyTransformToRel,
+} from '@/lib/portraitTransformUtils';
 import type { Room, Profile } from '@/types/trpg';
 import { useAuth } from '@/hooks/useAuth';
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
@@ -310,9 +316,28 @@ export default function RoomPage() {
         return;
       }
 
-      // Some deployments may not have optional portrait transform columns yet (scale/offset_x/offset_y).
+      // Some deployments may not have optional portrait transform columns yet.
       // Retry with a minimal select so portrait tags still work.
-      const selectWithTransforms = 'id,url,label,tag,is_default,scale,offset_x,offset_y';
+      const selectWithTransforms = [
+        'id',
+        'url',
+        'label',
+        'tag',
+        'is_default',
+        'scale',
+        'offset_x',
+        'offset_y',
+        'scale_left',
+        'offset_x_left',
+        'offset_y_left',
+        'scale_center',
+        'offset_x_center',
+        'offset_y_center',
+        'scale_right',
+        'offset_x_right',
+        'offset_y_right',
+      ].join(',');
+      const selectLegacyTransforms = 'id,url,label,tag,is_default,scale,offset_x,offset_y';
       let {
         data: portraitAssets,
         error: portraitAssetsError,
@@ -324,16 +349,28 @@ export default function RoomPage() {
 
       if (portraitAssetsError) {
         const message = portraitAssetsError.message || '';
-        const looksLikeMissingColumns =
-          message.includes('scale') || message.includes('offset_x') || message.includes('offset_y');
+        const looksLikeMissingColumns = message.includes('column') && message.includes('does not exist');
         if (looksLikeMissingColumns) {
-          const retry = await supabase
+          const retryLegacy = await supabase
             .from('assets')
-            .select('id,url,label,tag,is_default')
+            .select(selectLegacyTransforms)
             .eq('character_id', speakerCharacter.id)
             .eq('kind', 'portrait');
-          portraitAssets = retry.data as any;
-          portraitAssetsError = retry.error as any;
+          portraitAssets = retryLegacy.data as any;
+          portraitAssetsError = retryLegacy.error as any;
+          if (portraitAssetsError) {
+            const legacyMessage = portraitAssetsError.message || '';
+            const legacyMissingColumns = legacyMessage.includes('column') && legacyMessage.includes('does not exist');
+            if (legacyMissingColumns) {
+              const retryMinimal = await supabase
+                .from('assets')
+                .select('id,url,label,tag,is_default')
+                .eq('character_id', speakerCharacter.id)
+                .eq('kind', 'portrait');
+              portraitAssets = retryMinimal.data as any;
+              portraitAssetsError = retryMinimal.error as any;
+            }
+          }
         }
       }
 
@@ -346,32 +383,7 @@ export default function RoomPage() {
         return;
       }
 
-      const byTag = new Map<
-        string,
-        {
-          id: string;
-          url: string;
-          label: string;
-          tag: string;
-          scale?: number | null;
-          offset_x?: number | null;
-          offset_y?: number | null;
-        }
-      >();
-      const byLabel = new Map<
-        string,
-        {
-          id: string;
-          url: string;
-          label: string;
-          tag: string;
-          scale?: number | null;
-          offset_x?: number | null;
-          offset_y?: number | null;
-        }
-      >();
-
-      for (const a of portraitAssets as Array<{
+      type PortraitAssetRow = {
         id: string;
         url: string;
         label: string;
@@ -380,14 +392,25 @@ export default function RoomPage() {
         scale?: number | null;
         offset_x?: number | null;
         offset_y?: number | null;
-      }>) {
+        scale_left?: number | null;
+        offset_x_left?: number | null;
+        offset_y_left?: number | null;
+        scale_center?: number | null;
+        offset_x_center?: number | null;
+        offset_y_center?: number | null;
+        scale_right?: number | null;
+        offset_x_right?: number | null;
+        offset_y_right?: number | null;
+      };
+      const byTag = new Map<string, PortraitAssetRow>();
+      const byLabel = new Map<string, PortraitAssetRow>();
+
+      for (const a of portraitAssets as PortraitAssetRow[]) {
         byLabel.set(a.label.toLowerCase(), a);
         if (a.tag) byTag.set(a.tag.toLowerCase(), a);
       }
 
-      let chosen:
-        | { id: string; url: string; label: string; tag: string; scale?: number | null; offset_x?: number | null; offset_y?: number | null }
-        | null = null;
+      let chosen: PortraitAssetRow | null = null;
       let positionOverride: null | 'left' | 'center' | 'right' = null;
       for (let i = normalizedTags.length - 1; i >= 0; i--) {
         const token = parseTagToken(normalizedTags[i]);
@@ -420,6 +443,27 @@ export default function RoomPage() {
         key: chosen.tag || chosen.label,
         position: posKey,
       });
+      const legacy = getPortraitTransform(speakerCharacter.id, chosen.tag || chosen.label);
+      const legacyRel = legacyTransformToRel(legacy);
+      const hasPosition = hasPositionTransformColumns(chosen, posKey);
+      const assetPosRel = hasPosition ? getAssetTransformRel(chosen, posKey) : null;
+      const assetLegacyRel = !hasPosition ? getAssetLegacyTransformRel(chosen) : null;
+      const resolvedScale =
+        shared?.scale ??
+        assetPosRel?.scale ??
+        assetLegacyRel?.scale ??
+        legacyRel?.scale ??
+        1;
+      const resolvedXRel =
+        shared?.x ??
+        assetPosRel?.x ??
+        assetLegacyRel?.x ??
+        legacyRel?.x;
+      const resolvedYRel =
+        shared?.y ??
+        assetPosRel?.y ??
+        assetLegacyRel?.y ??
+        legacyRel?.y;
       const newPortrait = {
         characterId: speakerCharacter.id,
         assetId: chosen.id,
@@ -428,27 +472,20 @@ export default function RoomPage() {
         tag: chosen.tag,
         position: finalPosition,
         layerOrder: existingIndex >= 0 ? newPortraits[existingIndex].layerOrder : newPortraits.length,
-        scale: (() => {
-          if (shared?.scale != null) return shared.scale;
-          if (typeof chosen.scale === 'number') return chosen.scale;
-          const t = getPortraitTransform(speakerCharacter.id, chosen.tag || chosen.label);
-          return t?.scale ?? 1;
-        })(),
-        offsetXRel: shared?.x ?? undefined,
-        offsetYRel: shared?.y ?? undefined,
+        scale: resolvedScale,
+        offsetXRel: resolvedXRel ?? undefined,
+        offsetYRel: resolvedYRel ?? undefined,
         rectXRel: shared?.rectX ?? undefined,
         rectYRel: shared?.rectY ?? undefined,
         rectWRel: shared?.rectW ?? undefined,
         rectHRel: shared?.rectH ?? undefined,
         offsetX: (() => {
           if (typeof chosen.offset_x === 'number') return chosen.offset_x;
-          const t = getPortraitTransform(speakerCharacter.id, chosen.tag || chosen.label);
-          return t?.offsetX ?? 0;
+          return legacy?.offsetX ?? 0;
         })(),
         offsetY: (() => {
           if (typeof chosen.offset_y === 'number') return chosen.offset_y;
-          const t = getPortraitTransform(speakerCharacter.id, chosen.tag || chosen.label);
-          return t?.offsetY ?? 0;
+          return legacy?.offsetY ?? 0;
         })(),
       };
       if (existingIndex >= 0) newPortraits[existingIndex] = newPortrait;
