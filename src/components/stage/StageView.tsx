@@ -59,6 +59,13 @@ export function StageView({
   textWindowVisible,
   onToggleTextWindow,
 }: StageViewProps) {
+  const isPortraitDebug = () => {
+    try {
+      return localStorage.getItem('trpg:debugPortrait') === '1';
+    } catch {
+      return false;
+    }
+  };
   const stageRootRef = useRef<HTMLDivElement>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
   const scrollContentRef = useRef<HTMLDivElement>(null);
@@ -580,7 +587,7 @@ export function StageView({
                 ? shared.bottomFromBottom
                 : (typeof portrait.bottomFromBottom === 'number' ? portrait.bottomFromBottom : null);
               const useVerticalBounds = topFromBottomRel != null && bottomFromBottomRel != null && topFromBottomRel !== bottomFromBottomRel;
-              if (import.meta.env.DEV && (topFromBottomRel != null || bottomFromBottomRel != null) && !useVerticalBounds) {
+              if (isPortraitDebug() && (topFromBottomRel != null || bottomFromBottomRel != null) && !useVerticalBounds) {
                 const debugKey = `${portrait.characterId}:${sharedKey ?? ''}:${posKey}:missing`;
                 const payload = { topFromBottomRel, bottomFromBottomRel };
                 const next = JSON.stringify(payload);
@@ -596,7 +603,7 @@ export function StageView({
                 const heightPx = bottomPx - topPx;
                 if (Number.isFinite(heightPx) && heightPx > 0) {
                   const leftPx = anchorXRel != null ? anchorXRel * stageSize.width : null;
-                  if (import.meta.env.DEV) {
+                  if (isPortraitDebug()) {
                     const debugKey = `${portrait.characterId}:${sharedKey ?? ''}:${posKey}`;
                     const payload = {
                       stageSize,

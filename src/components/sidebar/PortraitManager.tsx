@@ -63,6 +63,13 @@ export function PortraitManager({
   characterName,
   onUpdate,
 }: PortraitManagerProps) {
+  const isPortraitDebug = () => {
+    try {
+      return localStorage.getItem('trpg:debugPortrait') === '1';
+    } catch {
+      return false;
+    }
+  };
   const [variants, setVariants] = useState<PortraitVariant[]>([]);
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -161,7 +168,7 @@ export function PortraitManager({
     const y = (rect.top - frameRect.top) / frameRect.height;
     const w = rect.width / frameRect.width;
     const h = rect.height / frameRect.height;
-    if (import.meta.env.DEV) {
+    if (isPortraitDebug()) {
       // Debug measurement units and normalization.
       console.log('[PortraitSave][measure]', {
         pos,
@@ -505,7 +512,7 @@ export function PortraitManager({
           right: withRect({ scale: v.scaleRight, x: v.offsetXRight, y: v.offsetYRight }, rects?.right),
         };
         savePortraitTransformSet(roomId, characterId, key, set);
-        if (import.meta.env.DEV) {
+        if (isPortraitDebug()) {
           const storageKey = getPortraitTransformStorageKey(roomId, characterId, key);
           console.log('[PortraitSave][storage]', {
             key: storageKey,
@@ -623,14 +630,14 @@ export function PortraitManager({
     const key = selectedVariant.tag.trim() || selectedVariant.displayName.trim();
     if (!key) return;
     const set = loadPortraitTransformSet(roomId, characterId, key);
-    if (import.meta.env.DEV) {
+    if (isPortraitDebug()) {
       console.log('[PortraitOpen][rehydrate]', { key, set });
     }
   }, [open, selectedVariant, roomId, characterId]);
 
   useEffect(() => {
     if (!open || !selectedVariant) return;
-    if (import.meta.env.DEV) {
+    if (isPortraitDebug()) {
       const { scale, offsetX, offsetY } = getVariantTransform(selectedVariant, previewPos);
       console.log('[PortraitPreview][render]', {
         previewPos,
