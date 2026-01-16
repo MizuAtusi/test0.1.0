@@ -466,6 +466,7 @@ export function PortraitManager({
             rectY: rect.y,
             rectW: rect.w,
             rectH: rect.h,
+            anchorX: rect.x,
             topFromBottom,
             bottomFromBottom,
           };

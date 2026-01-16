@@ -162,6 +162,7 @@ export interface ActivePortrait {
   rectYRel?: number;
   rectWRel?: number;
   rectHRel?: number;
+  anchorXRel?: number;
   topFromBottom?: number;
   bottomFromBottom?: number;
   offsetX?: number;

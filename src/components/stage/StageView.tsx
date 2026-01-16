@@ -569,6 +569,9 @@ export function StageView({
                       : (typeof portrait.offsetY === 'number' && stageSize.height > 0 ? portrait.offsetY / stageSize.height : 0))));
               const offsetX = offsetXRel * stageSize.width;
               const offsetY = offsetYRel * stageSize.height;
+              const anchorXRel = typeof shared?.anchorX === 'number'
+                ? shared.anchorX
+                : (typeof portrait.anchorXRel === 'number' ? portrait.anchorXRel : null);
               const topFromBottomRel = typeof shared?.topFromBottom === 'number'
                 ? shared.topFromBottom
                 : (typeof portrait.topFromBottom === 'number' ? portrait.topFromBottom : null);
@@ -581,20 +584,23 @@ export function StageView({
                 const bottomPx = stageSize.height * (1 - bottomFromBottomRel);
                 const heightPx = bottomPx - topPx;
                 if (Number.isFinite(heightPx) && heightPx > 0) {
+                  const leftPx = anchorXRel != null ? anchorXRel * stageSize.width : null;
                   return (
                     <div
                       key={`${portrait.characterId}-${index}`}
                       className="portrait-layer"
                       style={{
-                        left: `${baseX * 100}%`,
+                        left: leftPx != null ? leftPx : `${baseX * 100}%`,
                         top: topPx,
                         bottom: 'auto',
                         height: heightPx,
                         width: 'auto',
                         display: 'inline-block',
                         zIndex: portrait.layerOrder,
-                        transform: `translate(-50%, 0) translate(${offsetX + positionShiftX}px, 0)`,
-                        transformOrigin: 'top center',
+                        transform: leftPx != null
+                          ? 'none'
+                          : `translate(-50%, 0) translate(${offsetX + positionShiftX}px, 0)`,
+                        transformOrigin: 'top left',
                       }}
                     >
                       <img
