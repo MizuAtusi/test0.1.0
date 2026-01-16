@@ -1,4 +1,4 @@
-import { useEffect, useState, useRef, useCallback } from 'react';
+import { useEffect, useLayoutEffect, useState, useRef, useCallback } from 'react';
 import { Plus, Trash2, GripVertical, Upload, Image as ImageIcon } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -564,31 +564,84 @@ export function PortraitManager({
     height: number;
   } | null>(null);
 
-  useEffect(() => {
+  const syncPreviewSize = useCallback(() => {
     const el = previewFrameRef.current;
-    if (!el) return;
-    const ro = new ResizeObserver((entries) => {
-      const rect = entries[0]?.contentRect;
-      if (!rect) return;
-      setPreviewSize({
-        width: Math.max(1, rect.width),
-        height: Math.max(1, rect.height),
-      });
+    if (!el) return false;
+    const rect = el.getBoundingClientRect();
+    if (!rect.width || !rect.height) return false;
+    setPreviewSize({
+      width: Math.max(1, rect.width),
+      height: Math.max(1, rect.height),
     });
-    ro.observe(el);
-    return () => ro.disconnect();
-  }, [open]);
+    return true;
+  }, []);
 
   useEffect(() => {
     if (!open) return;
-    const el = previewFrameRef.current;
-    if (!el) return;
-    const id = window.requestAnimationFrame(() => {
-      const rect = el.getBoundingClientRect();
-      setPreviewSize({ width: Math.max(1, rect.width), height: Math.max(1, rect.height) });
-    });
-    return () => window.cancelAnimationFrame(id);
+    let ro: ResizeObserver | null = null;
+    let raf = 0;
+    const attach = () => {
+      const el = previewFrameRef.current;
+      if (!el) {
+        raf = window.requestAnimationFrame(attach);
+        return;
+      }
+      ro = new ResizeObserver((entries) => {
+        const rect = entries[0]?.contentRect;
+        if (!rect) return;
+        setPreviewSize({
+          width: Math.max(1, rect.width),
+          height: Math.max(1, rect.height),
+        });
+      });
+      ro.observe(el);
+    };
+    attach();
+    return () => {
+      if (raf) window.cancelAnimationFrame(raf);
+      ro?.disconnect();
+    };
   }, [open]);
+
+  useLayoutEffect(() => {
+    if (!open) return;
+    let raf = 0;
+    let tries = 0;
+    const tick = () => {
+      if (syncPreviewSize()) return;
+      tries += 1;
+      if (tries < 8) {
+        raf = window.requestAnimationFrame(tick);
+      }
+    };
+    raf = window.requestAnimationFrame(tick);
+    return () => window.cancelAnimationFrame(raf);
+  }, [open, selectedIndex, previewPos, variants.length, syncPreviewSize]);
+
+  useEffect(() => {
+    if (!open || !selectedVariant) return;
+    const key = selectedVariant.tag.trim() || selectedVariant.displayName.trim();
+    if (!key) return;
+    const set = loadPortraitTransformSet(roomId, characterId, key);
+    if (import.meta.env.DEV) {
+      console.log('[PortraitOpen][rehydrate]', { key, set });
+    }
+  }, [open, selectedVariant, roomId, characterId]);
+
+  useEffect(() => {
+    if (!open || !selectedVariant) return;
+    if (import.meta.env.DEV) {
+      const { scale, offsetX, offsetY } = getVariantTransform(selectedVariant, previewPos);
+      console.log('[PortraitPreview][render]', {
+        previewPos,
+        previewSize,
+        scale,
+        offsetX,
+        offsetY,
+        transform: buildPreviewTransform(selectedVariant, previewPos),
+      });
+    }
+  }, [open, previewPos, previewSize, selectedVariant]);
 
   const onPreviewPointerDown = (pos: PortraitPosition) => (e: React.PointerEvent) => {
     if (!selectedVariant) return;
