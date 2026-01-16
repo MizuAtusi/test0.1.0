@@ -179,6 +179,27 @@ export function PortraitManager({
     };
   }, [variants, selectedIndex, previewPos, roomId, characterId]);
 
+  const syncOffsetsFromBounds = useCallback((bounds: {
+    anchorX: number;
+    topFromBottom: number;
+    bottomFromBottom: number;
+  }, pos: PortraitPosition) => {
+    const shift = pos === 'left' ? -0.225 : pos === 'right' ? 0.225 : 0;
+    const targetX = bounds.anchorX - (0.5 + shift);
+    const targetY = -bounds.bottomFromBottom;
+    setVariants((prev) =>
+      prev.map((v, i) => {
+        if (i !== selectedIndex) return v;
+        const currentX = pos === 'left' ? v.offsetXLeft : pos === 'right' ? v.offsetXRight : v.offsetXCenter;
+        const currentY = pos === 'left' ? v.offsetYLeft : pos === 'right' ? v.offsetYRight : v.offsetYCenter;
+        if (Math.abs(currentX - targetX) < 0.0001 && Math.abs(currentY - targetY) < 0.0001) return v;
+        if (pos === 'left') return { ...v, offsetXLeft: targetX, offsetYLeft: targetY };
+        if (pos === 'right') return { ...v, offsetXRight: targetX, offsetYRight: targetY };
+        return { ...v, offsetXCenter: targetX, offsetYCenter: targetY };
+      })
+    );
+  }, [selectedIndex]);
+
   const getNormalizedRect = (variantIndex: number, pos: PortraitPosition) => {
     const root = measureRef.current;
     const frame = previewRef.current;
@@ -687,16 +708,18 @@ export function PortraitManager({
     if (!isPreviewEditing) {
       const bounds = getSavedBoundsForPreview();
       setSavedPreviewBounds(bounds);
+      if (bounds) syncOffsetsFromBounds(bounds, previewPos);
     }
-  }, [open, selectedVariant, roomId, characterId, getSavedBoundsForPreview, isPreviewEditing]);
+  }, [open, selectedVariant, roomId, characterId, getSavedBoundsForPreview, isPreviewEditing, previewPos, syncOffsetsFromBounds]);
 
   useEffect(() => {
     if (!open) return;
     if (!isPreviewEditing) {
       const bounds = getSavedBoundsForPreview();
       setSavedPreviewBounds(bounds);
+      if (bounds) syncOffsetsFromBounds(bounds, previewPos);
     }
-  }, [open, previewPos, selectedIndex, getSavedBoundsForPreview, isPreviewEditing]);
+  }, [open, previewPos, selectedIndex, getSavedBoundsForPreview, isPreviewEditing, syncOffsetsFromBounds]);
 
   useEffect(() => {
     if (!open) return;
