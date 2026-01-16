@@ -12,6 +12,7 @@ import { uploadFile } from '@/lib/upload';
 import { getPortraitTransform, setPortraitTransform } from '@/lib/portraitTransforms';
 import {
   buildPortraitTransformCommand,
+  getPortraitTransformStorageKey,
   savePortraitTransformSet,
   loadPortraitTransformSet,
   type PortraitTransformSet,
@@ -148,18 +149,42 @@ export function PortraitManager({
 
   const getNormalizedRect = (variantIndex: number, pos: PortraitPosition) => {
     const root = measureRef.current;
-    if (!root) return null;
+    const frame = previewRef.current;
+    if (!root || !frame) return null;
     const target = root.querySelector<HTMLElement>(`[data-measure="${variantIndex}-${pos}"]`);
     if (!target) return null;
-    const rootRect = root.getBoundingClientRect();
+    const frameRect = frame.getBoundingClientRect();
     const rect = target.getBoundingClientRect();
-    if (!rootRect.width || !rootRect.height || !rect.width || !rect.height) return null;
+    if (!frameRect.width || !frameRect.height || !rect.width || !rect.height) return null;
     const round = (n: number) => Math.round(n * 10000) / 10000;
+    const x = (rect.left - frameRect.left) / frameRect.width;
+    const y = (rect.top - frameRect.top) / frameRect.height;
+    const w = rect.width / frameRect.width;
+    const h = rect.height / frameRect.height;
+    if (import.meta.env.DEV) {
+      // Debug measurement units and normalization.
+      console.log('[PortraitSave][measure]', {
+        pos,
+        frameRect: {
+          left: frameRect.left,
+          top: frameRect.top,
+          width: frameRect.width,
+          height: frameRect.height,
+        },
+        rect: {
+          left: rect.left,
+          top: rect.top,
+          width: rect.width,
+          height: rect.height,
+        },
+        normalized: { x: round(x), y: round(y), w: round(w), h: round(h) },
+      });
+    }
     return {
-      x: round((rect.left - rootRect.left) / rootRect.width),
-      y: round((rect.top - rootRect.top) / rootRect.height),
-      w: round(rect.width / rootRect.width),
-      h: round(rect.height / rootRect.height),
+      x: round(x),
+      y: round(y),
+      w: round(w),
+      h: round(h),
     };
   };
 
@@ -458,15 +483,18 @@ export function PortraitManager({
         const withRect = (base: { scale: number; x: number; y: number }, rect?: { x: number; y: number; w: number; h: number } | null) => {
           if (!rect) return base;
           const round = (n: number) => Math.round(n * 10000) / 10000;
-          const topFromBottom = round(1 - rect.y);
-          const bottomFromBottom = round(1 - (rect.y + rect.h));
+          const yTopNormFromTop = rect.y;
+          const yBottomNormFromTop = rect.y + rect.h;
+          const topFromBottom = round(1 - yTopNormFromTop);
+          const bottomFromBottom = round(1 - yBottomNormFromTop);
+          const anchorX = round(rect.x + rect.w / 2);
           return {
             ...base,
             rectX: rect.x,
             rectY: rect.y,
             rectW: rect.w,
             rectH: rect.h,
-            anchorX: rect.x,
+            anchorX,
             topFromBottom,
             bottomFromBottom,
           };
@@ -477,6 +505,14 @@ export function PortraitManager({
           right: withRect({ scale: v.scaleRight, x: v.offsetXRight, y: v.offsetYRight }, rects?.right),
         };
         savePortraitTransformSet(roomId, characterId, key, set);
+        if (import.meta.env.DEV) {
+          const storageKey = getPortraitTransformStorageKey(roomId, characterId, key);
+          console.log('[PortraitSave][storage]', {
+            key: storageKey,
+            value: localStorage.getItem(storageKey),
+            savedAt: new Date().toISOString(),
+          });
+        }
         try {
           window.dispatchEvent(new CustomEvent('trpg:portraitTransformChanged', { detail: { roomId, characterId, key } }));
         } catch {
@@ -762,6 +798,41 @@ export function PortraitManager({
                   onPointerCancel={onPreviewPointerUp}
                 >
                   <div
+                    ref={measureRef}
+                    aria-hidden="true"
+                    className="absolute inset-0 pointer-events-none"
+                    style={{ visibility: 'hidden' }}
+                  >
+                    <div className="relative w-full h-full">
+                      {variants.map((variant, index) =>
+                        variant.url
+                          ? previewPositions.map((pos) => (
+                              <div
+                                key={`${index}-${pos}`}
+                                data-measure={`${index}-${pos}`}
+                                className="portrait-layer"
+                                style={{
+                                  left: '50%',
+                                  maxHeight: '80%',
+                                  maxWidth: '80%',
+                                  transform: buildPreviewTransform(variant, pos),
+                                  transformOrigin: 'bottom center',
+                                  transition: 'none',
+                                }}
+                              >
+                                <img
+                                  src={variant.url}
+                                  alt={variant.displayName}
+                                  className="pointer-events-none select-none object-contain"
+                                  style={{ maxWidth: '100%', maxHeight: '100%', height: 'auto', width: 'auto' }}
+                                />
+                              </div>
+                            ))
+                          : null
+                      )}
+                    </div>
+                  </div>
+                  <div
                     className="portrait-layer cursor-grab select-none"
                     style={{
                       left: '50%',
@@ -926,54 +997,6 @@ export function PortraitManager({
             </div>
           )}
         </div>
-
-        {variants.length > 0 && (
-          <div
-            ref={measureRef}
-            aria-hidden="true"
-            className="pointer-events-none"
-            style={{
-              position: 'fixed',
-              left: -10000,
-              top: 0,
-              width: Math.max(1, previewSize.width),
-              height: Math.max(1, previewSize.height),
-              visibility: 'hidden',
-            }}
-          >
-            <div
-              className="relative"
-              style={{ width: Math.max(1, previewSize.width), height: Math.max(1, previewSize.height) }}
-            >
-              {variants.map((variant, index) =>
-                variant.url
-                  ? previewPositions.map((pos) => (
-                      <div
-                        key={`${index}-${pos}`}
-                        data-measure={`${index}-${pos}`}
-                        className="portrait-layer"
-                        style={{
-                          left: '50%',
-                          maxHeight: '80%',
-                          maxWidth: '80%',
-                          transform: buildPreviewTransform(variant, pos),
-                          transformOrigin: 'bottom center',
-                          transition: 'none',
-                        }}
-                      >
-                        <img
-                          src={variant.url}
-                          alt={variant.displayName}
-                          className="pointer-events-none select-none object-contain"
-                          style={{ maxWidth: '100%', maxHeight: '100%', height: 'auto', width: 'auto' }}
-                        />
-                      </div>
-                    ))
-                  : null
-              )}
-            </div>
-          </div>
-        )}
 
         {/* Actions */}
         <div className="flex justify-end gap-2 pt-4 border-t">

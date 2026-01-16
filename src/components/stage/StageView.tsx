@@ -70,6 +70,7 @@ export function StageView({
   const [audioNeedsUnlock, setAudioNeedsUnlock] = useState(false);
   const [portraitAssets, setPortraitAssets] = useState<Asset[]>([]);
   const lastHandledMessageIdRef = useRef<string | null>(null);
+  const portraitDebugRef = useRef<Map<string, string>>(new Map());
   const [effectOverlay, setEffectOverlay] = useState<{ nonce: number; images: EffectImage[]; seUrl: string; durationMs: number } | null>(null);
   const [effectFading, setEffectFading] = useState(false);
   const [stageSize, setStageSize] = useState<{ width: number; height: number }>({ width: 1200, height: 675 });
@@ -579,12 +580,41 @@ export function StageView({
                 ? shared.bottomFromBottom
                 : (typeof portrait.bottomFromBottom === 'number' ? portrait.bottomFromBottom : null);
               const useVerticalBounds = topFromBottomRel != null && bottomFromBottomRel != null && topFromBottomRel !== bottomFromBottomRel;
+              if (import.meta.env.DEV && (topFromBottomRel != null || bottomFromBottomRel != null) && !useVerticalBounds) {
+                const debugKey = `${portrait.characterId}:${sharedKey ?? ''}:${posKey}:missing`;
+                const payload = { topFromBottomRel, bottomFromBottomRel };
+                const next = JSON.stringify(payload);
+                const prev = portraitDebugRef.current.get(debugKey);
+                if (prev !== next) {
+                  portraitDebugRef.current.set(debugKey, next);
+                  console.log('[PortraitStage][missing-bounds]', payload);
+                }
+              }
               if (useVerticalBounds) {
                 const topPx = stageSize.height * (1 - topFromBottomRel);
                 const bottomPx = stageSize.height * (1 - bottomFromBottomRel);
                 const heightPx = bottomPx - topPx;
                 if (Number.isFinite(heightPx) && heightPx > 0) {
                   const leftPx = anchorXRel != null ? anchorXRel * stageSize.width : null;
+                  if (import.meta.env.DEV) {
+                    const debugKey = `${portrait.characterId}:${sharedKey ?? ''}:${posKey}`;
+                    const payload = {
+                      stageSize,
+                      anchorXRel,
+                      topFromBottomRel,
+                      bottomFromBottomRel,
+                      leftPx,
+                      topPx,
+                      bottomPx,
+                      heightPx,
+                    };
+                    const next = JSON.stringify(payload);
+                    const prev = portraitDebugRef.current.get(debugKey);
+                    if (prev !== next) {
+                      portraitDebugRef.current.set(debugKey, next);
+                      console.log('[PortraitStage][render]', payload);
+                    }
+                  }
                   return (
                     <div
                       key={`${portrait.characterId}-${index}`}
@@ -598,9 +628,9 @@ export function StageView({
                         display: 'inline-block',
                         zIndex: portrait.layerOrder,
                         transform: leftPx != null
-                          ? 'none'
+                          ? 'translate(-50%, 0)'
                           : `translate(-50%, 0) translate(${offsetX + positionShiftX}px, 0)`,
-                        transformOrigin: 'top left',
+                        transformOrigin: 'top center',
                       }}
                     >
                       <img
