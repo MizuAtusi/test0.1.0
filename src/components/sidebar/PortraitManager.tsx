@@ -564,6 +564,20 @@ export function PortraitManager({
         const cmd = buildPortraitTransformCommand({ characterId, key, set });
         if (cmd) commands.push(cmd);
       });
+      if (rectsByIndex[selectedIndex] && previewPos) {
+        const activeRect = rectsByIndex[selectedIndex]?.[previewPos] ?? null;
+        if (activeRect) {
+          const topFromBottom = 1 - activeRect.y;
+          const bottomFromBottom = 1 - (activeRect.y + activeRect.h);
+          const anchorX = activeRect.x + activeRect.w / 2;
+          setSavedPreviewBounds({
+            anchorX,
+            topFromBottom,
+            bottomFromBottom,
+          });
+        }
+      }
+      setIsPreviewEditing(false);
       if (commands.length > 0) {
         await supabase.from('messages').insert({
           room_id: roomId,
@@ -705,9 +719,13 @@ export function PortraitManager({
         offsetX,
         offsetY,
         transform: buildPreviewTransform(selectedVariant, previewPos),
+        usePreviewBounds,
+        previewBounds,
+        previewTopPx,
+        previewHeightPx,
       });
     }
-  }, [open, previewPos, previewSize, selectedVariant]);
+  }, [open, previewPos, previewSize, selectedVariant, usePreviewBounds, previewBounds, previewTopPx, previewHeightPx]);
 
   const onPreviewPointerDown = (pos: PortraitPosition) => (e: React.PointerEvent) => {
     if (!selectedVariant) return;
