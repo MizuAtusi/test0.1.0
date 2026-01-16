@@ -85,6 +85,7 @@ export function PortraitManager({
     bottomFromBottom: number;
   } | null>(null);
   const [useSavedPreviewBounds, setUseSavedPreviewBounds] = useState(false);
+  const [isPreviewEditing, setIsPreviewEditing] = useState(false);
   const [previewSize, setPreviewSize] = useState<{ width: number; height: number }>({ width: 1200, height: 675 });
   const fileInputRef = useRef<HTMLInputElement>(null);
   const { toast } = useToast();
@@ -347,6 +348,7 @@ export function PortraitManager({
   };
 
   const updateVariant = (index: number, updates: Partial<PortraitVariant>) => {
+    setIsPreviewEditing(true);
     setUseSavedPreviewBounds(false);
     setVariants(prev => prev.map((v, i) => (i === index ? { ...v, ...updates } : v)));
   };
@@ -662,6 +664,7 @@ export function PortraitManager({
   }, [open, selectedIndex, previewPos, variants.length, syncPreviewSize]);
 
   useEffect(() => {
+    if (!open) return;
     if (!open || !selectedVariant) return;
     const key = selectedVariant.tag.trim() || selectedVariant.displayName.trim();
     if (!key) return;
@@ -669,17 +672,31 @@ export function PortraitManager({
     if (isPortraitDebug()) {
       console.log('[PortraitOpen][rehydrate]', { key, set });
     }
-    const bounds = getSavedBoundsForPreview();
-    setSavedPreviewBounds(bounds);
-    setUseSavedPreviewBounds(Boolean(bounds));
-  }, [open, selectedVariant, roomId, characterId, getSavedBoundsForPreview]);
+    if (!isPreviewEditing) {
+      const bounds = getSavedBoundsForPreview();
+      setSavedPreviewBounds(bounds);
+      setUseSavedPreviewBounds(Boolean(bounds));
+    }
+  }, [open, selectedVariant, roomId, characterId, getSavedBoundsForPreview, isPreviewEditing]);
 
   useEffect(() => {
     if (!open) return;
-    const bounds = getSavedBoundsForPreview();
-    setSavedPreviewBounds(bounds);
-    setUseSavedPreviewBounds(Boolean(bounds));
-  }, [open, previewPos, selectedIndex, getSavedBoundsForPreview]);
+    if (!isPreviewEditing) {
+      const bounds = getSavedBoundsForPreview();
+      setSavedPreviewBounds(bounds);
+      setUseSavedPreviewBounds(Boolean(bounds));
+    }
+  }, [open, previewPos, selectedIndex, getSavedBoundsForPreview, isPreviewEditing]);
+
+  useEffect(() => {
+    if (!open) return;
+    setIsPreviewEditing(false);
+  }, [open]);
+
+  useEffect(() => {
+    if (!open) return;
+    setIsPreviewEditing(false);
+  }, [open, previewPos, selectedIndex]);
 
   useEffect(() => {
     if (!open || !selectedVariant) return;
@@ -700,6 +717,7 @@ export function PortraitManager({
     if (!selectedVariant) return;
     e.preventDefault();
     (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
+    setIsPreviewEditing(true);
     setUseSavedPreviewBounds(false);
     const frameRect = previewFrameRef.current?.getBoundingClientRect();
     const width = frameRect?.width && frameRect.width > 0 ? frameRect.width : previewSize.width;
