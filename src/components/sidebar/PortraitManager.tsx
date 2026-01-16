@@ -79,6 +79,12 @@ export function PortraitManager({
   const previewRef = useRef<HTMLDivElement>(null);
   const measureRef = useRef<HTMLDivElement>(null);
   const previewItemRef = useRef<HTMLDivElement>(null);
+  const [savedPreviewBounds, setSavedPreviewBounds] = useState<{
+    anchorX: number;
+    topFromBottom: number;
+    bottomFromBottom: number;
+  } | null>(null);
+  const [useSavedPreviewBounds, setUseSavedPreviewBounds] = useState(false);
   const [previewSize, setPreviewSize] = useState<{ width: number; height: number }>({ width: 1200, height: 675 });
   const fileInputRef = useRef<HTMLInputElement>(null);
   const { toast } = useToast();
@@ -155,6 +161,24 @@ export function PortraitManager({
     return `translate(-50%, 0) translate(${(offsetX + shift) * previewSize.width}px, ${offsetY * previewSize.height}px) scale(${scale})`;
   };
 
+  const getSavedBoundsForPreview = useCallback(() => {
+    const variant = variants[selectedIndex];
+    if (!variant) return null;
+    const key = variant.tag.trim() || variant.displayName.trim();
+    if (!key) return null;
+    const set = loadPortraitTransformSet(roomId, characterId, key);
+    const rel = set?.[previewPos];
+    if (!rel) return null;
+    if (typeof rel.anchorX !== 'number' || typeof rel.topFromBottom !== 'number' || typeof rel.bottomFromBottom !== 'number') {
+      return null;
+    }
+    return {
+      anchorX: rel.anchorX,
+      topFromBottom: rel.topFromBottom,
+      bottomFromBottom: rel.bottomFromBottom,
+    };
+  }, [variants, selectedIndex, previewPos, roomId, characterId]);
+
   const getNormalizedRect = (variantIndex: number, pos: PortraitPosition) => {
     const root = measureRef.current;
     const frame = previewRef.current;
@@ -198,6 +222,13 @@ export function PortraitManager({
       h: round(h),
     };
   };
+
+  const previewBounds = useSavedPreviewBounds ? savedPreviewBounds : null;
+  const previewTopPx = previewBounds ? previewSize.height * (1 - previewBounds.topFromBottom) : null;
+  const previewBottomPx = previewBounds ? previewSize.height * (1 - previewBounds.bottomFromBottom) : null;
+  const previewHeightPx = previewTopPx != null && previewBottomPx != null ? previewBottomPx - previewTopPx : null;
+  const previewLeftPx = previewBounds ? previewBounds.anchorX * previewSize.width : null;
+  const usePreviewBounds = previewBounds != null && previewHeightPx != null && previewHeightPx > 0 && previewLeftPx != null;
 
   // Fetch existing assets
   const fetchAssets = useCallback(async () => {
@@ -316,6 +347,7 @@ export function PortraitManager({
   };
 
   const updateVariant = (index: number, updates: Partial<PortraitVariant>) => {
+    setUseSavedPreviewBounds(false);
     setVariants(prev => prev.map((v, i) => (i === index ? { ...v, ...updates } : v)));
   };
 
@@ -637,7 +669,17 @@ export function PortraitManager({
     if (isPortraitDebug()) {
       console.log('[PortraitOpen][rehydrate]', { key, set });
     }
-  }, [open, selectedVariant, roomId, characterId]);
+    const bounds = getSavedBoundsForPreview();
+    setSavedPreviewBounds(bounds);
+    setUseSavedPreviewBounds(Boolean(bounds));
+  }, [open, selectedVariant, roomId, characterId, getSavedBoundsForPreview]);
+
+  useEffect(() => {
+    if (!open) return;
+    const bounds = getSavedBoundsForPreview();
+    setSavedPreviewBounds(bounds);
+    setUseSavedPreviewBounds(Boolean(bounds));
+  }, [open, previewPos, selectedIndex, getSavedBoundsForPreview]);
 
   useEffect(() => {
     if (!open || !selectedVariant) return;
@@ -658,6 +700,7 @@ export function PortraitManager({
     if (!selectedVariant) return;
     e.preventDefault();
     (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
+    setUseSavedPreviewBounds(false);
     const frameRect = previewFrameRef.current?.getBoundingClientRect();
     const width = frameRect?.width && frameRect.width > 0 ? frameRect.width : previewSize.width;
     const height = frameRect?.height && frameRect.height > 0 ? frameRect.height : previewSize.height;
@@ -899,11 +942,17 @@ export function PortraitManager({
                   <div
                     className="portrait-layer cursor-grab select-none"
                     style={{
-                      left: '50%',
-                      maxHeight: '80%',
-                      maxWidth: '80%',
-                      transform: buildPreviewTransform(selectedVariant, previewPos),
-                      transformOrigin: 'bottom center',
+                      left: usePreviewBounds ? previewLeftPx : '50%',
+                      top: usePreviewBounds ? previewTopPx : undefined,
+                      bottom: usePreviewBounds ? 'auto' : undefined,
+                      height: usePreviewBounds ? previewHeightPx : undefined,
+                      width: usePreviewBounds ? 'auto' : undefined,
+                      maxHeight: usePreviewBounds ? 'none' : '80%',
+                      maxWidth: usePreviewBounds ? 'none' : '80%',
+                      transform: usePreviewBounds
+                        ? 'translate(-50%, 0)'
+                        : buildPreviewTransform(selectedVariant, previewPos),
+                      transformOrigin: usePreviewBounds ? 'top center' : 'bottom center',
                     }}
                     onPointerDown={onPreviewPointerDown(previewPos)}
                     ref={previewItemRef}
@@ -912,7 +961,9 @@ export function PortraitManager({
                       src={selectedVariant.url}
                       alt={selectedVariant.displayName}
                       className="pointer-events-none select-none object-contain"
-                      style={{ maxWidth: '100%', maxHeight: '100%', height: 'auto', width: 'auto' }}
+                      style={usePreviewBounds
+                        ? { height: '100%', width: 'auto', maxWidth: 'none', maxHeight: 'none' }
+                        : { maxWidth: '100%', maxHeight: '100%', height: 'auto', width: 'auto' }}
                     />
                   </div>
                 </div>
