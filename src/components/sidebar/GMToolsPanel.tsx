@@ -829,6 +829,8 @@ export function GMToolsPanel({
             rectYRel: shared?.rectY ?? undefined,
             rectWRel: shared?.rectW ?? undefined,
             rectHRel: shared?.rectH ?? undefined,
+            topFromBottom: shared?.topFromBottom ?? undefined,
+            bottomFromBottom: shared?.bottomFromBottom ?? undefined,
             offsetX: (() => {
               if (typeof asset.offset_x === 'number') return asset.offset_x;
               return legacy?.offsetX ?? 0;

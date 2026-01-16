@@ -479,6 +479,8 @@ export default function RoomPage() {
         rectYRel: shared?.rectY ?? undefined,
         rectWRel: shared?.rectW ?? undefined,
         rectHRel: shared?.rectH ?? undefined,
+        topFromBottom: shared?.topFromBottom ?? undefined,
+        bottomFromBottom: shared?.bottomFromBottom ?? undefined,
         offsetX: (() => {
           if (typeof chosen.offset_x === 'number') return chosen.offset_x;
           return legacy?.offsetX ?? 0;

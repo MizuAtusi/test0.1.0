@@ -455,8 +455,21 @@ export function PortraitManager({
         const key = v.tag.trim() || v.displayName.trim();
         if (!key) return;
         const rects = rectsByIndex[i];
-        const withRect = (base: { scale: number; x: number; y: number }, rect?: { x: number; y: number; w: number; h: number } | null) =>
-          rect ? { ...base, rectX: rect.x, rectY: rect.y, rectW: rect.w, rectH: rect.h } : base;
+        const withRect = (base: { scale: number; x: number; y: number }, rect?: { x: number; y: number; w: number; h: number } | null) => {
+          if (!rect) return base;
+          const round = (n: number) => Math.round(n * 10000) / 10000;
+          const topFromBottom = round(1 - rect.y);
+          const bottomFromBottom = round(1 - (rect.y + rect.h));
+          return {
+            ...base,
+            rectX: rect.x,
+            rectY: rect.y,
+            rectW: rect.w,
+            rectH: rect.h,
+            topFromBottom,
+            bottomFromBottom,
+          };
+        };
         const set: PortraitTransformSet = {
           left: withRect({ scale: v.scaleLeft, x: v.offsetXLeft, y: v.offsetYLeft }, rects?.left),
           center: withRect({ scale: v.scaleCenter, x: v.offsetXCenter, y: v.offsetYCenter }, rects?.center),

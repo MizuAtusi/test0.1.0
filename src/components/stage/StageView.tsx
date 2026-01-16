@@ -542,6 +542,71 @@ export function StageView({
                     position: posKey,
                   })
                 : null;
+              const hasPosition = assetForTransform ? hasPositionTransformColumns(assetForTransform, posKey) : false;
+              const assetPosRel = assetForTransform && hasPosition ? getAssetTransformRel(assetForTransform, posKey) : null;
+              const assetLegacyRel = assetForTransform && !hasPosition ? getAssetLegacyTransformRel(assetForTransform) : null;
+              const baseX = 0.5;
+              const shift = 0.225; // relative to stage width
+              const positionShiftXRel = portrait.position === 'left' ? -shift : portrait.position === 'right' ? shift : 0;
+              const positionShiftX = stageSize.width * positionShiftXRel;
+              const offsetXRel = typeof shared?.x === 'number'
+                ? shared.x
+                : (typeof assetPosRel?.x === 'number'
+                  ? assetPosRel.x
+                  : (typeof assetLegacyRel?.x === 'number'
+                    ? assetLegacyRel.x
+                    : (typeof portrait.offsetXRel === 'number'
+                      ? portrait.offsetXRel
+                      : (typeof portrait.offsetX === 'number' && stageSize.width > 0 ? portrait.offsetX / stageSize.width : 0))));
+              const offsetYRel = typeof shared?.y === 'number'
+                ? shared.y
+                : (typeof assetPosRel?.y === 'number'
+                  ? assetPosRel.y
+                  : (typeof assetLegacyRel?.y === 'number'
+                    ? assetLegacyRel.y
+                    : (typeof portrait.offsetYRel === 'number'
+                      ? portrait.offsetYRel
+                      : (typeof portrait.offsetY === 'number' && stageSize.height > 0 ? portrait.offsetY / stageSize.height : 0))));
+              const offsetX = offsetXRel * stageSize.width;
+              const offsetY = offsetYRel * stageSize.height;
+              const topFromBottomRel = typeof shared?.topFromBottom === 'number'
+                ? shared.topFromBottom
+                : (typeof portrait.topFromBottom === 'number' ? portrait.topFromBottom : null);
+              const bottomFromBottomRel = typeof shared?.bottomFromBottom === 'number'
+                ? shared.bottomFromBottom
+                : (typeof portrait.bottomFromBottom === 'number' ? portrait.bottomFromBottom : null);
+              const useVerticalBounds = topFromBottomRel != null && bottomFromBottomRel != null && topFromBottomRel !== bottomFromBottomRel;
+              if (useVerticalBounds) {
+                const topPx = stageSize.height * (1 - topFromBottomRel);
+                const bottomPx = stageSize.height * (1 - bottomFromBottomRel);
+                const heightPx = bottomPx - topPx;
+                if (Number.isFinite(heightPx) && heightPx > 0) {
+                  return (
+                    <div
+                      key={`${portrait.characterId}-${index}`}
+                      className="portrait-layer"
+                      style={{
+                        left: `${baseX * 100}%`,
+                        top: topPx,
+                        bottom: 'auto',
+                        height: heightPx,
+                        width: 'auto',
+                        display: 'inline-block',
+                        zIndex: portrait.layerOrder,
+                        transform: `translate(-50%, 0) translate(${offsetX + positionShiftX}px, 0)`,
+                        transformOrigin: 'top center',
+                      }}
+                    >
+                      <img
+                        src={portrait.url}
+                        alt={portrait.label}
+                        className="animate-fade-in"
+                        style={{ height: '100%', width: 'auto', maxWidth: 'none', maxHeight: 'none' }}
+                      />
+                    </div>
+                  );
+                }
+              }
               const rectWRel = typeof shared?.rectW === 'number'
                 ? shared.rectW
                 : (typeof portrait.rectWRel === 'number' ? portrait.rectWRel : null);
@@ -583,33 +648,6 @@ export function StageView({
                   </div>
                 );
               }
-              const baseX = 0.5;
-              const shift = 0.225; // relative to stage width
-              const positionShiftXRel = portrait.position === 'left' ? -shift : portrait.position === 'right' ? shift : 0;
-              const positionShiftX = stageSize.width * positionShiftXRel;
-              const hasPosition = assetForTransform ? hasPositionTransformColumns(assetForTransform, posKey) : false;
-              const assetPosRel = assetForTransform && hasPosition ? getAssetTransformRel(assetForTransform, posKey) : null;
-              const assetLegacyRel = assetForTransform && !hasPosition ? getAssetLegacyTransformRel(assetForTransform) : null;
-              const offsetXRel = typeof shared?.x === 'number'
-                ? shared.x
-                : (typeof assetPosRel?.x === 'number'
-                  ? assetPosRel.x
-                  : (typeof assetLegacyRel?.x === 'number'
-                    ? assetLegacyRel.x
-                    : (typeof portrait.offsetXRel === 'number'
-                      ? portrait.offsetXRel
-                      : (typeof portrait.offsetX === 'number' && stageSize.width > 0 ? portrait.offsetX / stageSize.width : 0))));
-              const offsetYRel = typeof shared?.y === 'number'
-                ? shared.y
-                : (typeof assetPosRel?.y === 'number'
-                  ? assetPosRel.y
-                  : (typeof assetLegacyRel?.y === 'number'
-                    ? assetLegacyRel.y
-                    : (typeof portrait.offsetYRel === 'number'
-                      ? portrait.offsetYRel
-                      : (typeof portrait.offsetY === 'number' && stageSize.height > 0 ? portrait.offsetY / stageSize.height : 0))));
-              const offsetX = offsetXRel * stageSize.width;
-              const offsetY = offsetYRel * stageSize.height;
               const scale = typeof shared?.scale === 'number'
                 ? shared.scale
                 : (typeof assetPosRel?.scale === 'number'

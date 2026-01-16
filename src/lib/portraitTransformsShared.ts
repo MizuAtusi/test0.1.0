@@ -8,6 +8,8 @@ export type PortraitTransformRel = {
   rectY?: number; // normalized top-left Y
   rectW?: number; // normalized width
   rectH?: number; // normalized height
+  topFromBottom?: number; // relative to stage height (0 = bottom, 1 = top)
+  bottomFromBottom?: number; // relative to stage height (0 = bottom, 1 = top)
 };
 
 export type PortraitTransformSet = Record<PortraitPosition, PortraitTransformRel>;
@@ -49,6 +51,8 @@ function normalizeSet(set: PortraitTransformSet): PortraitTransformSet {
     rectY: toOptionalNumber(t.rectY),
     rectW: toOptionalNumber(t.rectW),
     rectH: toOptionalNumber(t.rectH),
+    topFromBottom: toOptionalNumber(t.topFromBottom),
+    bottomFromBottom: toOptionalNumber(t.bottomFromBottom),
   });
   return {
     left: norm(set.left),
@@ -76,6 +80,8 @@ export function loadPortraitTransformSet(roomId: string, characterId: string, ke
       rectY: toOptionalNumber(x?.rectY),
       rectW: toOptionalNumber(x?.rectW),
       rectH: toOptionalNumber(x?.rectH),
+      topFromBottom: toOptionalNumber(x?.topFromBottom),
+      bottomFromBottom: toOptionalNumber(x?.bottomFromBottom),
     });
     return {
       left: norm(parsed?.left),
@@ -161,6 +167,8 @@ export function applyPortraitTransformCommandsFromText(roomId: string, rawText: 
         rectY: toOptionalNumber(x?.rectY),
         rectW: toOptionalNumber(x?.rectW),
         rectH: toOptionalNumber(x?.rectH),
+        topFromBottom: toOptionalNumber(x?.topFromBottom),
+        bottomFromBottom: toOptionalNumber(x?.bottomFromBottom),
       });
       const set: PortraitTransformSet = {
         left: norm(parsed?.left),
