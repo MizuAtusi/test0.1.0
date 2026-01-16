@@ -20,6 +20,8 @@ import {
 } from '@/lib/portraitTransformsShared';
 import {
   getAssetTransformRel,
+  getPortraitPositionShiftRel,
+  getPortraitRenderMetrics,
   hasPositionTransformColumns,
   legacyTransformToRel,
   relToBasePxX,
@@ -79,12 +81,6 @@ export function PortraitManager({
   const previewRef = useRef<HTMLDivElement>(null);
   const measureRef = useRef<HTMLDivElement>(null);
   const previewItemRef = useRef<HTMLDivElement>(null);
-  const [savedPreviewBounds, setSavedPreviewBounds] = useState<{
-    anchorX: number;
-    topFromBottom: number;
-    bottomFromBottom: number;
-  } | null>(null);
-  const [isPreviewEditing, setIsPreviewEditing] = useState(false);
   const [previewSize, setPreviewSize] = useState<{ width: number; height: number }>({ width: 1200, height: 675 });
   const fileInputRef = useRef<HTMLInputElement>(null);
   const { toast } = useToast();
@@ -146,7 +142,7 @@ export function PortraitManager({
   };
 
   const getVariantTransform = (variant: PortraitVariant, pos: PortraitPosition) => {
-    const shift = pos === 'left' ? -0.225 : pos === 'right' ? 0.225 : 0;
+    const shift = getPortraitPositionShiftRel(pos);
     if (pos === 'left') {
       return { shift, scale: variant.scaleLeft, offsetX: variant.offsetXLeft, offsetY: variant.offsetYLeft };
     }
@@ -156,49 +152,30 @@ export function PortraitManager({
     return { shift, scale: variant.scaleCenter, offsetX: variant.offsetXCenter, offsetY: variant.offsetYCenter };
   };
 
-  const buildPreviewTransform = (variant: PortraitVariant, pos: PortraitPosition) => {
-    const { shift, scale, offsetX, offsetY } = getVariantTransform(variant, pos);
-    return `translate(-50%, 0) translate(${(offsetX + shift) * previewSize.width}px, ${offsetY * previewSize.height}px) scale(${scale})`;
+  const getPreviewMetrics = (variant: PortraitVariant, pos: PortraitPosition) => {
+    const { scale, offsetX, offsetY } = getVariantTransform(variant, pos);
+    return getPortraitRenderMetrics({
+      containerWidth: previewSize.width,
+      containerHeight: previewSize.height,
+      scale,
+      offsetXRel: offsetX,
+      offsetYRel: offsetY,
+      position: pos,
+    });
   };
 
-  const getSavedBoundsForPreview = useCallback(() => {
-    const variant = variants[selectedIndex];
-    if (!variant) return null;
-    const key = variant.tag.trim() || variant.displayName.trim();
-    if (!key) return null;
-    const set = loadPortraitTransformSet(roomId, characterId, key);
-    const rel = set?.[previewPos];
-    if (!rel) return null;
-    if (typeof rel.anchorX !== 'number' || typeof rel.topFromBottom !== 'number' || typeof rel.bottomFromBottom !== 'number') {
-      return null;
-    }
+  const getPreviewStyle = (variant: PortraitVariant, pos: PortraitPosition) => {
+    const { heightPx, offsetXPx, offsetYPx } = getPreviewMetrics(variant, pos);
     return {
-      anchorX: rel.anchorX,
-      topFromBottom: rel.topFromBottom,
-      bottomFromBottom: rel.bottomFromBottom,
-    };
-  }, [variants, selectedIndex, previewPos, roomId, characterId]);
-
-  const syncOffsetsFromBounds = useCallback((bounds: {
-    anchorX: number;
-    topFromBottom: number;
-    bottomFromBottom: number;
-  }, pos: PortraitPosition) => {
-    const shift = pos === 'left' ? -0.225 : pos === 'right' ? 0.225 : 0;
-    const targetX = bounds.anchorX - (0.5 + shift);
-    const targetY = -bounds.bottomFromBottom;
-    setVariants((prev) =>
-      prev.map((v, i) => {
-        if (i !== selectedIndex) return v;
-        const currentX = pos === 'left' ? v.offsetXLeft : pos === 'right' ? v.offsetXRight : v.offsetXCenter;
-        const currentY = pos === 'left' ? v.offsetYLeft : pos === 'right' ? v.offsetYRight : v.offsetYCenter;
-        if (Math.abs(currentX - targetX) < 0.0001 && Math.abs(currentY - targetY) < 0.0001) return v;
-        if (pos === 'left') return { ...v, offsetXLeft: targetX, offsetYLeft: targetY };
-        if (pos === 'right') return { ...v, offsetXRight: targetX, offsetYRight: targetY };
-        return { ...v, offsetXCenter: targetX, offsetYCenter: targetY };
-      })
-    );
-  }, [selectedIndex]);
+      left: '50%',
+      height: heightPx,
+      width: 'auto',
+      maxHeight: 'none',
+      maxWidth: 'none',
+      transform: `translate(-50%, 0) translate(${offsetXPx}px, ${offsetYPx}px)`,
+      transformOrigin: 'bottom center',
+    } as const;
+  };
 
   const getNormalizedRect = (variantIndex: number, pos: PortraitPosition) => {
     const root = measureRef.current;
@@ -244,12 +221,7 @@ export function PortraitManager({
     };
   };
 
-  const previewBounds = !isPreviewEditing ? savedPreviewBounds : null;
-  const previewTopPx = previewBounds ? previewSize.height * (1 - previewBounds.topFromBottom) : null;
-  const previewBottomPx = previewBounds ? previewSize.height * (1 - previewBounds.bottomFromBottom) : null;
-  const previewHeightPx = previewTopPx != null && previewBottomPx != null ? previewBottomPx - previewTopPx : null;
-  const previewLeftPx = previewBounds ? previewBounds.anchorX * previewSize.width : null;
-  const usePreviewBounds = previewBounds != null && previewHeightPx != null && previewHeightPx > 0 && previewLeftPx != null;
+  const previewStyle = selectedVariant ? getPreviewStyle(selectedVariant, previewPos) : null;
 
   // Fetch existing assets
   const fetchAssets = useCallback(async () => {
@@ -368,7 +340,6 @@ export function PortraitManager({
   };
 
   const updateVariant = (index: number, updates: Partial<PortraitVariant>) => {
-    setIsPreviewEditing(true);
     setVariants(prev => prev.map((v, i) => (i === index ? { ...v, ...updates } : v)));
   };
 
@@ -404,12 +375,9 @@ export function PortraitManager({
         console.log('[PortraitSave][before]', {
           selectedIndex,
           previewPos,
-          isPreviewEditing,
           scale: v ? getVariantTransform(v, previewPos).scale : undefined,
           offsetX: v ? getVariantTransform(v, previewPos).offsetX : undefined,
           offsetY: v ? getVariantTransform(v, previewPos).offsetY : undefined,
-          usePreviewBounds,
-          previewBounds,
         });
         console.log('[PortraitSave][snapshot]', {
           frameRect: {
@@ -734,56 +702,35 @@ export function PortraitManager({
     if (isPortraitDebug()) {
       console.log('[PortraitOpen][rehydrate]', { key, set });
     }
-    if (!isPreviewEditing) {
-      const bounds = getSavedBoundsForPreview();
-      setSavedPreviewBounds(bounds);
-      if (bounds) syncOffsetsFromBounds(bounds, previewPos);
-    }
-  }, [open, selectedVariant, roomId, characterId, getSavedBoundsForPreview, isPreviewEditing, previewPos, syncOffsetsFromBounds]);
-
-  useEffect(() => {
-    if (!open) return;
-    if (!isPreviewEditing) {
-      const bounds = getSavedBoundsForPreview();
-      setSavedPreviewBounds(bounds);
-      if (bounds) syncOffsetsFromBounds(bounds, previewPos);
-    }
-  }, [open, previewPos, selectedIndex, getSavedBoundsForPreview, isPreviewEditing, syncOffsetsFromBounds]);
-
-  useEffect(() => {
-    if (!open) return;
-    setIsPreviewEditing(false);
-  }, [open]);
-
-  useEffect(() => {
-    if (!open) return;
-    setIsPreviewEditing(false);
-  }, [open, previewPos, selectedIndex]);
+  }, [open, selectedVariant, roomId, characterId]);
 
   useEffect(() => {
     if (!open || !selectedVariant) return;
     if (isPortraitDebug()) {
       const { scale, offsetX, offsetY } = getVariantTransform(selectedVariant, previewPos);
-      console.log('[PortraitPreview][render]', {
+      const metrics = getPreviewMetrics(selectedVariant, previewPos);
+      const style = getPreviewStyle(selectedVariant, previewPos);
+      console.log('[PortraitPreview][style]', {
         previewPos,
         previewSize,
         scale,
         offsetX,
         offsetY,
-        transform: buildPreviewTransform(selectedVariant, previewPos),
-        usePreviewBounds,
-        previewBounds,
-        previewTopPx,
-        previewHeightPx,
+        heightPx: metrics.heightPx,
+        offsetXPx: metrics.offsetXPx,
+        offsetYPx: metrics.offsetYPx,
+        baseHeightPx: metrics.baseHeightPx,
+        transform: style.transform,
+        maxHeight: style.maxHeight,
+        maxWidth: style.maxWidth,
       });
     }
-  }, [open, previewPos, previewSize, selectedVariant, usePreviewBounds, previewBounds, previewTopPx, previewHeightPx]);
+  }, [open, previewPos, previewSize, selectedVariant]);
 
   const onPreviewPointerDown = (pos: PortraitPosition) => (e: React.PointerEvent) => {
     if (!selectedVariant) return;
     e.preventDefault();
     (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
-    setIsPreviewEditing(true);
     const frameRect = previewFrameRef.current?.getBoundingClientRect();
     const width = frameRect?.width && frameRect.width > 0 ? frameRect.width : previewSize.width;
     const height = frameRect?.height && frameRect.height > 0 ? frameRect.height : previewSize.height;
@@ -1002,11 +949,7 @@ export function PortraitManager({
                                 data-measure={`${index}-${pos}`}
                                 className="portrait-layer"
                                 style={{
-                                  left: '50%',
-                                  maxHeight: '80%',
-                                  maxWidth: '80%',
-                                  transform: buildPreviewTransform(variant, pos),
-                                  transformOrigin: 'bottom center',
+                                  ...getPreviewStyle(variant, pos),
                                   transition: 'none',
                                 }}
                               >
@@ -1014,7 +957,7 @@ export function PortraitManager({
                                   src={variant.url}
                                   alt={variant.displayName}
                                   className="pointer-events-none select-none object-contain"
-                                  style={{ maxWidth: '100%', maxHeight: '100%', height: 'auto', width: 'auto' }}
+                                  style={{ height: '100%', width: 'auto', maxWidth: 'none', maxHeight: 'none' }}
                                 />
                               </div>
                             ))
@@ -1024,19 +967,7 @@ export function PortraitManager({
                   </div>
                   <div
                     className="portrait-layer cursor-grab select-none"
-                    style={{
-                      left: usePreviewBounds ? previewLeftPx : '50%',
-                      top: usePreviewBounds ? previewTopPx : undefined,
-                      bottom: usePreviewBounds ? 'auto' : undefined,
-                      height: usePreviewBounds ? previewHeightPx : undefined,
-                      width: usePreviewBounds ? 'auto' : undefined,
-                      maxHeight: usePreviewBounds ? 'none' : '80%',
-                      maxWidth: usePreviewBounds ? 'none' : '80%',
-                      transform: usePreviewBounds
-                        ? 'translate(-50%, 0)'
-                        : buildPreviewTransform(selectedVariant, previewPos),
-                      transformOrigin: usePreviewBounds ? 'top center' : 'bottom center',
-                    }}
+                    style={previewStyle ?? undefined}
                     onPointerDown={onPreviewPointerDown(previewPos)}
                     ref={previewItemRef}
                   >
@@ -1044,9 +975,7 @@ export function PortraitManager({
                       src={selectedVariant.url}
                       alt={selectedVariant.displayName}
                       className="pointer-events-none select-none object-contain"
-                      style={usePreviewBounds
-                        ? { height: '100%', width: 'auto', maxWidth: 'none', maxHeight: 'none' }
-                        : { maxWidth: '100%', maxHeight: '100%', height: 'auto', width: 'auto' }}
+                      style={{ height: '100%', width: 'auto', maxWidth: 'none', maxHeight: 'none' }}
                     />
                   </div>
                 </div>

@@ -2,6 +2,8 @@ import type { PortraitPosition } from '@/lib/portraitTransformsShared';
 
 export const STAGE_BASE_WIDTH = 1200;
 export const STAGE_BASE_HEIGHT = 675;
+export const PORTRAIT_BASE_HEIGHT_RATIO = 0.8;
+export const PORTRAIT_POSITION_SHIFT_REL = 0.225;
 
 type AssetTransformSource = {
   scale?: number | null;
@@ -96,4 +98,36 @@ export function getAssetTransformRel(asset: AssetTransformSource, position: Port
   if (hasPos) return pos;
 
   return getAssetLegacyTransformRel(asset);
+}
+
+export function getPortraitPositionShiftRel(position: PortraitPosition) {
+  if (position === 'left') return -PORTRAIT_POSITION_SHIFT_REL;
+  if (position === 'right') return PORTRAIT_POSITION_SHIFT_REL;
+  return 0;
+}
+
+export function getPortraitRenderMetrics({
+  containerWidth,
+  containerHeight,
+  scale,
+  offsetXRel,
+  offsetYRel,
+  position,
+}: {
+  containerWidth: number;
+  containerHeight: number;
+  scale?: number | null;
+  offsetXRel?: number | null;
+  offsetYRel?: number | null;
+  position: PortraitPosition;
+}) {
+  const safeScale = Number.isFinite(scale) ? Number(scale) : 1;
+  const safeOffsetX = Number.isFinite(offsetXRel) ? Number(offsetXRel) : 0;
+  const safeOffsetY = Number.isFinite(offsetYRel) ? Number(offsetYRel) : 0;
+  const baseHeightPx = Math.max(1, containerHeight * PORTRAIT_BASE_HEIGHT_RATIO);
+  const heightPx = baseHeightPx * safeScale;
+  const shiftRel = getPortraitPositionShiftRel(position);
+  const offsetXPx = (safeOffsetX + shiftRel) * containerWidth;
+  const offsetYPx = safeOffsetY * containerHeight;
+  return { heightPx, offsetXPx, offsetYPx, baseHeightPx, shiftRel };
 }

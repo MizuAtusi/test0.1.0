@@ -18,6 +18,7 @@ import { getPortraitTransformRel } from '@/lib/portraitTransformsShared';
 import {
   getAssetLegacyTransformRel,
   getAssetTransformRel,
+  getPortraitRenderMetrics,
   hasPositionTransformColumns,
 } from '@/lib/portraitTransformUtils';
 
@@ -554,9 +555,6 @@ export function StageView({
               const assetPosRel = assetForTransform && hasPosition ? getAssetTransformRel(assetForTransform, posKey) : null;
               const assetLegacyRel = assetForTransform && !hasPosition ? getAssetLegacyTransformRel(assetForTransform) : null;
               const baseX = 0.5;
-              const shift = 0.225; // relative to stage width
-              const positionShiftXRel = portrait.position === 'left' ? -shift : portrait.position === 'right' ? shift : 0;
-              const positionShiftX = stageSize.width * positionShiftXRel;
               const offsetXRel = typeof shared?.x === 'number'
                 ? shared.x
                 : (typeof assetPosRel?.x === 'number'
@@ -575,122 +573,6 @@ export function StageView({
                     : (typeof portrait.offsetYRel === 'number'
                       ? portrait.offsetYRel
                       : (typeof portrait.offsetY === 'number' && stageSize.height > 0 ? portrait.offsetY / stageSize.height : 0))));
-              const offsetX = offsetXRel * stageSize.width;
-              const offsetY = offsetYRel * stageSize.height;
-              const anchorXRel = typeof shared?.anchorX === 'number'
-                ? shared.anchorX
-                : (typeof portrait.anchorXRel === 'number' ? portrait.anchorXRel : null);
-              const topFromBottomRel = typeof shared?.topFromBottom === 'number'
-                ? shared.topFromBottom
-                : (typeof portrait.topFromBottom === 'number' ? portrait.topFromBottom : null);
-              const bottomFromBottomRel = typeof shared?.bottomFromBottom === 'number'
-                ? shared.bottomFromBottom
-                : (typeof portrait.bottomFromBottom === 'number' ? portrait.bottomFromBottom : null);
-              const useVerticalBounds = topFromBottomRel != null && bottomFromBottomRel != null && topFromBottomRel !== bottomFromBottomRel;
-              if (isPortraitDebug() && (topFromBottomRel != null || bottomFromBottomRel != null) && !useVerticalBounds) {
-                const debugKey = `${portrait.characterId}:${sharedKey ?? ''}:${posKey}:missing`;
-                const payload = { topFromBottomRel, bottomFromBottomRel };
-                const next = JSON.stringify(payload);
-                const prev = portraitDebugRef.current.get(debugKey);
-                if (prev !== next) {
-                  portraitDebugRef.current.set(debugKey, next);
-                  console.log('[PortraitStage][missing-bounds]', payload);
-                }
-              }
-              if (useVerticalBounds) {
-                const topPx = stageSize.height * (1 - topFromBottomRel);
-                const bottomPx = stageSize.height * (1 - bottomFromBottomRel);
-                const heightPx = bottomPx - topPx;
-                if (Number.isFinite(heightPx) && heightPx > 0) {
-                  const leftPx = anchorXRel != null ? anchorXRel * stageSize.width : null;
-                  if (isPortraitDebug()) {
-                    const debugKey = `${portrait.characterId}:${sharedKey ?? ''}:${posKey}`;
-                    const payload = {
-                      stageSize,
-                      anchorXRel,
-                      topFromBottomRel,
-                      bottomFromBottomRel,
-                      leftPx,
-                      topPx,
-                      bottomPx,
-                      heightPx,
-                    };
-                    const next = JSON.stringify(payload);
-                    const prev = portraitDebugRef.current.get(debugKey);
-                    if (prev !== next) {
-                      portraitDebugRef.current.set(debugKey, next);
-                      console.log('[PortraitStage][render]', payload);
-                    }
-                  }
-                  return (
-                    <div
-                      key={`${portrait.characterId}-${index}`}
-                      className="portrait-layer"
-                      style={{
-                        left: leftPx != null ? leftPx : `${baseX * 100}%`,
-                        top: topPx,
-                        bottom: 'auto',
-                        height: heightPx,
-                        width: 'auto',
-                        display: 'inline-block',
-                        zIndex: portrait.layerOrder,
-                        transform: leftPx != null
-                          ? 'translate(-50%, 0)'
-                          : `translate(-50%, 0) translate(${offsetX + positionShiftX}px, 0)`,
-                        transformOrigin: 'top center',
-                      }}
-                    >
-                      <img
-                        src={portrait.url}
-                        alt={portrait.label}
-                        className="animate-fade-in"
-                        style={{ height: '100%', width: 'auto', maxWidth: 'none', maxHeight: 'none' }}
-                      />
-                    </div>
-                  );
-                }
-              }
-              const rectWRel = typeof shared?.rectW === 'number'
-                ? shared.rectW
-                : (typeof portrait.rectWRel === 'number' ? portrait.rectWRel : null);
-              const rectHRel = typeof shared?.rectH === 'number'
-                ? shared.rectH
-                : (typeof portrait.rectHRel === 'number' ? portrait.rectHRel : null);
-              const useRect = rectWRel != null && rectHRel != null && rectWRel > 0 && rectHRel > 0;
-              if (useRect) {
-                const rectXRel = typeof shared?.rectX === 'number'
-                  ? shared.rectX
-                  : (typeof portrait.rectXRel === 'number' ? portrait.rectXRel : 0);
-                const rectYRel = typeof shared?.rectY === 'number'
-                  ? shared.rectY
-                  : (typeof portrait.rectYRel === 'number' ? portrait.rectYRel : 0);
-                const left = rectXRel * stageSize.width;
-                const top = rectYRel * stageSize.height;
-                const width = rectWRel * stageSize.width;
-                const height = rectHRel * stageSize.height;
-                return (
-                  <div
-                    key={`${portrait.characterId}-${index}`}
-                    className="portrait-layer"
-                    style={{
-                      left,
-                      top,
-                      width,
-                      height,
-                      bottom: 'auto',
-                      zIndex: portrait.layerOrder,
-                      transform: 'none',
-                      transformOrigin: 'top left',
-                    }}
-                  >
-                    <img
-                      src={portrait.url}
-                      alt={portrait.label}
-                      className="h-full w-full object-contain animate-fade-in"
-                    />
-                  </div>
-                );
-              }
               const scale = typeof shared?.scale === 'number'
                 ? shared.scale
                 : (typeof assetPosRel?.scale === 'number'
@@ -698,24 +580,60 @@ export function StageView({
                   : (typeof assetLegacyRel?.scale === 'number'
                     ? assetLegacyRel.scale
                     : (portrait.scale ?? 1)));
+              const { heightPx, offsetXPx, offsetYPx, baseHeightPx, shiftRel } = getPortraitRenderMetrics({
+                containerWidth: stageSize.width,
+                containerHeight: stageSize.height,
+                scale,
+                offsetXRel,
+                offsetYRel,
+                position: posKey,
+              });
+              const transform = `translate(-50%, 0) translate(${offsetXPx}px, ${offsetYPx}px)`;
+              if (isPortraitDebug()) {
+                const debugKey = `${portrait.characterId}:${sharedKey ?? ''}:${posKey}`;
+                const payload = {
+                  stageSize,
+                  scale,
+                  offsetXRel,
+                  offsetYRel,
+                  baseHeightPx,
+                  shiftRel,
+                  heightPx,
+                  offsetXPx,
+                  offsetYPx,
+                  transform,
+                  maxHeight: 'none',
+                  maxWidth: 'none',
+                };
+                const next = JSON.stringify(payload);
+                const prev = portraitDebugRef.current.get(debugKey);
+                if (prev !== next) {
+                  portraitDebugRef.current.set(debugKey, next);
+                  console.log('[PortraitStage][style]', payload);
+                }
+              }
               return (
-            <div
-              key={`${portrait.characterId}-${index}`}
-              className="portrait-layer"
-              style={{
-                left: `${baseX * 100}%`,
-                zIndex: portrait.layerOrder,
-                maxHeight: '80%',
-                transform: `translate(-50%, 0) translate(${offsetX + positionShiftX}px, ${offsetY}px) scale(${scale})`,
-                transformOrigin: 'bottom center',
-              }}
-            >
-              <img
-                src={portrait.url}
-                alt={portrait.label}
-                className="h-auto max-h-full max-w-full object-contain animate-fade-in"
-              />
-            </div>
+                <div
+                  key={`${portrait.characterId}-${index}`}
+                  className="portrait-layer"
+                  style={{
+                    left: `${baseX * 100}%`,
+                    zIndex: portrait.layerOrder,
+                    height: heightPx,
+                    width: 'auto',
+                    maxHeight: 'none',
+                    maxWidth: 'none',
+                    transform,
+                    transformOrigin: 'bottom center',
+                  }}
+                >
+                  <img
+                    src={portrait.url}
+                    alt={portrait.label}
+                    className="animate-fade-in"
+                    style={{ height: '100%', width: 'auto', maxHeight: 'none', maxWidth: 'none', objectFit: 'contain' }}
+                  />
+                </div>
               );
             })()
           ))}
