@@ -387,6 +387,49 @@ export function PortraitManager({
   };
 
   const handleSave = async () => {
+    const activeSnapshot = (() => {
+      const frame = previewRef.current;
+      const target = previewItemRef.current;
+      if (!frame || !target) return null;
+      const frameRect = frame.getBoundingClientRect();
+      const rect = target.getBoundingClientRect();
+      if (!frameRect.width || !frameRect.height || !rect.width || !rect.height) return null;
+      const round = (n: number) => Math.round(n * 10000) / 10000;
+      const x = (rect.left - frameRect.left) / frameRect.width;
+      const y = (rect.top - frameRect.top) / frameRect.height;
+      const w = rect.width / frameRect.width;
+      const h = rect.height / frameRect.height;
+      if (isPortraitDebug()) {
+        const v = variants[selectedIndex];
+        console.log('[PortraitSave][before]', {
+          selectedIndex,
+          previewPos,
+          isPreviewEditing,
+          scale: v ? getVariantTransform(v, previewPos).scale : undefined,
+          offsetX: v ? getVariantTransform(v, previewPos).offsetX : undefined,
+          offsetY: v ? getVariantTransform(v, previewPos).offsetY : undefined,
+          usePreviewBounds,
+          previewBounds,
+        });
+        console.log('[PortraitSave][snapshot]', {
+          frameRect: {
+            left: frameRect.left,
+            top: frameRect.top,
+            width: frameRect.width,
+            height: frameRect.height,
+          },
+          rect: {
+            left: rect.left,
+            top: rect.top,
+            width: rect.width,
+            height: rect.height,
+          },
+          normalized: { x: round(x), y: round(y), w: round(w), h: round(h) },
+        });
+      }
+      return { x: round(x), y: round(y), w: round(w), h: round(h) };
+    })();
+
     setSaving(true);
 
     try {
@@ -396,9 +439,9 @@ export function PortraitManager({
           ? variants.map((v, i) => ({ ...v, isDefault: i === 0 }))
           : variants;
       const rectsByIndex = normalizedVariants.map((_, index) => ({
-        left: getNormalizedRect(index, 'left'),
-        center: getNormalizedRect(index, 'center'),
-        right: getNormalizedRect(index, 'right'),
+        left: index === selectedIndex && previewPos === 'left' ? activeSnapshot : getNormalizedRect(index, 'left'),
+        center: index === selectedIndex && previewPos === 'center' ? activeSnapshot : getNormalizedRect(index, 'center'),
+        right: index === selectedIndex && previewPos === 'right' ? activeSnapshot : getNormalizedRect(index, 'right'),
       }));
 
       // Upload files first
@@ -585,20 +628,6 @@ export function PortraitManager({
         const cmd = buildPortraitTransformCommand({ characterId, key, set });
         if (cmd) commands.push(cmd);
       });
-      if (rectsByIndex[selectedIndex] && previewPos) {
-        const activeRect = rectsByIndex[selectedIndex]?.[previewPos] ?? null;
-        if (activeRect) {
-          const topFromBottom = 1 - activeRect.y;
-          const bottomFromBottom = 1 - (activeRect.y + activeRect.h);
-          const anchorX = activeRect.x + activeRect.w / 2;
-          setSavedPreviewBounds({
-            anchorX,
-            topFromBottom,
-            bottomFromBottom,
-          });
-        }
-      }
-      setIsPreviewEditing(false);
       if (commands.length > 0) {
         await supabase.from('messages').insert({
           room_id: roomId,
