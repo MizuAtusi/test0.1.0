@@ -84,7 +84,6 @@ export function PortraitManager({
     topFromBottom: number;
     bottomFromBottom: number;
   } | null>(null);
-  const [useSavedPreviewBounds, setUseSavedPreviewBounds] = useState(false);
   const [isPreviewEditing, setIsPreviewEditing] = useState(false);
   const [previewSize, setPreviewSize] = useState<{ width: number; height: number }>({ width: 1200, height: 675 });
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -224,7 +223,7 @@ export function PortraitManager({
     };
   };
 
-  const previewBounds = useSavedPreviewBounds ? savedPreviewBounds : null;
+  const previewBounds = !isPreviewEditing ? savedPreviewBounds : null;
   const previewTopPx = previewBounds ? previewSize.height * (1 - previewBounds.topFromBottom) : null;
   const previewBottomPx = previewBounds ? previewSize.height * (1 - previewBounds.bottomFromBottom) : null;
   const previewHeightPx = previewTopPx != null && previewBottomPx != null ? previewBottomPx - previewTopPx : null;
@@ -349,7 +348,6 @@ export function PortraitManager({
 
   const updateVariant = (index: number, updates: Partial<PortraitVariant>) => {
     setIsPreviewEditing(true);
-    setUseSavedPreviewBounds(false);
     setVariants(prev => prev.map((v, i) => (i === index ? { ...v, ...updates } : v)));
   };
 
@@ -675,7 +673,6 @@ export function PortraitManager({
     if (!isPreviewEditing) {
       const bounds = getSavedBoundsForPreview();
       setSavedPreviewBounds(bounds);
-      setUseSavedPreviewBounds(Boolean(bounds));
     }
   }, [open, selectedVariant, roomId, characterId, getSavedBoundsForPreview, isPreviewEditing]);
 
@@ -684,7 +681,6 @@ export function PortraitManager({
     if (!isPreviewEditing) {
       const bounds = getSavedBoundsForPreview();
       setSavedPreviewBounds(bounds);
-      setUseSavedPreviewBounds(Boolean(bounds));
     }
   }, [open, previewPos, selectedIndex, getSavedBoundsForPreview, isPreviewEditing]);
 
@@ -718,7 +714,6 @@ export function PortraitManager({
     e.preventDefault();
     (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
     setIsPreviewEditing(true);
-    setUseSavedPreviewBounds(false);
     const frameRect = previewFrameRef.current?.getBoundingClientRect();
     const width = frameRect?.width && frameRect.width > 0 ? frameRect.width : previewSize.width;
     const height = frameRect?.height && frameRect.height > 0 ? frameRect.height : previewSize.height;
