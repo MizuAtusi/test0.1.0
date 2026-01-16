@@ -78,6 +78,7 @@ export function PortraitManager({
   const previewFrameRef = useRef<HTMLDivElement>(null);
   const previewRef = useRef<HTMLDivElement>(null);
   const measureRef = useRef<HTMLDivElement>(null);
+  const previewItemRef = useRef<HTMLDivElement>(null);
   const [previewSize, setPreviewSize] = useState<{ width: number; height: number }>({ width: 1200, height: 675 });
   const fileInputRef = useRef<HTMLInputElement>(null);
   const { toast } = useToast();
@@ -158,7 +159,9 @@ export function PortraitManager({
     const root = measureRef.current;
     const frame = previewRef.current;
     if (!root || !frame) return null;
-    const target = root.querySelector<HTMLElement>(`[data-measure="${variantIndex}-${pos}"]`);
+    const isActive = variantIndex === selectedIndex && pos === previewPos;
+    const target = (isActive ? previewItemRef.current : null)
+      ?? root.querySelector<HTMLElement>(`[data-measure="${variantIndex}-${pos}"]`);
     if (!target) return null;
     const frameRect = frame.getBoundingClientRect();
     const rect = target.getBoundingClientRect();
@@ -172,6 +175,7 @@ export function PortraitManager({
       // Debug measurement units and normalization.
       console.log('[PortraitSave][measure]', {
         pos,
+        source: isActive ? 'preview' : 'measure',
         frameRect: {
           left: frameRect.left,
           top: frameRect.top,
@@ -902,6 +906,7 @@ export function PortraitManager({
                       transformOrigin: 'bottom center',
                     }}
                     onPointerDown={onPreviewPointerDown(previewPos)}
+                    ref={previewItemRef}
                   >
                     <img
                       src={selectedVariant.url}
