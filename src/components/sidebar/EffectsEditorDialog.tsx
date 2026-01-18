@@ -541,9 +541,6 @@ export function EffectsEditorDialog(props: {
                         if (f) void handleUploadImage(f);
                       }}
                     />
-                    <Button type="button" size="sm" variant="outline" onClick={addPcPlaceholders}>
-                      立ち絵を追加
-                    </Button>
                     <Button type="button" size="sm" variant="outline" disabled={uploading} onClick={() => imgFileRef.current?.click()}>
                       <Plus className="w-4 h-4 mr-2" />
                       画像を追加

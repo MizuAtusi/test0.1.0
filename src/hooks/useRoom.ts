@@ -397,23 +397,34 @@ export function useRoom(roomId: string | null) {
       dicePayload?: any;
       portraitUrl?: string;
       threadId?: string | null;
+      createdAt?: string | Date;
     }
   ) => {
     if (!roomId) return null;
-    
+
+    const createdAt =
+      options?.createdAt instanceof Date
+        ? options.createdAt.toISOString()
+        : typeof options?.createdAt === 'string'
+          ? options.createdAt
+          : null;
+
+    const payload: any = {
+      room_id: roomId,
+      type,
+      text,
+      speaker_name: speakerName,
+      channel: options?.channel || 'public',
+      thread_id: options?.threadId ?? null,
+      secret_allow_list: options?.secretAllowList || [],
+      dice_payload: options?.dicePayload,
+      speaker_portrait_url: options?.portraitUrl,
+    };
+    if (createdAt) payload.created_at = createdAt;
+
     const { data, error } = await supabase
       .from('messages')
-      .insert({
-        room_id: roomId,
-        type,
-        text,
-        speaker_name: speakerName,
-        channel: options?.channel || 'public',
-        thread_id: options?.threadId ?? null,
-        secret_allow_list: options?.secretAllowList || [],
-        dice_payload: options?.dicePayload,
-        speaker_portrait_url: options?.portraitUrl,
-      })
+      .insert(payload)
       .select()
       .single();
     
@@ -560,6 +571,19 @@ export function useRoom(roomId: string | null) {
             }
             return [...prev, nextMsg];
           });
+        }
+      )
+      .on(
+        'postgres_changes',
+        {
+          event: 'UPDATE',
+          schema: 'public',
+          table: 'messages',
+          filter: `room_id=eq.${roomId}`,
+        },
+        (payload) => {
+          const nextMsg = payload.new as unknown as Message;
+          setMessages((prev) => prev.map((m) => (m.id === nextMsg.id ? nextMsg : m)));
         }
       )
       .subscribe();

@@ -512,9 +512,10 @@ export default function RoomPage() {
   ) => {
     const requestedChannel = options?.channel || 'public';
     const isChat = requestedChannel === 'chat';
-    const secretChannel = stageState?.is_secret && !isChat ? 'secret' : null;
-    const secretAllowList = stageState?.is_secret && !isChat ? (stageState?.secret_allow_list || []) : null;
-    sendMessage(type, text, speakerName, {
+    const allowSecret = !options?.forceChannel;
+    const secretChannel = allowSecret && stageState?.is_secret && !isChat ? 'secret' : null;
+    const secretAllowList = allowSecret && stageState?.is_secret && !isChat ? (stageState?.secret_allow_list || []) : null;
+    return sendMessage(type, text, speakerName, {
       ...options,
       channel: secretChannel || requestedChannel,
       secretAllowList: secretAllowList ?? (isChat ? [] : options?.secretAllowList),

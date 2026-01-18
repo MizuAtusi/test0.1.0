@@ -23,6 +23,7 @@ import { BackgroundScreenEditorDialog } from './BackgroundScreenEditorDialog';
 import { getDisplayText } from '@/lib/expressionTag';
 import { getPortraitTransform } from '@/lib/portraitTransforms';
 import { getPortraitTransformRel } from '@/lib/portraitTransformsShared';
+import { parseCocofoliaAllLogHtml } from '@/lib/cocofoliaHtmlImport';
 import {
   getAssetLegacyTransformRel,
   getAssetTransformRel,
@@ -31,6 +32,7 @@ import {
 } from '@/lib/portraitTransformUtils';
 import { loadEffectsConfig, normalizeEffectsConfig } from '@/lib/effects';
 import { loadTitleScreenConfig, hasTitleScreenConfig } from '@/lib/titleScreen';
+import { buildDefaultSkills, buildDerivedFromStats } from '@/lib/coc6';
 import {
   loadBackgroundScreenPresets,
   removeBackgroundScreenPreset,
@@ -49,6 +51,7 @@ interface GMToolsPanelProps {
   onSendMessage: (type: 'speech' | 'mono' | 'system' | 'dice', text: string, speakerName: string, options?: any) => void;
   onUpdateStage: (updates: Partial<StageState>) => void;
   onUpdateRoom: (updates: Partial<Room>) => void;
+  onRefreshCharacters?: () => void;
 }
 
 interface MacroFormData {
@@ -67,6 +70,7 @@ export function GMToolsPanel({
   onSendMessage,
   onUpdateStage,
   onUpdateRoom,
+  onRefreshCharacters,
 }: GMToolsPanelProps) {
   const { user } = useAuth();
   const navigate = useNavigate();
@@ -122,6 +126,12 @@ export function GMToolsPanel({
   const [inviteSearchResult, setInviteSearchResult] = useState<Profile | null>(null);
   const [inviteSearchLoading, setInviteSearchLoading] = useState(false);
   const [inviteActionLoading, setInviteActionLoading] = useState<string | null>(null);
+  const [importDialogOpen, setImportDialogOpen] = useState(false);
+  const [importHtmlText, setImportHtmlText] = useState('');
+  const [importFileName, setImportFileName] = useState<string | null>(null);
+  const [importParseError, setImportParseError] = useState<string | null>(null);
+  const [importParsed, setImportParsed] = useState<ReturnType<typeof parseCocofoliaAllLogHtml> | null>(null);
+  const [importLoading, setImportLoading] = useState(false);
 
   const fetchRoomMembers = useCallback(async () => {
     const { data, error } = await supabase
@@ -186,6 +196,33 @@ export function GMToolsPanel({
     void fetchInviteFriends();
   }, [inviteDialogOpen, fetchInviteFriends]);
 
+  useEffect(() => {
+    if (importDialogOpen) return;
+    setImportHtmlText('');
+    setImportFileName(null);
+    setImportParseError(null);
+    setImportParsed(null);
+    setImportLoading(false);
+  }, [importDialogOpen]);
+
+  useEffect(() => {
+    if (!importDialogOpen) return;
+    if (!importHtmlText.trim()) {
+      setImportParseError(null);
+      setImportParsed(null);
+      return;
+    }
+    try {
+      const parsed = parseCocofoliaAllLogHtml(importHtmlText);
+      setImportParsed(parsed);
+      setImportParseError(null);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : '解析に失敗しました';
+      setImportParseError(message);
+      setImportParsed(null);
+    }
+  }, [importHtmlText, importDialogOpen]);
+
   const inviteUserToRoom = async (profile: Profile) => {
     if (!roomId) return;
     if (roomMembers.some((m) => m.user_id === profile.id)) {
@@ -215,6 +252,134 @@ export function GMToolsPanel({
     );
     toast({ title: 'プレイヤーを招待しました' });
     void fetchRoomMembers();
+  };
+
+  const handleImportFile = async (file: File) => {
+    const text = await file.text();
+    setImportFileName(file.name);
+    setImportHtmlText(text);
+  };
+
+  const handleImportLogs = async () => {
+    if (!roomId || !room) return;
+    if (!importParsed || importParsed.entries.length === 0) {
+      toast({ title: 'ログが見つかりません', variant: 'destructive' });
+      return;
+    }
+    setImportLoading(true);
+
+    try {
+      const defaultStats = {
+        STR: 10,
+        CON: 10,
+        POW: 10,
+        DEX: 10,
+        APP: 10,
+        SIZ: 10,
+        INT: 10,
+        EDU: 10,
+      };
+      const defaultDerived = buildDerivedFromStats(defaultStats);
+      const defaultSkills = buildDefaultSkills(defaultStats);
+
+      const byName = new Map<string, Character>();
+      characters.forEach((c) => byName.set(c.name, c));
+
+      for (const speaker of importParsed.speakers) {
+        const existing = byName.get(speaker);
+        const latestSan = importParsed.latestSanByName.get(speaker);
+
+        if (existing) {
+          if (typeof latestSan === 'number' && Number.isFinite(latestSan)) {
+            const derived = {
+              ...(existing.derived || defaultDerived),
+              SAN: latestSan,
+            };
+            await supabase
+              .from('characters')
+              .update({ derived } as any)
+              .eq('id', existing.id);
+          }
+          continue;
+        }
+
+        const derived = {
+          ...defaultDerived,
+          SAN:
+            typeof latestSan === 'number' && Number.isFinite(latestSan)
+              ? latestSan
+              : defaultDerived.SAN,
+        };
+
+        const { data, error } = await supabase
+          .from('characters')
+          .insert({
+            room_id: roomId,
+            name: speaker,
+            is_npc: false,
+            stats: defaultStats,
+            derived,
+            skills: defaultSkills,
+            items: [],
+            memo: '',
+          } as any)
+          .select('*')
+          .single();
+
+        if (error) throw error;
+        if (data) byName.set(speaker, data as Character);
+      }
+
+      if (importParsed.infoItems.length > 0) {
+        for (let i = 0; i < importParsed.infoItems.length; i += 1) {
+          const body = importParsed.infoItems[i];
+          const { data: infoRow, error: infoError } = await supabase
+            .from('session_infos')
+            .insert({
+              room_id: roomId,
+              title: `第${i + 1}の情報`,
+              visibility: 'public',
+              list_visibility: 'title',
+              allowed_user_ids: [],
+            } as any)
+            .select('id')
+            .single();
+
+          if (infoError || !infoRow) throw infoError;
+
+          const { error: contentError } = await supabase
+            .from('session_info_contents')
+            .insert({ info_id: infoRow.id, content: body } as any);
+
+          if (contentError) throw contentError;
+        }
+      }
+
+      const baseTime = Date.now();
+      let index = 0;
+      for (const entry of importParsed.entries) {
+        if (entry.tab === '[情報]') continue;
+        const channel = entry.tab === '[雑談]' ? 'chat' : 'public';
+        const type: 'speech' | 'system' = entry.kind === 'system' ? 'system' : 'speech';
+        const createdAt = new Date(baseTime + index);
+        index += 1;
+
+        await onSendMessage(type, entry.body, entry.speaker, {
+          channel,
+          createdAt,
+          forceChannel: true,
+        });
+      }
+
+      await onRefreshCharacters?.();
+      toast({ title: 'ログを流し込みました' });
+      setImportDialogOpen(false);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'ログの流し込みに失敗しました';
+      toast({ title: 'ログの流し込みに失敗しました', description: message, variant: 'destructive' });
+    } finally {
+      setImportLoading(false);
+    }
   };
 
   const handleInviteSearch = async () => {
@@ -2211,6 +2376,15 @@ export function GMToolsPanel({
 
           {/* Participants List */}
           <div className="space-y-2">
+            <Button
+              variant="outline"
+              size="sm"
+              className="w-full"
+              onClick={() => setImportDialogOpen(true)}
+            >
+              <FileText className="w-4 h-4 mr-2" />
+              ログを流し込む
+            </Button>
             <h3 className="text-sm font-semibold text-muted-foreground uppercase tracking-wider">
               参加者 ({roomMembers.length})
             </h3>
@@ -2349,6 +2523,64 @@ export function GMToolsPanel({
           <DialogFooter>
             <Button variant="outline" onClick={() => setInviteDialogOpen(false)}>
               閉じる
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={importDialogOpen} onOpenChange={setImportDialogOpen}>
+        <DialogContent className="sm:max-w-2xl max-h-[80vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>ログを流し込む</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div className="space-y-2">
+              <Label className="text-xs text-muted-foreground">全ログ出力（HTML）</Label>
+              <Input
+                type="file"
+                accept=".html"
+                onChange={(e) => {
+                  const file = e.target.files?.[0];
+                  if (file) void handleImportFile(file);
+                }}
+              />
+              {importFileName && (
+                <div className="text-xs text-muted-foreground">読み込み: {importFileName}</div>
+              )}
+            </div>
+            <div className="space-y-2">
+              <Label className="text-xs text-muted-foreground">HTMLを貼り付け</Label>
+              <Textarea
+                value={importHtmlText}
+                onChange={(e) => setImportHtmlText(e.target.value)}
+                placeholder="ここに全ログ出力HTMLを貼り付けてください"
+                className="min-h-[160px]"
+              />
+            </div>
+            <div className="rounded-md border border-border/60 bg-secondary/20 px-3 py-2 text-xs text-muted-foreground space-y-1">
+              <div>プレビュー</div>
+              {importParseError && <div className="text-destructive">{importParseError}</div>}
+              {!importParseError && importParsed && (
+                <div className="flex flex-wrap gap-3">
+                  <span>件数: {importParsed.entries.length}</span>
+                  <span>登場者: {importParsed.speakers.size}</span>
+                  <span>情報: {importParsed.infoItems.length}</span>
+                </div>
+              )}
+              {!importParseError && !importParsed && (
+                <div>未解析</div>
+              )}
+            </div>
+          </div>
+          <DialogFooter className="gap-2">
+            <Button variant="outline" onClick={() => setImportDialogOpen(false)}>
+              閉じる
+            </Button>
+            <Button
+              onClick={() => void handleImportLogs()}
+              disabled={importLoading || !importParsed?.entries.length}
+            >
+              {importLoading ? '読み込み中...' : '取り込む'}
             </Button>
           </DialogFooter>
         </DialogContent>

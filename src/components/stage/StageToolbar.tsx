@@ -5,11 +5,12 @@ import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '
 import { Textarea } from '@/components/ui/textarea';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Input } from '@/components/ui/input';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Label } from '@/components/ui/label';
 import { Checkbox } from '@/components/ui/checkbox';
 import { useToast } from '@/hooks/use-toast';
 import { exportReplay } from '@/lib/replayExport';
-import { getDisplayText } from '@/lib/expressionTag';
+import { getDisplayText, parseExpressionTags } from '@/lib/expressionTag';
 import { supabase } from '@/integrations/supabase/client';
 import { deleteFile, uploadFile } from '@/lib/upload';
 import type { Room, Message, StageState, Participant, Character, RoomLogMarkup } from '@/types/trpg';
@@ -77,6 +78,18 @@ export function StageToolbar({
   const [markupDialogOpen, setMarkupDialogOpen] = useState(false);
   const [markupTarget, setMarkupTarget] = useState<Message | null>(null);
   const [markupLabel, setMarkupLabel] = useState('');
+  const [logEditOpen, setLogEditOpen] = useState(false);
+  const [logEditMode, setLogEditMode] = useState<'full' | 'variant'>('full');
+  const [logEditTarget, setLogEditTarget] = useState<Message | null>(null);
+  const [logEditSpeaker, setLogEditSpeaker] = useState('');
+  const [logEditText, setLogEditText] = useState('');
+  const [logEditTags, setLogEditTags] = useState<string[]>([]);
+  const [logEditTag, setLogEditTag] = useState('');
+  const [logEditPortraitUrl, setLogEditPortraitUrl] = useState('');
+  const [logEditCharacterId, setLogEditCharacterId] = useState<string>('custom');
+  const [logEditPortraitOptions, setLogEditPortraitOptions] = useState<Array<{ id: string; label: string; tag: string; url: string }>>([]);
+  const [logEditLoadingPortraits, setLogEditLoadingPortraits] = useState(false);
+  const [logEditSaving, setLogEditSaving] = useState(false);
   const { toast } = useToast();
 
   useEffect(() => {
@@ -101,10 +114,119 @@ export function StageToolbar({
     };
   }, [showLog, room?.id, isGM]);
 
+  useEffect(() => {
+    if (!logEditOpen || logEditMode !== 'full') return;
+    if (logEditCharacterId === 'custom') {
+      setLogEditPortraitOptions([]);
+      return;
+    }
+    const character = characters.find((c) => c.id === logEditCharacterId) ?? null;
+    if (!character) {
+      setLogEditPortraitOptions([]);
+      return;
+    }
+    setLogEditSpeaker(character.name);
+    setLogEditPortraitUrl(character.avatar_url || '');
+    void loadPortraitOptionsForCharacter(character.id);
+  }, [logEditCharacterId, logEditOpen, logEditMode, characters]);
+
   const openMarkupDialog = (msg: Message) => {
     setMarkupTarget(msg);
     setMarkupLabel('');
     setMarkupDialogOpen(true);
+  };
+
+  const findCharacterByName = (name: string) =>
+    characters.find((c) => c.name === name) ?? null;
+
+  const loadPortraitOptionsForCharacter = async (characterId: string | null) => {
+    if (!characterId) {
+      setLogEditPortraitOptions([]);
+      return;
+    }
+    setLogEditLoadingPortraits(true);
+    const { data, error } = await supabase
+      .from('assets')
+      .select('id,url,label,tag')
+      .eq('character_id', characterId)
+      .eq('kind', 'portrait');
+    if (error) {
+      setLogEditPortraitOptions([]);
+      setLogEditLoadingPortraits(false);
+      return;
+    }
+    const options = (data as any[] | null || [])
+      .filter((a) => a?.url && a?.tag !== '__avatar__')
+      .map((a) => ({
+        id: String(a.id),
+        url: String(a.url),
+        label: String(a.label || a.tag || 'portrait'),
+        tag: String(a.tag || a.label || '').trim().toLowerCase(),
+      }))
+      .filter((a) => a.tag);
+    setLogEditPortraitOptions(options);
+    setLogEditLoadingPortraits(false);
+  };
+
+  const openLogEdit = async (msg: Message, mode: 'full' | 'variant') => {
+    const parsed = parseExpressionTags(msg.text || '');
+    const tags = parsed.tags || [];
+    const lastTag = tags.length > 0 ? tags[tags.length - 1] : '';
+    const character = findCharacterByName(msg.speaker_name || '');
+    const nextCharacterId = character?.id ?? 'custom';
+
+    setLogEditTarget(msg);
+    setLogEditMode(mode);
+    setLogEditSpeaker(msg.speaker_name || '');
+    setLogEditText(parsed.text || '');
+    setLogEditTags(tags);
+    setLogEditTag(lastTag);
+    setLogEditPortraitUrl(msg.speaker_portrait_url || '');
+    setLogEditCharacterId(nextCharacterId);
+
+    if (character) {
+      await loadPortraitOptionsForCharacter(character.id);
+    } else {
+      setLogEditPortraitOptions([]);
+    }
+    setLogEditOpen(true);
+  };
+
+  const handleSaveLogEdit = async () => {
+    if (!logEditTarget) return;
+    setLogEditSaving(true);
+
+    const tags = [...logEditTags];
+    if (logEditTag) {
+      if (tags.length > 0) tags[tags.length - 1] = logEditTag;
+      else tags.push(logEditTag);
+    } else if (tags.length > 0) {
+      tags.pop();
+    }
+    const tagPrefix = tags.map((t) => `{${t}}`).join(' ');
+    const nextText = `${tagPrefix} ${logEditText}`.trim();
+
+    const updates: any = { text: nextText };
+    if (logEditMode === 'full') {
+      const trimmedSpeaker = logEditSpeaker.trim();
+      if (trimmedSpeaker) updates.speaker_name = trimmedSpeaker;
+      updates.speaker_portrait_url = logEditPortraitUrl || null;
+    }
+
+    const { error } = await supabase
+      .from('messages')
+      .update(updates)
+      .eq('id', logEditTarget.id);
+
+    if (error) {
+      toast({ title: 'ログの更新に失敗しました', description: error.message, variant: 'destructive' });
+      setLogEditSaving(false);
+      return;
+    }
+
+    toast({ title: 'ログを更新しました' });
+    setLogEditSaving(false);
+    setLogEditOpen(false);
   };
 
   const saveMarkup = async () => {
@@ -575,6 +697,11 @@ export function StageToolbar({
     const allowList = Array.isArray(msg.secret_allow_list) ? msg.secret_allow_list : [];
     return allowList.includes(participant.id);
   });
+
+  const logEditCharacter = useMemo(() => {
+    if (logEditCharacterId === 'custom') return null;
+    return characters.find((c) => c.id === logEditCharacterId) ?? null;
+  }, [logEditCharacterId, characters]);
 
   const handleSaveHouseRules = async () => {
     await onUpdateRoom({ house_rules: houseRulesEdit });
@@ -1260,6 +1387,13 @@ export function StageToolbar({
                 const text = getDisplayText(msg.text);
                 if (!text) return null;
                 const existingMarkup = logMarkups.find((m) => m.message_id === msg.id);
+                const speakerCharacter = findCharacterByName(msg.speaker_name || '');
+                const canEditVariant =
+                  !isGM &&
+                  !!speakerCharacter &&
+                  !speakerCharacter.is_npc &&
+                  ((!!currentUserId && speakerCharacter.owner_user_id === currentUserId) ||
+                    (!!participant && speakerCharacter.owner_participant_id === participant.id));
                 return (
                   <div key={msg.id} className="group py-1 border-b border-border/30">
                     <div className="flex items-center justify-between gap-2">
@@ -1273,23 +1407,155 @@ export function StageToolbar({
                           <span className="ml-2 text-xs text-muted-foreground">（{existingMarkup.label}）</span>
                         )}
                       </div>
-                      {isGM && (
-                        <Button
-                          type="button"
-                          size="sm"
-                          variant="ghost"
-                          className="opacity-0 group-hover:opacity-100 text-xs"
-                          onClick={() => openMarkupDialog(msg)}
-                        >
-                          マークアップする
-                        </Button>
-                      )}
+                      <div className="flex items-center gap-1">
+                        {isGM && (
+                          <>
+                            <Button
+                              type="button"
+                              size="sm"
+                              variant="ghost"
+                              className="opacity-0 group-hover:opacity-100 text-xs"
+                              onClick={() => void openLogEdit(msg, 'full')}
+                            >
+                              編集
+                            </Button>
+                            <Button
+                              type="button"
+                              size="sm"
+                              variant="ghost"
+                              className="opacity-0 group-hover:opacity-100 text-xs"
+                              onClick={() => openMarkupDialog(msg)}
+                            >
+                              マークアップする
+                            </Button>
+                          </>
+                        )}
+                        {!isGM && canEditVariant && (
+                          <Button
+                            type="button"
+                            size="sm"
+                            variant="ghost"
+                            className="opacity-0 group-hover:opacity-100 text-xs"
+                            onClick={() => void openLogEdit(msg, 'variant')}
+                          >
+                            差分変更
+                          </Button>
+                        )}
+                      </div>
                     </div>
                   </div>
                 );
               })}
             </div>
           </ScrollArea>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={logEditOpen} onOpenChange={setLogEditOpen}>
+        <DialogContent className="max-w-lg">
+          <DialogHeader>
+            <DialogTitle>
+              {logEditMode === 'variant' ? '立ち絵差分を変更' : 'ログを編集'}
+            </DialogTitle>
+          </DialogHeader>
+          <div className="space-y-3">
+            {logEditMode === 'full' && (
+              <>
+                <div className="space-y-1">
+                  <Label className="text-xs text-muted-foreground">発言者（キャラクター）</Label>
+                  <Select
+                    value={logEditCharacterId}
+                    onValueChange={(value) => setLogEditCharacterId(value)}
+                  >
+                    <SelectTrigger>
+                      <SelectValue placeholder="発言者を選択" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="custom">自由入力</SelectItem>
+                      {characters.map((c) => (
+                        <SelectItem key={c.id} value={c.id}>
+                          {c.name}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="space-y-1">
+                  <Label className="text-xs text-muted-foreground">表示名</Label>
+                  <Input
+                    value={logEditSpeaker}
+                    onChange={(e) => setLogEditSpeaker(e.target.value)}
+                    placeholder="発言者名"
+                  />
+                </div>
+              </>
+            )}
+            <div className="space-y-1">
+              <Label className="text-xs text-muted-foreground">本文</Label>
+              <Textarea
+                value={logEditText}
+                onChange={(e) => setLogEditText(e.target.value)}
+                className="min-h-[100px]"
+                disabled={logEditMode === 'variant'}
+              />
+            </div>
+            {logEditMode === 'full' && (
+              <div className="space-y-1">
+                <Label className="text-xs text-muted-foreground">立ち絵</Label>
+                <Select
+                  value={logEditPortraitUrl || '__none__'}
+                  onValueChange={(value) => setLogEditPortraitUrl(value === '__none__' ? '' : value)}
+                  disabled={logEditLoadingPortraits}
+                >
+                  <SelectTrigger>
+                    <SelectValue placeholder={logEditLoadingPortraits ? '読み込み中...' : '立ち絵を選択'} />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="__none__">未設定</SelectItem>
+                    {logEditCharacter?.avatar_url && (
+                      <SelectItem value={logEditCharacter.avatar_url}>キャラクターアイコン</SelectItem>
+                    )}
+                    {logEditPortraitOptions.map((opt) => (
+                      <SelectItem key={opt.id} value={opt.url}>
+                        {opt.label}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            )}
+            <div className="space-y-1">
+              <Label className="text-xs text-muted-foreground">立ち絵差分</Label>
+              <Select
+                value={logEditTag || '__none__'}
+                onValueChange={(value) => setLogEditTag(value === '__none__' ? '' : value)}
+                disabled={logEditLoadingPortraits || logEditPortraitOptions.length === 0}
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder={logEditLoadingPortraits ? '読み込み中...' : '差分を選択'} />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="__none__">未設定</SelectItem>
+                  {logEditPortraitOptions.map((opt) => (
+                    <SelectItem key={opt.id} value={opt.tag}>
+                      {opt.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              {logEditPortraitOptions.length === 0 && !logEditLoadingPortraits && (
+                <div className="text-[11px] text-muted-foreground">差分が登録されていません</div>
+              )}
+            </div>
+          </div>
+          <DialogFooter className="gap-2">
+            <Button variant="outline" onClick={() => setLogEditOpen(false)}>
+              閉じる
+            </Button>
+            <Button onClick={() => void handleSaveLogEdit()} disabled={logEditSaving}>
+              {logEditSaving ? '保存中...' : '保存'}
+            </Button>
+          </DialogFooter>
         </DialogContent>
       </Dialog>
 

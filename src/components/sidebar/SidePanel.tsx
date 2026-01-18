@@ -156,6 +156,7 @@ export function SidePanel({
                 onSendMessage={onSendMessage}
                 onUpdateStage={onUpdateStage}
                 onUpdateRoom={onUpdateRoom}
+                onRefreshCharacters={onRefreshCharacters}
               />
             </TabsContent>
           )}

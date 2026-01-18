@@ -4,8 +4,9 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { Switch } from '@/components/ui/switch';
+import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { supabase } from '@/integrations/supabase/client';
-import type { Character, CharacterStats, CharacterDerived } from '@/types/trpg';
+import type { Character, CharacterStats, CharacterDerived, Profile } from '@/types/trpg';
 import { useToast } from '@/hooks/use-toast';
 import { cn } from '@/lib/utils';
 import { PortraitManager } from './PortraitManager';
@@ -156,6 +157,10 @@ export function CharacterSheet({
   });
   const [memo, setMemo] = useState(character.memo);
   const [showPortraitManager, setShowPortraitManager] = useState(false);
+  const [transferOpen, setTransferOpen] = useState(false);
+  const [transferLoading, setTransferLoading] = useState(false);
+  const [transferTargets, setTransferTargets] = useState<Array<{ userId: string; name: string; role: 'PL' | 'GM' }>>([]);
+  const [transferSelected, setTransferSelected] = useState<string>('none');
   const [deleting, setDeleting] = useState(false);
   const [renamingSkill, setRenamingSkill] = useState<string | null>(null);
   const [renameDraft, setRenameDraft] = useState('');
@@ -198,6 +203,48 @@ export function CharacterSheet({
     setIsEditing(false);
     setNewlyAddedSkills([]);
   }, [character.id, roomId]);
+
+  useEffect(() => {
+    if (!transferOpen || !roomId || character.is_npc) return;
+    let canceled = false;
+    (async () => {
+      setTransferLoading(true);
+      const { data: members, error } = await supabase
+        .from('room_members')
+        .select('user_id,role')
+        .eq('room_id', roomId)
+        .order('created_at', { ascending: true });
+      if (canceled) return;
+      if (error) {
+        setTransferTargets([]);
+        setTransferLoading(false);
+        return;
+      }
+      const memberRows = (members as any[]) || [];
+      const userIds = memberRows.map((m) => m.user_id).filter(Boolean);
+      const { data: profiles } = await supabase
+        .from('profiles')
+        .select('id,display_name,handle')
+        .in('id', userIds);
+      if (canceled) return;
+      const profileById = new Map<string, Profile>();
+      (profiles as any[] | null)?.forEach((p) => {
+        if (!p?.id) return;
+        profileById.set(String(p.id), p as Profile);
+      });
+      const targets = memberRows.map((m) => {
+        const profile = profileById.get(String(m.user_id));
+        const name = profile?.display_name || profile?.handle || `${String(m.user_id).slice(0, 8)}...`;
+        return { userId: String(m.user_id), name, role: m.role as 'PL' | 'GM' };
+      });
+      setTransferTargets(targets);
+      setTransferSelected(character.owner_user_id ? String(character.owner_user_id) : 'none');
+      setTransferLoading(false);
+    })();
+    return () => {
+      canceled = true;
+    };
+  }, [transferOpen, roomId, character.id, character.is_npc, character.owner_user_id]);
 
   const defaultSkills = useMemo(() => buildDefaultSkills(stats), [stats]);
   const computedSkills = useMemo(() => computeTotalSkills(stats, skillPoints), [stats, skillPoints]);
@@ -520,6 +567,24 @@ export function CharacterSheet({
   const canViewSkills = !isNpc || isGM || disclosure.showSkills;
   const canViewMemo = !isNpc || isGM || disclosure.showMemo;
   const canViewAnything = canViewStats || canViewDerived || canViewSkills || canViewMemo;
+
+  const handleTransferOwner = async () => {
+    if (!roomId || character.is_npc) return;
+    const nextOwner = transferSelected === 'none' ? null : transferSelected;
+    setTransferLoading(true);
+    const { error } = await supabase
+      .from('characters')
+      .update({ owner_user_id: nextOwner, owner_participant_id: null } as any)
+      .eq('id', character.id);
+    setTransferLoading(false);
+    if (error) {
+      toast({ title: 'PCの受け渡しに失敗しました', description: error.message, variant: 'destructive' });
+      return;
+    }
+    toast({ title: 'PCを渡しました' });
+    setTransferOpen(false);
+    onUpdate();
+  };
 
   return (
     <div className="bg-sidebar-accent rounded-lg p-4 space-y-4">
@@ -1023,6 +1088,14 @@ export function CharacterSheet({
         </div>
       )}
 
+      {editable && isGM && !isNpc && (
+        <div>
+          <Button size="sm" variant="outline" onClick={() => setTransferOpen(true)}>
+            PCを渡す
+          </Button>
+        </div>
+      )}
+
       {/* Portrait Manager Dialog */}
       <PortraitManager
         open={showPortraitManager}
@@ -1032,6 +1105,57 @@ export function CharacterSheet({
         characterName={character.name}
         onUpdate={onUpdate}
       />
+
+      <Dialog open={transferOpen} onOpenChange={setTransferOpen}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>PCを渡す</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-3">
+            <div className="text-sm text-muted-foreground">
+              渡したい相手を選択してください。
+            </div>
+            {transferLoading ? (
+              <div className="text-sm text-muted-foreground">読み込み中...</div>
+            ) : (
+              <div className="space-y-2 max-h-60 overflow-y-auto pr-2">
+                <button
+                  type="button"
+                  className={`w-full text-left px-3 py-2 rounded border ${
+                    transferSelected === 'none' ? 'border-primary' : 'border-border/60'
+                  }`}
+                  onClick={() => setTransferSelected('none')}
+                >
+                  未割り当て（KP管理）
+                </button>
+                {transferTargets.map((target) => (
+                  <button
+                    key={target.userId}
+                    type="button"
+                    className={`w-full text-left px-3 py-2 rounded border ${
+                      transferSelected === target.userId ? 'border-primary' : 'border-border/60'
+                    }`}
+                    onClick={() => setTransferSelected(target.userId)}
+                  >
+                    <div className="flex items-center justify-between">
+                      <span className="text-sm">{target.name}</span>
+                      <span className="text-xs text-muted-foreground">{target.role}</span>
+                    </div>
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+          <DialogFooter className="gap-2">
+            <Button variant="outline" onClick={() => setTransferOpen(false)}>
+              閉じる
+            </Button>
+            <Button onClick={() => void handleTransferOwner()} disabled={transferLoading}>
+              確定
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
