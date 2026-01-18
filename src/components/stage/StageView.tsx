@@ -137,16 +137,22 @@ export function StageView({
   }, [room?.id]);
 
   useEffect(() => {
+    if (!titleScreenVisible) return;
     const el = titleViewportRef.current;
     if (!el) return;
-    const ro = new ResizeObserver(() => {
+    const measure = () => {
       const rect = el.getBoundingClientRect();
       if (rect.width < 1 || rect.height < 1) return;
       setTitleViewportSize({ width: rect.width, height: rect.height });
-    });
+    };
+    const ro = new ResizeObserver(measure);
     ro.observe(el);
-    return () => ro.disconnect();
-  }, []);
+    const raf = window.requestAnimationFrame(measure);
+    return () => {
+      window.cancelAnimationFrame(raf);
+      ro.disconnect();
+    };
+  }, [titleScreenVisible]);
 
   // BGM playback (separate from SE)
   useEffect(() => {
