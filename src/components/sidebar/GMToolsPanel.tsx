@@ -295,10 +295,13 @@ export function GMToolsPanel({
               ...(existing.derived || defaultDerived),
               SAN: latestSan,
             };
-            await supabase
+            const { error: updateError } = await supabase
               .from('characters')
               .update({ derived } as any)
               .eq('id', existing.id);
+            if (updateError) {
+              console.warn('Failed to update SAN:', updateError);
+            }
           }
           continue;
         }
@@ -317,6 +320,7 @@ export function GMToolsPanel({
             room_id: roomId,
             name: speaker,
             is_npc: false,
+            owner_user_id: user?.id ?? null,
             stats: defaultStats,
             derived,
             skills: defaultSkills,
