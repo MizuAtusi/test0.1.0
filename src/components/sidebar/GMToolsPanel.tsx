@@ -355,7 +355,6 @@ export function GMToolsPanel({
   const editMacroSeFileRef = useRef<HTMLInputElement>(null);
   const stageSeFileRef = useRef<HTMLInputElement>(null);
   const stageSeEditFileRef = useRef<HTMLInputElement>(null);
-  const stageBgEditFileRef = useRef<HTMLInputElement>(null);
   const stageBgmEditFileRef = useRef<HTMLInputElement>(null);
   const { toast } = useToast();
   const [draggingMacroId, setDraggingMacroId] = useState<string | null>(null);
@@ -369,10 +368,6 @@ export function GMToolsPanel({
 
   const [stageBgUploadUrl, setStageBgUploadUrl] = useState('');
   const [stageBgLabel, setStageBgLabel] = useState('');
-  const [editingBg, setEditingBg] = useState<Asset | null>(null);
-  const [bgEditOpen, setBgEditOpen] = useState(false);
-  const [bgEditLabel, setBgEditLabel] = useState('');
-  const [bgEditUploadUrl, setBgEditUploadUrl] = useState('');
 
   const [stageBgmUploadUrl, setStageBgmUploadUrl] = useState('');
   const [stageBgmLabel, setStageBgmLabel] = useState('');
@@ -1259,53 +1254,10 @@ export function GMToolsPanel({
     toast({ title: '背景を登録しました' });
   };
 
-  const openBgEditor = (asset: Asset) => {
-    setEditingBg(asset);
-    setBgEditLabel(asset.label ?? '');
-    setBgEditUploadUrl('');
-    setBgEditOpen(true);
-  };
-
-  const handleStageBgEditFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    const url = await uploadFile(file, `backgrounds/${roomId}`);
-    if (!url) {
-      toast({ title: 'アップロードに失敗しました', variant: 'destructive' });
-      return;
-    }
-    setBgEditUploadUrl(url);
-    if (stageBgEditFileRef.current) stageBgEditFileRef.current.value = '';
-    toast({ title: '背景画像をアップロードしました' });
-  };
-
-  const handleSaveBgEdit = async () => {
-    if (!editingBg) return;
-    const nextLabel = bgEditLabel.trim();
-    if (!nextLabel) {
-      toast({ title: '名前を入力してください', variant: 'destructive' });
-      return;
-    }
-    const nextUrl = bgEditUploadUrl || editingBg.url;
-    const { error } = await supabase.from('assets').update({ label: nextLabel, url: nextUrl } as any).eq('id', editingBg.id);
-    if (error) {
-      console.error('Background asset update error:', error);
-      toast({ title: '更新に失敗しました', variant: 'destructive' });
-      return;
-    }
-    if (bgEditUploadUrl && bgEditUploadUrl !== editingBg.url) void deleteFile(editingBg.url);
-    setAssets((prev) => prev.map((a) => (a.id === editingBg.id ? ({ ...a, label: nextLabel, url: nextUrl } as Asset) : a)));
-    setBgEditOpen(false);
-    setEditingBg(null);
-    setBgEditUploadUrl('');
-    toast({ title: '背景を更新しました' });
-  };
-
-  const handleDeleteBg = async () => {
-    if (!editingBg) return;
+  const handleDeleteBgAsset = async (asset: Asset) => {
     const ok = window.confirm('この背景を削除しますか？');
     if (!ok) return;
-    const target = editingBg;
+    const target = asset;
     const { error } = await supabase.from('assets').delete().eq('id', target.id);
     if (error) {
       console.error('Background asset delete error:', error);
@@ -1314,8 +1266,6 @@ export function GMToolsPanel({
     }
     void deleteFile(target.url);
     setAssets((prev) => prev.filter((a) => a.id !== target.id));
-    setBgEditOpen(false);
-    setEditingBg(null);
     toast({ title: '背景を削除しました' });
   };
 
@@ -1678,6 +1628,7 @@ export function GMToolsPanel({
                 className="w-full"
                 onClick={async () => {
                   await onUpdateStage({ background_url: null as any });
+                  onUpdateRoom({ background_screen: {} } as any);
                   toast({ title: '背景を消しました' });
                 }}
               >
@@ -1715,9 +1666,20 @@ export function GMToolsPanel({
                     size="icon"
                     className="h-9 w-9"
                     title="編集"
-                    onClick={() => openBgEditor(a)}
+                    onClick={() => setBackgroundEditorOpen(true)}
                   >
                     <Settings className="h-4 w-4" />
+                  </Button>
+                  <Button
+                    variant="outline"
+                    size="icon"
+                    className="h-9 w-9"
+                    title="削除"
+                    onClick={() => {
+                      void handleDeleteBgAsset(a);
+                    }}
+                  >
+                    <Trash2 className="h-4 w-4" />
                   </Button>
                 </div>
               ))
@@ -1957,6 +1919,7 @@ export function GMToolsPanel({
                         className="h-9 w-9"
                         title="削除"
                         onClick={() => {
+                          if (!window.confirm('この演出を削除しますか？')) return;
                           const next = normalizeEffectsConfig(loadEffectsConfig(room));
                           next.other = { triggers: (next.other?.triggers || []).filter((x) => x.id !== t.id) };
                           onUpdateRoom({ effects: next } as any);
@@ -3123,63 +3086,6 @@ export function GMToolsPanel({
             <Button onClick={handleUpdateMacro} disabled={!editingMacro}>
               保存
             </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-
-      <Dialog
-        open={bgEditOpen}
-        onOpenChange={(open) => {
-          setBgEditOpen(open);
-          if (!open) {
-            setEditingBg(null);
-            setBgEditUploadUrl('');
-          }
-        }}
-      >
-        <DialogContent className="sm:max-w-lg">
-          <DialogHeader>
-            <DialogTitle>背景設定</DialogTitle>
-          </DialogHeader>
-          <div className="space-y-4">
-            <div className="space-y-1">
-              <Label className="text-xs text-muted-foreground">名前</Label>
-              <Input value={bgEditLabel} onChange={(e) => setBgEditLabel(e.target.value)} />
-            </div>
-            <div className="space-y-2">
-              <Label className="text-xs text-muted-foreground">画像（変更する場合のみ）</Label>
-              <Button variant="outline" className="w-full" onClick={() => stageBgEditFileRef.current?.click()}>
-                <Upload className="w-4 h-4 mr-2" />
-                画像をアップロード
-              </Button>
-              <input
-                ref={stageBgEditFileRef}
-                type="file"
-                accept="image/*"
-                className="hidden"
-                onChange={handleStageBgEditFileChange}
-              />
-              {(bgEditUploadUrl || editingBg?.url) && (
-                <div
-                  className="h-32 rounded-lg bg-cover bg-center border border-border"
-                  style={{ backgroundImage: `url(${bgEditUploadUrl || editingBg?.url})` }}
-                />
-              )}
-            </div>
-          </div>
-          <DialogFooter className="flex items-center justify-between gap-2">
-            <Button variant="destructive" onClick={handleDeleteBg} disabled={!editingBg}>
-              <Trash2 className="w-4 h-4 mr-2" />
-              削除
-            </Button>
-            <div className="flex gap-2">
-              <Button variant="outline" onClick={() => setBgEditOpen(false)}>
-                閉じる
-              </Button>
-              <Button onClick={handleSaveBgEdit} disabled={!editingBg}>
-                保存
-              </Button>
-            </div>
           </DialogFooter>
         </DialogContent>
       </Dialog>
