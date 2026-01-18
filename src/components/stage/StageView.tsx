@@ -713,6 +713,8 @@ export function StageView({
           <TitleScreenCanvas
             items={titleScreenRender.images}
             stageRect={titleStageRect}
+            containerWidth={stageSize.width}
+            containerHeight={stageSize.height}
             showGuide={showStageGuide}
             pointerEvents="none"
           />

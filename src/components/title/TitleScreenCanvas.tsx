@@ -13,6 +13,8 @@ type TitleScreenItem = EffectImage & {
 export function TitleScreenCanvas({
   items,
   stageRect,
+  containerWidth,
+  containerHeight,
   isSelected,
   onPointerDown,
   showGuide,
@@ -21,6 +23,8 @@ export function TitleScreenCanvas({
 }: {
   items: TitleScreenItem[];
   stageRect: StageRect;
+  containerWidth?: number;
+  containerHeight?: number;
   isSelected?: (item: TitleScreenItem) => boolean;
   onPointerDown?: (event: ReactPointerEvent, item: TitleScreenItem) => void;
   showGuide?: boolean;
@@ -28,6 +32,25 @@ export function TitleScreenCanvas({
   pointerEvents?: React.CSSProperties['pointerEvents'];
 }) {
   const scale = stageRect.width > 0 ? stageRect.width / BASE_WIDTH : 0;
+  const isDev = import.meta.env?.DEV;
+
+  if (isDev && typeof containerWidth === 'number' && typeof containerHeight === 'number') {
+    const tooWide = stageRect.width > containerWidth + 0.5;
+    const tooTall = stageRect.height > containerHeight + 0.5;
+    if (tooWide || tooTall) {
+      console.error('[Title][rect:invalid]', {
+        containerWidth,
+        containerHeight,
+        stageRect,
+      });
+    } else {
+      console.log('[Title][rect]', {
+        containerWidth,
+        containerHeight,
+        stageRect,
+      });
+    }
+  }
 
   return (
     <div

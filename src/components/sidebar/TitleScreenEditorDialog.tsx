@@ -755,6 +755,8 @@ export function TitleScreenEditorDialog(props: {
                     <TitleScreenCanvas
                       items={renderItems}
                       stageRect={stageRect}
+                      containerWidth={previewSize.width}
+                      containerHeight={previewSize.height}
                       showGuide={showStageGuide}
                       isSelected={(item) =>
                         (selectedTarget?.kind === 'image' &&
