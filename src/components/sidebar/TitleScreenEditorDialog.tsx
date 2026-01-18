@@ -63,6 +63,13 @@ export function TitleScreenEditorDialog(props: {
   const showStageGuide = import.meta.env.DEV;
   const pcCharacters = useMemo(() => characters.filter((c) => !c.is_npc), [characters]);
   const bgmAssets = useMemo(() => assets.filter((a) => a.kind === 'bgm'), [assets]);
+  const bgmOptions = useMemo(() => {
+    const base = bgmAssets.map((a) => ({ id: a.id, url: a.url, label: a.label || 'BGM' }));
+    if (config.bgmUrl && !base.some((b) => b.url === config.bgmUrl)) {
+      base.unshift({ id: 'current', url: config.bgmUrl, label: '現在のBGM' });
+    }
+    return base;
+  }, [bgmAssets, config.bgmUrl]);
   const portraitOptionsByPc = useMemo(() => {
     const map = new Map<string, Array<{ key: string; label: string }>>();
     for (const pc of pcCharacters) {
@@ -172,24 +179,45 @@ export function TitleScreenEditorDialog(props: {
     });
   };
 
+  const getMaxZ = useCallback((cfg: TitleScreenConfig) => {
+    const imgMax = Math.max(0, ...(cfg.images || []).map((x) => (Number.isFinite(x.z) ? Number(x.z) : 0)));
+    const pcMax = Math.max(
+      0,
+      ...Object.values(cfg.pc || {}).map((x) => (Number.isFinite(x?.z) ? Number(x?.z) : 0)),
+    );
+    return Math.max(imgMax, pcMax);
+  }, []);
+
+  const getMinZ = useCallback((cfg: TitleScreenConfig) => {
+    const imgMin = (cfg.images || []).length
+      ? Math.min(...(cfg.images || []).map((x) => (Number.isFinite(x.z) ? Number(x.z) : 0)))
+      : 0;
+    const pcVals = Object.values(cfg.pc || {}).map((x) => (Number.isFinite(x?.z) ? Number(x?.z) : 0));
+    const pcMin = pcVals.length ? Math.min(...pcVals) : 0;
+    return Math.min(imgMin, pcMin, 0);
+  }, []);
+
   const addImage = (url: string, label: string) => {
+    const id = createId();
     setConfig((prev) => {
       const next = normalizeTitleScreenConfig(prev);
+      const nextZ = getMaxZ(next) + 1;
       const img: EffectImage = {
-        id: createId(),
+        id,
         label: label || '画像',
         url,
         x: 0,
         y: 0,
-        anchor: 'top-left',
+        anchor: 'center',
         scale: 1,
         rotate: 0,
         opacity: 1,
-        z: (next.images?.length ?? 0) + 1,
+        z: nextZ,
       };
       next.images = [...(next.images || []), img];
       return next;
     });
+    setSelectedTarget({ kind: 'image', imageId: id });
   };
 
   const deleteImage = (imageId: string) => {
@@ -388,7 +416,7 @@ export function TitleScreenEditorDialog(props: {
                   </SelectTrigger>
                   <SelectContent>
                     <SelectItem value="none">なし</SelectItem>
-                    {bgmAssets.map((a) => (
+                    {bgmOptions.map((a) => (
                       <SelectItem key={a.id} value={`url:${a.url}`}>
                         {a.label}
                       </SelectItem>
@@ -504,7 +532,13 @@ export function TitleScreenEditorDialog(props: {
                             <Select
                               value={eff.tag || 'none'}
                               onValueChange={(v) => {
-                                updatePc(pc.id, { tag: v === 'none' ? '' : v });
+                                const nextTag = v === 'none' ? '' : v;
+                                if (nextTag && !eff.tag) {
+                                  const nextZ = getMaxZ(normalizeTitleScreenConfig(config)) + 1;
+                                  updatePc(pc.id, { tag: nextTag, x: 0, y: 0, anchor: 'center', z: nextZ });
+                                } else {
+                                  updatePc(pc.id, { tag: nextTag });
+                                }
                                 setSelectedTarget({ kind: 'pc', characterId: pc.id });
                               }}
                             >
@@ -592,6 +626,30 @@ export function TitleScreenEditorDialog(props: {
                         />
                       </div>
                     </div>
+                    <div className="flex gap-2">
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        onClick={() => {
+                          const nextZ = getMaxZ(normalizeTitleScreenConfig(config)) + 1;
+                          updateImage(selectedImage.id, { z: nextZ });
+                        }}
+                      >
+                        手前に移動
+                      </Button>
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        onClick={() => {
+                          const nextZ = getMinZ(normalizeTitleScreenConfig(config)) - 1;
+                          updateImage(selectedImage.id, { z: nextZ });
+                        }}
+                      >
+                        背後に移動
+                      </Button>
+                    </div>
                   </div>
                 ) : selectedPc && selectedPcEffect ? (
                   <div className="space-y-3">
@@ -643,6 +701,30 @@ export function TitleScreenEditorDialog(props: {
                           onValueChange={(v) => updatePc(selectedPc.id, { opacity: v[0] })}
                         />
                       </div>
+                    </div>
+                    <div className="flex gap-2">
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        onClick={() => {
+                          const nextZ = getMaxZ(normalizeTitleScreenConfig(config)) + 1;
+                          updatePc(selectedPc.id, { z: nextZ });
+                        }}
+                      >
+                        手前に移動
+                      </Button>
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        onClick={() => {
+                          const nextZ = getMinZ(normalizeTitleScreenConfig(config)) - 1;
+                          updatePc(selectedPc.id, { z: nextZ });
+                        }}
+                      >
+                        背後に移動
+                      </Button>
                     </div>
                   </div>
                 ) : (
