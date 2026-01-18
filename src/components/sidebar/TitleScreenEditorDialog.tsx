@@ -25,7 +25,6 @@ import {
 } from '@/lib/titleScreen';
 import { getImageSize } from '@/lib/imageSize';
 import { convertCenterRelToTopLeftRel } from '@/lib/effectsPosition';
-import { fitRectContain } from '@/lib/stageFit';
 
 const EFFECT_BASE_WIDTH = 1200;
 const EFFECT_BASE_HEIGHT = 675;
@@ -59,7 +58,7 @@ export function TitleScreenEditorDialog(props: {
   const [previewSize, setPreviewSize] = useState<{ width: number; height: number }>(DEFAULT_PREVIEW_SIZE);
   const [previewNonce, setPreviewNonce] = useState(0);
   const stageRect = useMemo(
-    () => fitRectContain(previewSize.width, previewSize.height, 16 / 9),
+    () => ({ x: 0, y: 0, width: previewSize.width, height: previewSize.height }),
     [previewSize.width, previewSize.height]
   );
   const showStageGuide = import.meta.env.DEV;

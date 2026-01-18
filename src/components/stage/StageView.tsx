@@ -14,8 +14,8 @@ import {
   type EffectImage,
 } from '@/lib/effects';
 import { buildTitleScreenRenderList, hasTitleScreenConfig, loadTitleScreenConfig } from '@/lib/titleScreen';
-import { fitRectContain } from '@/lib/stageFit';
 import { TitleScreenCanvas } from '@/components/title/TitleScreenCanvas';
+import { StageFrame } from '@/components/stage/StageFrame';
 import { getPortraitTransformRel } from '@/lib/portraitTransformsShared';
 import {
   getAssetLegacyTransformRel,
@@ -106,10 +106,11 @@ export function StageView({
   );
   const overlayWidth = EFFECT_BASE_WIDTH * overlayScale;
   const overlayHeight = EFFECT_BASE_HEIGHT * overlayScale;
-  const titleStageRect = useMemo(
-    () => fitRectContain(stageSize.width, stageSize.height, 16 / 9),
-    [stageSize.width, stageSize.height]
-  );
+  const titleViewportRef = useRef<HTMLDivElement>(null);
+  const [titleViewportSize, setTitleViewportSize] = useState<{ width: number; height: number }>({
+    width: 0,
+    height: 0,
+  });
   const showStageGuide = import.meta.env.DEV;
 
   // Load per-room visibility preference once room id becomes available
@@ -134,6 +135,18 @@ export function StageView({
     window.addEventListener('trpg:portraitTransformChanged', handler as EventListener);
     return () => window.removeEventListener('trpg:portraitTransformChanged', handler as EventListener);
   }, [room?.id]);
+
+  useEffect(() => {
+    const el = titleViewportRef.current;
+    if (!el) return;
+    const ro = new ResizeObserver(() => {
+      const rect = el.getBoundingClientRect();
+      if (rect.width < 1 || rect.height < 1) return;
+      setTitleViewportSize({ width: rect.width, height: rect.height });
+    });
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
 
   // BGM playback (separate from SE)
   useEffect(() => {
@@ -710,14 +723,26 @@ export function StageView({
       {/* Title Screen Overlay */}
       {titleScreenVisible && titleScreenRender.images.length > 0 && (
         <div className="absolute inset-0 z-20 pointer-events-none">
-          <TitleScreenCanvas
-            items={titleScreenRender.images}
-            stageRect={titleStageRect}
-            containerWidth={stageSize.width}
-            containerHeight={stageSize.height}
-            showGuide={showStageGuide}
-            pointerEvents="none"
-          />
+          <StageFrame ratio={16 / 9} className="w-full h-full">
+            <div
+              ref={titleViewportRef}
+              className="absolute inset-0 overflow-hidden rounded-lg"
+            >
+              <TitleScreenCanvas
+                items={titleScreenRender.images}
+                stageRect={{
+                  x: 0,
+                  y: 0,
+                  width: titleViewportSize.width,
+                  height: titleViewportSize.height,
+                }}
+                containerWidth={titleViewportSize.width}
+                containerHeight={titleViewportSize.height}
+                showGuide={showStageGuide}
+                pointerEvents="none"
+              />
+            </div>
+          </StageFrame>
         </div>
       )}
 
