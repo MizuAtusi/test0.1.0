@@ -25,7 +25,15 @@ function normalizeRelMaybe(value: number, axis: 'x' | 'y') {
 }
 
 export function normalizeTitleScreenConfig(raw: any): TitleScreenConfig {
-  const c = (raw && typeof raw === 'object') ? raw : {};
+  let c = (raw && typeof raw === 'object') ? raw : {};
+  if (typeof raw === 'string') {
+    try {
+      const parsed = JSON.parse(raw);
+      c = (parsed && typeof parsed === 'object') ? parsed : {};
+    } catch {
+      c = {};
+    }
+  }
   const normalizeImages = (imgs: any) =>
     (Array.isArray(imgs) ? imgs : [])
       .map((x) => ({

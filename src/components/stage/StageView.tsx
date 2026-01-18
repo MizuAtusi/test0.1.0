@@ -797,7 +797,7 @@ export function StageView({
       )}
 
       {/* Text Window */}
-      {textLayout === 'overlay' && textWindowVisible && !showSecretOverlay && (
+      {textLayout === 'overlay' && textWindowVisible && !showSecretOverlay && !titleScreenVisible && (
         <div
           className="absolute left-0 right-0 z-30 novel-text-window flex flex-col overflow-hidden"
           style={{ ...textWindowStyle, height: overlayTextHeightPx, bottom: 8 }}

@@ -124,6 +124,7 @@ export function TitleScreenEditorDialog(props: {
 
   useEffect(() => {
     if (!open) return;
+    if (!room) return;
     const base = loadTitleScreenConfig(room);
     setConfig(base);
     setSelectedTarget(null);
@@ -147,7 +148,7 @@ export function TitleScreenEditorDialog(props: {
     return () => {
       cancelled = true;
     };
-  }, [open, roomId, convertImageToTopLeft, convertPcToTopLeft]);
+  }, [open, roomId, room?.title_screen, convertImageToTopLeft, convertPcToTopLeft]);
 
   useEffect(() => {
     const el = previewRef.current;
