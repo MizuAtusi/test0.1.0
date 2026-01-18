@@ -11,6 +11,7 @@ import { supabase } from '@/integrations/supabase/client';
 import { uploadFile } from '@/lib/upload';
 import { useToast } from '@/hooks/use-toast';
 import { StageFrame } from '@/components/stage/StageFrame';
+import { TitleScreenCanvas } from '@/components/title/TitleScreenCanvas';
 import {
   type EffectImage,
   type PcEffect,
@@ -24,9 +25,11 @@ import {
 } from '@/lib/titleScreen';
 import { getImageSize } from '@/lib/imageSize';
 import { convertCenterRelToTopLeftRel } from '@/lib/effectsPosition';
+import { fitRectContain } from '@/lib/stageFit';
 
 const EFFECT_BASE_WIDTH = 1200;
 const EFFECT_BASE_HEIGHT = 675;
+const DEFAULT_PREVIEW_SIZE = { width: 720, height: 405 };
 
 type SelectedTarget =
   | { kind: 'image'; imageId: string }
@@ -53,13 +56,12 @@ export function TitleScreenEditorDialog(props: {
   const imgFileRef = useRef<HTMLInputElement>(null);
   const bgmFileRef = useRef<HTMLInputElement>(null);
   const previewRef = useRef<HTMLDivElement>(null);
-  const [previewSize, setPreviewSize] = useState<{ width: number; height: number }>({ width: 720, height: 405 });
-  const previewScale = Math.min(
-    previewSize.width / EFFECT_BASE_WIDTH,
-    previewSize.height / EFFECT_BASE_HEIGHT
-  ) || 1;
-  const previewWidth = EFFECT_BASE_WIDTH * previewScale;
-  const previewHeight = EFFECT_BASE_HEIGHT * previewScale;
+  const [previewSize, setPreviewSize] = useState<{ width: number; height: number }>(DEFAULT_PREVIEW_SIZE);
+  const [previewNonce, setPreviewNonce] = useState(0);
+  const stageRect = useMemo(
+    () => fitRectContain(previewSize.width, previewSize.height, 16 / 9),
+    [previewSize.width, previewSize.height]
+  );
   const showStageGuide = import.meta.env.DEV;
   const pcCharacters = useMemo(() => characters.filter((c) => !c.is_npc), [characters]);
   const bgmAssets = useMemo(() => assets.filter((a) => a.kind === 'bgm'), [assets]);
@@ -155,7 +157,8 @@ export function TitleScreenEditorDialog(props: {
     if (!el) return;
     const ro = new ResizeObserver(() => {
       const rect = el.getBoundingClientRect();
-      setPreviewSize({ width: Math.max(1, rect.width), height: Math.max(1, rect.height) });
+      if (rect.width < 10 || rect.height < 10) return;
+      setPreviewSize({ width: rect.width, height: rect.height });
     });
     ro.observe(el);
     return () => ro.disconnect();
@@ -163,11 +166,14 @@ export function TitleScreenEditorDialog(props: {
 
   useEffect(() => {
     if (!open) return;
+    setPreviewSize(DEFAULT_PREVIEW_SIZE);
+    setPreviewNonce((prev) => prev + 1);
     const el = previewRef.current;
     if (!el) return;
     const id = window.requestAnimationFrame(() => {
       const rect = el.getBoundingClientRect();
-      setPreviewSize({ width: Math.max(1, rect.width), height: Math.max(1, rect.height) });
+      if (rect.width < 10 || rect.height < 10) return;
+      setPreviewSize({ width: rect.width, height: rect.height });
     });
     return () => window.cancelAnimationFrame(id);
   }, [open]);
@@ -318,8 +324,8 @@ export function TitleScreenEditorDialog(props: {
       startY: e.clientY,
       baseXRel: item.x,
       baseYRel: item.y,
-      width: EFFECT_BASE_WIDTH * previewScale,
-      height: EFFECT_BASE_HEIGHT * previewScale,
+      width: stageRect.width,
+      height: stageRect.height,
     };
   };
 
@@ -739,88 +745,35 @@ export function TitleScreenEditorDialog(props: {
               <div className="w-full h-[520px] max-h-[60vh] min-h-[360px]">
                 <StageFrame ratio={16 / 9} className="w-full h-full">
                   <div
+                    key={previewNonce}
                     ref={previewRef}
                     className="absolute inset-0 rounded-lg border border-border bg-gradient-to-b from-background/70 to-background/30 overflow-hidden"
                     onPointerMove={onPointerMove}
                     onPointerUp={onPointerUp}
                     onPointerLeave={onPointerUp}
                   >
-                    <div
-                      className="absolute left-1/2 top-1/2"
-                      style={{
-                        width: previewWidth,
-                        height: previewHeight,
-                        transform: 'translate(-50%, -50%)',
-                      }}
-                    >
-                      {showStageGuide && (
-                        <div
-                          className="absolute left-0 top-0 pointer-events-none"
-                          style={{
-                            width: previewWidth,
-                            height: previewHeight,
-                            border: '1px dashed rgba(255, 255, 255, 0.4)',
-                            boxSizing: 'border-box',
-                          }}
-                        />
-                      )}
-                      <div
-                        className="relative"
-                        style={{
-                          width: EFFECT_BASE_WIDTH,
-                          height: EFFECT_BASE_HEIGHT,
-                          transform: `scale(${previewScale})`,
-                          transformOrigin: 'top left',
-                        }}
-                      >
-                        {renderItems.map((item) => {
-                          const isSelected =
-                            (selectedTarget?.kind === 'image' && item.kind === 'image' && selectedTarget.imageId === item.id) ||
-                            (selectedTarget?.kind === 'pc' && item.kind === 'pc' && selectedTarget.characterId === item.characterId);
-                          const anchor = item.anchor === 'top-left' ? 'top-left' : 'center';
-                          const left = anchor === 'top-left'
-                            ? item.x * EFFECT_BASE_WIDTH
-                            : EFFECT_BASE_WIDTH / 2 + item.x * EFFECT_BASE_WIDTH;
-                          const top = anchor === 'top-left'
-                            ? item.y * EFFECT_BASE_HEIGHT
-                            : EFFECT_BASE_HEIGHT / 2 + item.y * EFFECT_BASE_HEIGHT;
-                          const baseTransform = anchor === 'top-left' ? 'translate(0, 0)' : 'translate(-50%, -50%)';
-                          const transformOrigin = anchor === 'top-left' ? 'top left' : 'center';
-                          return (
-                            <div
-                              key={item.id}
-                              className={`absolute ${isSelected ? 'ring-2 ring-primary' : ''}`}
-                              style={{
-                                left,
-                                top,
-                                transform: `${baseTransform} rotate(${item.rotate}deg) scale(${item.scale})`,
-                                transformOrigin,
-                                opacity: item.opacity,
-                                zIndex: item.z,
-                                cursor: 'grab',
-                                userSelect: 'none',
-                              }}
-                              onPointerDown={(e) =>
-                                onPointerDown(e, {
-                                  kind: item.kind,
-                                  id: item.id,
-                                  characterId: item.characterId,
-                                  x: item.x,
-                                  y: item.y,
-                                })
-                              }
-                            >
-                              <img
-                                src={item.url}
-                                alt={item.label}
-                                className="object-contain pointer-events-none select-none"
-                                style={{ maxWidth: EFFECT_BASE_WIDTH, maxHeight: EFFECT_BASE_HEIGHT }}
-                              />
-                            </div>
-                          );
-                        })}
-                      </div>
-                    </div>
+                    <TitleScreenCanvas
+                      items={renderItems}
+                      stageRect={stageRect}
+                      showGuide={showStageGuide}
+                      isSelected={(item) =>
+                        (selectedTarget?.kind === 'image' &&
+                          item.kind === 'image' &&
+                          selectedTarget.imageId === item.id) ||
+                        (selectedTarget?.kind === 'pc' &&
+                          item.kind === 'pc' &&
+                          selectedTarget.characterId === item.characterId)
+                      }
+                      onPointerDown={(e, item) =>
+                        onPointerDown(e, {
+                          kind: item.kind === 'pc' ? 'pc' : 'image',
+                          id: item.id,
+                          characterId: item.characterId,
+                          x: item.x,
+                          y: item.y,
+                        })
+                      }
+                    />
                   </div>
                 </StageFrame>
               </div>

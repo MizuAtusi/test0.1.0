@@ -14,6 +14,8 @@ import {
   type EffectImage,
 } from '@/lib/effects';
 import { buildTitleScreenRenderList, hasTitleScreenConfig, loadTitleScreenConfig } from '@/lib/titleScreen';
+import { fitRectContain } from '@/lib/stageFit';
+import { TitleScreenCanvas } from '@/components/title/TitleScreenCanvas';
 import { getPortraitTransformRel } from '@/lib/portraitTransformsShared';
 import {
   getAssetLegacyTransformRel,
@@ -104,6 +106,10 @@ export function StageView({
   );
   const overlayWidth = EFFECT_BASE_WIDTH * overlayScale;
   const overlayHeight = EFFECT_BASE_HEIGHT * overlayScale;
+  const titleStageRect = useMemo(
+    () => fitRectContain(stageSize.width, stageSize.height, 16 / 9),
+    [stageSize.width, stageSize.height]
+  );
   const showStageGuide = import.meta.env.DEV;
 
   // Load per-room visibility preference once room id becomes available
@@ -704,57 +710,12 @@ export function StageView({
       {/* Title Screen Overlay */}
       {titleScreenVisible && titleScreenRender.images.length > 0 && (
         <div className="absolute inset-0 z-20 pointer-events-none">
-          <div
-            className="absolute left-1/2 top-1/2"
-            style={{
-              width: overlayWidth,
-              height: overlayHeight,
-              transform: 'translate(-50%, -50%)',
-            }}
-          >
-            <div
-              className="relative"
-              style={{
-                width: EFFECT_BASE_WIDTH,
-                height: EFFECT_BASE_HEIGHT,
-                transform: `scale(${overlayScale})`,
-                transformOrigin: 'top left',
-              }}
-            >
-              {titleScreenRender.images.map((item) => {
-                const anchor = item.anchor === 'top-left' ? 'top-left' : 'center';
-                const left = anchor === 'top-left'
-                  ? item.x * EFFECT_BASE_WIDTH
-                  : EFFECT_BASE_WIDTH / 2 + item.x * EFFECT_BASE_WIDTH;
-                const top = anchor === 'top-left'
-                  ? item.y * EFFECT_BASE_HEIGHT
-                  : EFFECT_BASE_HEIGHT / 2 + item.y * EFFECT_BASE_HEIGHT;
-                const baseTransform = anchor === 'top-left' ? 'translate(0, 0)' : 'translate(-50%, -50%)';
-                const transformOrigin = anchor === 'top-left' ? 'top left' : 'center';
-                return (
-                <div
-                  key={item.id}
-                  className="absolute"
-                  style={{
-                    left,
-                    top,
-                    transform: `${baseTransform} rotate(${item.rotate}deg) scale(${item.scale})`,
-                    transformOrigin,
-                    opacity: item.opacity,
-                    zIndex: item.z,
-                  }}
-                >
-                  <img
-                    src={item.url}
-                    alt={item.label}
-                    className="object-contain"
-                    style={{ maxWidth: EFFECT_BASE_WIDTH, maxHeight: EFFECT_BASE_HEIGHT }}
-                  />
-                </div>
-                );
-              })}
-            </div>
-          </div>
+          <TitleScreenCanvas
+            items={titleScreenRender.images}
+            stageRect={titleStageRect}
+            showGuide={showStageGuide}
+            pointerEvents="none"
+          />
         </div>
       )}
 

@@ -1873,6 +1873,7 @@ export function GMToolsPanel({
                   size="sm"
                   className="w-full"
                   onClick={() => {
+                    if (!window.confirm('タイトル画面を削除してよろしいですか？')) return;
                     onUpdateRoom({ title_screen: {}, title_screen_visible: false } as any);
                   }}
                 >
