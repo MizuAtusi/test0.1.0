@@ -221,6 +221,7 @@ export function PortraitManager({
     };
   };
 
+  const selectedVariant = variants[selectedIndex] ?? null;
   const previewStyle = selectedVariant ? getPreviewStyle(selectedVariant, previewPos) : null;
 
   // Fetch existing assets
@@ -628,7 +629,6 @@ export function PortraitManager({
     setSaving(false);
   };
 
-  const selectedVariant = variants[selectedIndex] ?? null;
   const dragRef = useRef<{
     pos: PortraitPosition;
     startX: number;
