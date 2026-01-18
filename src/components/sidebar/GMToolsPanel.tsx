@@ -31,6 +31,12 @@ import {
 } from '@/lib/portraitTransformUtils';
 import { loadEffectsConfig, normalizeEffectsConfig } from '@/lib/effects';
 import { loadTitleScreenConfig, hasTitleScreenConfig } from '@/lib/titleScreen';
+import {
+  loadBackgroundScreenPresets,
+  removeBackgroundScreenPreset,
+  upsertBackgroundScreenPreset,
+  type BackgroundScreenPreset,
+} from '@/lib/backgroundScreen';
 import type { Participant, Character, StageState, Macro, Room, Asset, ActivePortrait, RoomPublicSettings, RoomJoinRequest, Profile } from '@/types/trpg';
 import { useAuth } from '@/hooks/useAuth';
 
@@ -340,11 +346,11 @@ export function GMToolsPanel({
   const [effectsVersion, setEffectsVersion] = useState(0);
   const [titleScreenEditorOpen, setTitleScreenEditorOpen] = useState(false);
   const [backgroundEditorOpen, setBackgroundEditorOpen] = useState(false);
+  const [backgroundEditorPreset, setBackgroundEditorPreset] = useState<BackgroundScreenPreset | null>(null);
   const [bgmAddOpen, setBgmAddOpen] = useState(false);
   const [seAddOpen, setSeAddOpen] = useState(false);
   const [macroAddOpen, setMacroAddOpen] = useState(false);
   const [assets, setAssets] = useState<Asset[]>([]);
-  const bgFileRef = useRef<HTMLInputElement>(null);
   const macroBgFileRef = useRef<HTMLInputElement>(null);
   const editMacroBgFileRef = useRef<HTMLInputElement>(null);
   const stageBgmFileRef = useRef<HTMLInputElement>(null);
@@ -365,8 +371,6 @@ export function GMToolsPanel({
   const [seEditLabel, setSeEditLabel] = useState('');
   const [seEditUploadUrl, setSeEditUploadUrl] = useState('');
 
-  const [stageBgUploadUrl, setStageBgUploadUrl] = useState('');
-  const [stageBgLabel, setStageBgLabel] = useState('');
 
   const [stageBgmUploadUrl, setStageBgmUploadUrl] = useState('');
   const [stageBgmLabel, setStageBgmLabel] = useState('');
@@ -911,20 +915,6 @@ export function GMToolsPanel({
     }
   };
 
-  const handleBgFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-
-    const url = await uploadFile(file, `backgrounds/${roomId}`);
-    if (url) {
-      setStageBgUploadUrl(url);
-      if (bgFileRef.current) bgFileRef.current.value = '';
-      toast({ title: '背景画像をアップロードしました' });
-    } else {
-      toast({ title: 'アップロードに失敗しました', variant: 'destructive' });
-    }
-  };
-
   const handleMacroBgFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -1223,51 +1213,6 @@ export function GMToolsPanel({
   const macroAssetButtonActiveClass =
     'bg-yellow-500/20 border-yellow-500 text-yellow-200 hover:bg-yellow-500/25 hover:border-yellow-500/90';
 
-  const handleRegisterStageBackground = async () => {
-    if (!stageBgUploadUrl || !stageBgLabel.trim()) {
-      toast({ title: '背景と名前を入力してください', variant: 'destructive' });
-      return;
-    }
-
-    const payload = {
-      room_id: roomId,
-      kind: 'background',
-      url: stageBgUploadUrl,
-      label: stageBgLabel.trim(),
-      layer_order: 0,
-      tag: '__bg__',
-      is_default: false,
-    } as any;
-
-    const { data, error } = await supabase.from('assets').insert(payload).select().single();
-    if (error) {
-      console.error('Background asset insert error:', error);
-      toast({ title: `背景登録に失敗しました: ${String(error.message || error)}`, variant: 'destructive' });
-      return;
-    }
-
-    setAssets((prev) => [...prev, data as Asset]);
-    setStageBgUploadUrl('');
-    setStageBgLabel('');
-    setBgAddOpen(false);
-    toast({ title: '背景を登録しました' });
-  };
-
-  const handleDeleteBgAsset = async (asset: Asset) => {
-    const ok = window.confirm('この背景を削除しますか？');
-    if (!ok) return;
-    const target = asset;
-    const { error } = await supabase.from('assets').delete().eq('id', target.id);
-    if (error) {
-      console.error('Background asset delete error:', error);
-      toast({ title: '削除に失敗しました', variant: 'destructive' });
-      return;
-    }
-    void deleteFile(target.url);
-    setAssets((prev) => prev.filter((a) => a.id !== target.id));
-    toast({ title: '背景を削除しました' });
-  };
-
   const handleRegisterStageBgm = async () => {
     if (!stageBgmUploadUrl || !stageBgmLabel.trim()) {
       toast({ title: 'BGMと名前を入力してください', variant: 'destructive' });
@@ -1468,7 +1413,7 @@ export function GMToolsPanel({
   const speakerNpc = newMacroSpeakerId !== 'gm' ? (npcCharacters.find(c => c.id === newMacroSpeakerId) ?? null) : null;
   const nonGmParticipants = participants.filter(p => p.role !== 'GM');
   const seAssets = assets.filter(isSeAsset);
-  const bgAssets = assets.filter(isBackgroundAsset);
+  const backgroundPresets = useMemo(() => loadBackgroundScreenPresets(room), [room?.background_screens, room?.id]);
   const bgmAssets = assets.filter(isBgmAsset);
   const canManagePublic = isGmUser;
   const otherEffectsTriggers = useMemo(() => {
@@ -1610,7 +1555,10 @@ export function GMToolsPanel({
               <Button
                 variant="outline"
                 className="w-full"
-                onClick={() => setBackgroundEditorOpen(true)}
+                onClick={() => {
+                  setBackgroundEditorPreset(null);
+                  setBackgroundEditorOpen(true);
+                }}
               >
                 <Upload className="w-4 h-4 mr-2" />
                 背景を登録
@@ -1638,27 +1586,31 @@ export function GMToolsPanel({
 
           {/* Registered Background Buttons */}
           <div className="space-y-2">
-            {bgAssets.length === 0 ? (
+            {backgroundPresets.length === 0 ? (
               <div className="text-xs text-muted-foreground">登録された背景はありません</div>
             ) : (
-              bgAssets.map((a) => (
-                <div key={a.id} className="flex items-center gap-2">
+              backgroundPresets.map((preset) => (
+                <div key={preset.id} className="flex items-center gap-2">
                   <Button
                     variant="secondary"
                     className="flex-1 justify-start"
                     onClick={async () => {
-                      await onUpdateStage({ background_url: a.url });
+                      onUpdateRoom({ background_screen: preset.config } as any);
+                      await onUpdateStage({ background_url: null as any });
                       toast({ title: '背景を変更しました' });
                     }}
                   >
-                    {a.label}
+                    {preset.name}
                   </Button>
                   <Button
                     variant="outline"
                     size="icon"
                     className="h-9 w-9"
                     title="編集"
-                    onClick={() => setBackgroundEditorOpen(true)}
+                    onClick={() => {
+                      setBackgroundEditorPreset(preset);
+                      setBackgroundEditorOpen(true);
+                    }}
                   >
                     <Settings className="h-4 w-4" />
                   </Button>
@@ -1668,7 +1620,12 @@ export function GMToolsPanel({
                     className="h-9 w-9"
                     title="削除"
                     onClick={() => {
-                      void handleDeleteBgAsset(a);
+                      if (!window.confirm('この背景を削除しますか？')) return;
+                      const next = removeBackgroundScreenPreset(backgroundPresets, preset.id);
+                      onUpdateRoom({ background_screens: next } as any);
+                      if ((room as any)?.background_screen?.id === preset.id) {
+                        onUpdateRoom({ background_screen: {} } as any);
+                      }
                     }}
                   >
                     <Trash2 className="h-4 w-4" />
@@ -2417,14 +2374,19 @@ export function GMToolsPanel({
 
       <BackgroundScreenEditorDialog
         open={backgroundEditorOpen}
-        onOpenChange={setBackgroundEditorOpen}
-        room={room}
-        assets={assets}
-        onAssetAdded={(asset) => {
-          setAssets((prev) => [...prev, asset]);
+        onOpenChange={(open) => {
+          setBackgroundEditorOpen(open);
+          if (!open) setBackgroundEditorPreset(null);
         }}
+        room={room}
+        preset={backgroundEditorPreset}
         onSaved={(next) => {
-          onUpdateRoom({ background_screen: next } as any);
+          const updatedPresets = upsertBackgroundScreenPreset(loadBackgroundScreenPresets(room), {
+            id: next.id || 'background',
+            name: next.name || '背景',
+            config: next,
+          });
+          onUpdateRoom({ background_screen: next, background_screens: updatedPresets } as any);
         }}
       />
 

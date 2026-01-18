@@ -4,8 +4,8 @@ import { Button } from '@/components/ui/button';
 import { Label } from '@/components/ui/label';
 import { Input } from '@/components/ui/input';
 import { Slider } from '@/components/ui/slider';
-import { Upload, Trash2, Plus } from 'lucide-react';
-import type { Asset, Room } from '@/types/trpg';
+import { Upload, Trash2 } from 'lucide-react';
+import type { Room } from '@/types/trpg';
 import { supabase } from '@/integrations/supabase/client';
 import { uploadFile } from '@/lib/upload';
 import { useToast } from '@/hooks/use-toast';
@@ -14,12 +14,13 @@ import { createId, type EffectImage } from '@/lib/effects';
 import { TitleScreenCanvas } from '@/components/title/TitleScreenCanvas';
 import {
   type BackgroundScreenConfig,
+  type BackgroundScreenPreset,
   normalizeBackgroundScreenConfig,
   loadBackgroundScreenConfig,
+  loadBackgroundScreenPresets,
+  upsertBackgroundScreenPreset,
 } from '@/lib/backgroundScreen';
 
-const EFFECT_BASE_WIDTH = 1200;
-const EFFECT_BASE_HEIGHT = 675;
 const DEFAULT_PREVIEW_SIZE = { width: 720, height: 405 };
 
 type SelectedTarget = { imageId: string } | null;
@@ -28,18 +29,18 @@ export function BackgroundScreenEditorDialog(props: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   room: Room | null;
-  assets: Asset[];
-  onAssetAdded?: (asset: Asset) => void;
+  preset?: BackgroundScreenPreset | null;
   onSaved?: (next: BackgroundScreenConfig) => void;
 }) {
-  const { open, onOpenChange, room, assets, onAssetAdded, onSaved } = props;
+  const { open, onOpenChange, room, preset, onSaved } = props;
   const { toast } = useToast();
   const roomId = room?.id || '';
   const [saving, setSaving] = useState(false);
   const [uploading, setUploading] = useState(false);
   const [config, setConfig] = useState<BackgroundScreenConfig>({ images: [] });
   const [selectedTarget, setSelectedTarget] = useState<SelectedTarget>(null);
-  const [registerLabel, setRegisterLabel] = useState('');
+  const [name, setName] = useState('');
+  const [presetId, setPresetId] = useState<string | null>(null);
   const imgFileRef = useRef<HTMLInputElement>(null);
   const previewRef = useRef<HTMLDivElement>(null);
   const [previewSize, setPreviewSize] = useState<{ width: number; height: number }>(DEFAULT_PREVIEW_SIZE);
@@ -49,15 +50,23 @@ export function BackgroundScreenEditorDialog(props: {
     [previewSize.width, previewSize.height]
   );
   const showStageGuide = import.meta.env.DEV;
-  const bgAssets = useMemo(() => assets.filter((a) => a.kind === 'background'), [assets]);
 
   useEffect(() => {
     if (!open) return;
+    if (preset) {
+      setConfig(normalizeBackgroundScreenConfig(preset.config));
+      setName(preset.name);
+      setPresetId(preset.id);
+      setSelectedTarget(null);
+      return;
+    }
     if (!room) return;
     const base = loadBackgroundScreenConfig(room);
     setConfig(base);
+    setName(base.name || '');
+    setPresetId(base.id || null);
     setSelectedTarget(null);
-  }, [open, room, room?.background_screen]);
+  }, [open, room, room?.background_screen, preset?.id]);
 
   useEffect(() => {
     const el = previewRef.current;
@@ -137,49 +146,11 @@ export function BackgroundScreenEditorDialog(props: {
 
   const handleUploadImage = async (file: File) => {
     if (!roomId) return;
-    const label = registerLabel.trim();
-    if (!label) {
-      toast({ title: '登録名を入力してください', variant: 'destructive' });
-      return;
-    }
     setUploading(true);
     try {
       const url = await uploadFile(file, `backgrounds/${roomId}`);
       if (!url) throw new Error('upload failed');
-      const payload = {
-        room_id: roomId,
-        kind: 'background',
-        url,
-        label,
-        layer_order: 0,
-        tag: '__bg__',
-        is_default: false,
-      } as any;
-
-      let data: any = null;
-      let error: any = null;
-      const primary = await supabase.from('assets').insert(payload).select().single();
-      data = primary.data;
-      error = primary.error;
-
-      if (error) {
-        const msg = String(error?.message || '');
-        const looksLikeKindConstraint = msg.includes('assets_kind_check') || String(error?.code || '') === '23514';
-        if (looksLikeKindConstraint) {
-          const fallback = await supabase
-            .from('assets')
-            .insert({ ...payload, kind: 'background' } as any)
-            .select()
-            .single();
-          data = fallback.data;
-          error = fallback.error;
-        }
-      }
-
-      if (error) throw error;
-      if (data) onAssetAdded?.(data as Asset);
-      addImage(url, label);
-      setRegisterLabel('');
+      addImage(url, file.name || '背景');
       toast({ title: '背景画像を追加しました' });
     } catch {
       toast({ title: 'アップロードに失敗しました', variant: 'destructive' });
@@ -235,10 +206,26 @@ export function BackgroundScreenEditorDialog(props: {
 
   const handleSave = async () => {
     if (!roomId) return;
+    if (!name.trim()) {
+      toast({ title: '名前を入力してください', variant: 'destructive' });
+      return;
+    }
     const next = normalizeBackgroundScreenConfig(config);
+    const nextId = presetId || createId();
+    next.id = nextId;
+    next.name = name.trim();
     setSaving(true);
     try {
-      const { error } = await supabase.from('rooms').update({ background_screen: next } as any).eq('id', roomId);
+      const presets = loadBackgroundScreenPresets(room);
+      const updatedPresets = upsertBackgroundScreenPreset(presets, {
+        id: nextId,
+        name: next.name || '背景',
+        config: next,
+      });
+      const { error } = await supabase
+        .from('rooms')
+        .update({ background_screen: next, background_screens: updatedPresets } as any)
+        .eq('id', roomId);
       if (error) throw error;
       toast({ title: '背景を保存しました' });
       onSaved?.(next);
@@ -272,30 +259,11 @@ export function BackgroundScreenEditorDialog(props: {
             <div className="col-span-6 space-y-3 min-h-0 flex flex-col">
               <div className="grid gap-3 md:grid-cols-2">
                 <div className="space-y-2">
-                  <Label className="text-xs text-muted-foreground">登録済み背景から追加</Label>
-                  <div className="max-h-48 overflow-y-auto space-y-2 rounded border border-border p-2">
-                    {bgAssets.length === 0 ? (
-                      <div className="text-xs text-muted-foreground">背景がありません</div>
-                    ) : (
-                      bgAssets.map((a) => (
-                        <button
-                          key={a.id}
-                          type="button"
-                          className="w-full flex items-center gap-2 rounded-md border px-2 py-1 text-left text-sm border-border/40"
-                          onClick={() => addImage(a.url, a.label || '背景')}
-                        >
-                          <div className="h-8 w-8 rounded bg-cover bg-center border border-border/40" style={{ backgroundImage: `url(${a.url})` }} />
-                          <div className="flex-1 truncate">{a.label || '背景'}</div>
-                          <Plus className="h-4 w-4 text-muted-foreground" />
-                        </button>
-                      ))
-                    )}
-                  </div>
                   <div className="space-y-1">
-                    <Label className="text-xs text-muted-foreground">登録名</Label>
+                    <Label className="text-xs text-muted-foreground">名前</Label>
                     <Input
-                      value={registerLabel}
-                      onChange={(e) => setRegisterLabel(e.target.value)}
+                      value={name}
+                      onChange={(e) => setName(e.target.value)}
                       placeholder="例：森、街、屋敷…"
                     />
                   </div>
@@ -307,7 +275,7 @@ export function BackgroundScreenEditorDialog(props: {
                     onClick={() => imgFileRef.current?.click()}
                   >
                     <Upload className="w-4 h-4 mr-2" />
-                    背景画像をアップロード
+                    画像をアップロード
                   </Button>
                   <input
                     ref={imgFileRef}

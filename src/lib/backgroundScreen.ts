@@ -2,7 +2,15 @@ import type { Room } from '@/types/trpg';
 import { createId, type EffectImage } from '@/lib/effects';
 
 export type BackgroundScreenConfig = {
+  id?: string;
+  name?: string;
   images: EffectImage[];
+};
+
+export type BackgroundScreenPreset = {
+  id: string;
+  name: string;
+  config: BackgroundScreenConfig;
 };
 
 const DEFAULT_BACKGROUND_SCREEN: BackgroundScreenConfig = {
@@ -47,12 +55,46 @@ export function normalizeBackgroundScreenConfig(raw: any): BackgroundScreenConfi
     .filter((x) => !!x.url);
 
   return {
+    id: typeof c.id === 'string' ? c.id : undefined,
+    name: typeof c.name === 'string' ? c.name : undefined,
     images,
   };
 }
 
 export function loadBackgroundScreenConfig(room: Room | null): BackgroundScreenConfig {
   return normalizeBackgroundScreenConfig(room?.background_screen || {});
+}
+
+export function normalizeBackgroundScreenPresets(raw: any): BackgroundScreenPreset[] {
+  const list = Array.isArray(raw) ? raw : [];
+  return list
+    .map((entry) => {
+      const id = typeof entry?.id === 'string' ? entry.id : createId();
+      const name = typeof entry?.name === 'string' ? entry.name : '';
+      const config = normalizeBackgroundScreenConfig(entry?.config || {});
+      return { id, name, config };
+    })
+    .filter((entry) => entry.name);
+}
+
+export function loadBackgroundScreenPresets(room: Room | null): BackgroundScreenPreset[] {
+  return normalizeBackgroundScreenPresets(room?.background_screens || []);
+}
+
+export function upsertBackgroundScreenPreset(
+  list: BackgroundScreenPreset[],
+  preset: BackgroundScreenPreset
+): BackgroundScreenPreset[] {
+  const idx = list.findIndex((p) => p.id === preset.id);
+  if (idx === -1) return [...list, preset];
+  return list.map((p) => (p.id === preset.id ? preset : p));
+}
+
+export function removeBackgroundScreenPreset(
+  list: BackgroundScreenPreset[],
+  presetId: string
+): BackgroundScreenPreset[] {
+  return list.filter((p) => p.id !== presetId);
 }
 
 export function hasBackgroundScreenConfig(config: BackgroundScreenConfig): boolean {

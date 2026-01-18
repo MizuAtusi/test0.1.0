@@ -11,6 +11,7 @@ export interface Room {
   title_screen?: any;
   title_screen_visible?: boolean;
   background_screen?: any;
+  background_screens?: any;
   house_rules?: string;
   created_at: string;
 }

@@ -359,6 +359,10 @@ export function PortraitManager({
   };
 
   const handleSave = async () => {
+    if (variants.some((v) => !v.tag.trim())) {
+      toast({ title: 'タグが設定されていない立ち絵があります', variant: 'destructive' });
+      return;
+    }
     const activeSnapshot = (() => {
       const frame = previewRef.current;
       const target = previewItemRef.current;
