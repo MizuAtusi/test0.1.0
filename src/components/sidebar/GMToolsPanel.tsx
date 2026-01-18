@@ -340,7 +340,6 @@ export function GMToolsPanel({
   const [effectsVersion, setEffectsVersion] = useState(0);
   const [titleScreenEditorOpen, setTitleScreenEditorOpen] = useState(false);
   const [backgroundEditorOpen, setBackgroundEditorOpen] = useState(false);
-  const [bgAddOpen, setBgAddOpen] = useState(false);
   const [bgmAddOpen, setBgmAddOpen] = useState(false);
   const [seAddOpen, setSeAddOpen] = useState(false);
   const [macroAddOpen, setMacroAddOpen] = useState(false);
@@ -1613,13 +1612,6 @@ export function GMToolsPanel({
                 className="w-full"
                 onClick={() => setBackgroundEditorOpen(true)}
               >
-                背景を編集
-              </Button>
-              <Button
-                variant="outline"
-                className="w-full"
-                onClick={() => setBackgroundEditorOpen(true)}
-              >
                 <Upload className="w-4 h-4 mr-2" />
                 背景を登録
               </Button>
@@ -2428,6 +2420,9 @@ export function GMToolsPanel({
         onOpenChange={setBackgroundEditorOpen}
         room={room}
         assets={assets}
+        onAssetAdded={(asset) => {
+          setAssets((prev) => [...prev, asset]);
+        }}
         onSaved={(next) => {
           onUpdateRoom({ background_screen: next } as any);
         }}

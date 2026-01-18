@@ -29,15 +29,17 @@ export function BackgroundScreenEditorDialog(props: {
   onOpenChange: (open: boolean) => void;
   room: Room | null;
   assets: Asset[];
+  onAssetAdded?: (asset: Asset) => void;
   onSaved?: (next: BackgroundScreenConfig) => void;
 }) {
-  const { open, onOpenChange, room, assets, onSaved } = props;
+  const { open, onOpenChange, room, assets, onAssetAdded, onSaved } = props;
   const { toast } = useToast();
   const roomId = room?.id || '';
   const [saving, setSaving] = useState(false);
   const [uploading, setUploading] = useState(false);
   const [config, setConfig] = useState<BackgroundScreenConfig>({ images: [] });
   const [selectedTarget, setSelectedTarget] = useState<SelectedTarget>(null);
+  const [newLabel, setNewLabel] = useState('');
   const imgFileRef = useRef<HTMLInputElement>(null);
   const previewRef = useRef<HTMLDivElement>(null);
   const [previewSize, setPreviewSize] = useState<{ width: number; height: number }>(DEFAULT_PREVIEW_SIZE);
@@ -135,11 +137,49 @@ export function BackgroundScreenEditorDialog(props: {
 
   const handleUploadImage = async (file: File) => {
     if (!roomId) return;
+    if (!newLabel.trim()) {
+      toast({ title: '背景名を入力してください', variant: 'destructive' });
+      return;
+    }
     setUploading(true);
     try {
       const url = await uploadFile(file, `backgrounds/${roomId}`);
       if (!url) throw new Error('upload failed');
-      addImage(url, file.name || '背景');
+      const label = newLabel.trim();
+      const payload = {
+        room_id: roomId,
+        kind: 'background',
+        url,
+        label,
+        layer_order: 0,
+        tag: '__bg__',
+        is_default: false,
+      } as any;
+
+      let data: any = null;
+      let error: any = null;
+      const primary = await supabase.from('assets').insert(payload).select().single();
+      data = primary.data;
+      error = primary.error;
+
+      if (error) {
+        const msg = String(error?.message || '');
+        const looksLikeKindConstraint = msg.includes('assets_kind_check') || String(error?.code || '') === '23514';
+        if (looksLikeKindConstraint) {
+          const fallback = await supabase
+            .from('assets')
+            .insert({ ...payload, kind: 'background' } as any)
+            .select()
+            .single();
+          data = fallback.data;
+          error = fallback.error;
+        }
+      }
+
+      if (error) throw error;
+      if (data) onAssetAdded?.(data as Asset);
+      addImage(url, label);
+      setNewLabel('');
       toast({ title: '背景画像を追加しました' });
     } catch {
       toast({ title: 'アップロードに失敗しました', variant: 'destructive' });
@@ -242,7 +282,7 @@ export function BackgroundScreenEditorDialog(props: {
                           key={a.id}
                           type="button"
                           className="w-full flex items-center gap-2 rounded-md border px-2 py-1 text-left text-sm border-border/40"
-                          onClick={() => addImage(a.url, a.label || '背景')}
+                          onClick={() => addImage(a.url, newLabel.trim() || a.label || '背景')}
                         >
                           <div className="h-8 w-8 rounded bg-cover bg-center border border-border/40" style={{ backgroundImage: `url(${a.url})` }} />
                           <div className="flex-1 truncate">{a.label || '背景'}</div>
@@ -250,6 +290,14 @@ export function BackgroundScreenEditorDialog(props: {
                         </button>
                       ))
                     )}
+                  </div>
+                  <div className="space-y-1">
+                    <Label className="text-xs text-muted-foreground">背景名</Label>
+                    <Input
+                      value={newLabel}
+                      onChange={(e) => setNewLabel(e.target.value)}
+                      placeholder="例：森、街、屋敷…"
+                    />
                   </div>
                   <Button
                     type="button"
