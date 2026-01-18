@@ -204,7 +204,13 @@ export function BackgroundScreenEditorDialog(props: {
       onSaved?.(next);
       onOpenChange(false);
     } catch (e: any) {
-      toast({ title: '保存に失敗しました', description: e?.message, variant: 'destructive' });
+      const message = String(e?.message || '');
+      const needsMigration = message.includes('background_screen') && message.includes('column');
+      toast({
+        title: '保存に失敗しました',
+        description: needsMigration ? '背景レイヤー用のDBカラムが未適用です。マイグレーションを実行してください。' : message,
+        variant: 'destructive',
+      });
     } finally {
       setSaving(false);
     }

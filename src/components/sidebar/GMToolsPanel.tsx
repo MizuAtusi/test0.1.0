@@ -1668,7 +1668,7 @@ export function GMToolsPanel({
               <Button
                 variant="outline"
                 className="w-full"
-                onClick={() => setBgAddOpen(true)}
+                onClick={() => setBackgroundEditorOpen(true)}
               >
                 <Upload className="w-4 h-4 mr-2" />
                 背景を登録
@@ -2554,53 +2554,6 @@ export function GMToolsPanel({
           </ScrollArea>
           <DialogFooter>
             <Button variant="outline" onClick={() => setMacroAssetPicker((p) => ({ ...p, open: false }))}>
-              閉じる
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-
-      <Dialog open={bgAddOpen} onOpenChange={setBgAddOpen}>
-        <DialogContent className="sm:max-w-lg">
-          <DialogHeader>
-            <DialogTitle>背景を登録</DialogTitle>
-          </DialogHeader>
-          <div className="space-y-3">
-            <Button variant="outline" className="w-full" onClick={() => bgFileRef.current?.click()}>
-              <Upload className="w-4 h-4 mr-2" />
-              画像をアップロード
-            </Button>
-            <input
-              ref={bgFileRef}
-              type="file"
-              accept="image/*"
-              className="hidden"
-              onChange={handleBgFileChange}
-            />
-            <div className="space-y-1">
-              <Label className="text-xs text-muted-foreground">名前</Label>
-              <Input
-                value={stageBgLabel}
-                onChange={(e) => setStageBgLabel(e.target.value)}
-                placeholder="例：森、街、屋敷…"
-              />
-            </div>
-            <Button
-              className="w-full"
-              onClick={handleRegisterStageBackground}
-              disabled={!stageBgUploadUrl || !stageBgLabel.trim()}
-            >
-              登録
-            </Button>
-            {stageBgUploadUrl && (
-              <div
-                className="h-24 rounded-lg bg-cover bg-center border border-border"
-                style={{ backgroundImage: `url(${stageBgUploadUrl})` }}
-              />
-            )}
-          </div>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setBgAddOpen(false)}>
               閉じる
             </Button>
           </DialogFooter>
