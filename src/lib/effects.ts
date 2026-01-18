@@ -387,14 +387,6 @@ export function buildEffectRenderList(params: {
   const pcImages: Array<EffectImage & { isPc: true; characterId: string }> = [];
   const pcMap = base.pc || {};
   const targetId = rollerCharacterId && typeof rollerCharacterId === 'string' ? rollerCharacterId : null;
-  // PCごとの演出は「誰が振ったか」が分からないと誤爆するので、IDが取れない場合は表示しない
-  if (!targetId) {
-    return {
-      images: [...images].sort((a, b) => (a.z ?? 0) - (b.z ?? 0)),
-      seUrl,
-      durationMs,
-    };
-  }
   characters
     .filter((c) => !c.is_npc)
     .forEach((c) => {

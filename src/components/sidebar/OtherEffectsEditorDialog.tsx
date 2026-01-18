@@ -31,6 +31,7 @@ import { convertCenterRelToTopLeftRel } from '@/lib/effectsPosition';
 
 const EFFECT_BASE_WIDTH = 1200;
 const EFFECT_BASE_HEIGHT = 675;
+const DEFAULT_PREVIEW_SIZE = { width: 720, height: 405 };
 
 type SelectedTarget =
   | { kind: 'image'; imageId: string }
@@ -72,7 +73,8 @@ export function OtherEffectsEditorDialog(props: {
   const seFileRef = useRef<HTMLInputElement>(null);
   const createNonceRef = useRef<number | undefined>(undefined);
   const previewRef = useRef<HTMLDivElement>(null);
-  const [previewSize, setPreviewSize] = useState<{ width: number; height: number }>({ width: 720, height: 405 });
+  const [previewSize, setPreviewSize] = useState<{ width: number; height: number }>(DEFAULT_PREVIEW_SIZE);
+  const [previewNonce, setPreviewNonce] = useState(0);
   const previewScale = Math.min(
     previewSize.width / EFFECT_BASE_WIDTH,
     previewSize.height / EFFECT_BASE_HEIGHT
@@ -409,7 +411,8 @@ export function OtherEffectsEditorDialog(props: {
     if (!el) return;
     const ro = new ResizeObserver(() => {
       const rect = el.getBoundingClientRect();
-      setPreviewSize({ width: Math.max(1, rect.width), height: Math.max(1, rect.height) });
+      if (rect.width < 10 || rect.height < 10) return;
+      setPreviewSize({ width: rect.width, height: rect.height });
     });
     ro.observe(el);
     return () => ro.disconnect();
@@ -417,11 +420,14 @@ export function OtherEffectsEditorDialog(props: {
 
   useEffect(() => {
     if (!open) return;
+    setPreviewSize(DEFAULT_PREVIEW_SIZE);
+    setPreviewNonce((prev) => prev + 1);
     const el = previewRef.current;
     if (!el) return;
     const id = window.requestAnimationFrame(() => {
       const rect = el.getBoundingClientRect();
-      setPreviewSize({ width: Math.max(1, rect.width), height: Math.max(1, rect.height) });
+      if (rect.width < 10 || rect.height < 10) return;
+      setPreviewSize({ width: rect.width, height: rect.height });
     });
     return () => window.cancelAnimationFrame(id);
   }, [open, selectedId]);
@@ -845,7 +851,7 @@ export function OtherEffectsEditorDialog(props: {
                             />
                           </div>
                           <div className="space-y-1">
-                            <Label className="text-xs text-muted-foreground">Z</Label>
+                            <Label className="text-xs text-muted-foreground">レイヤー</Label>
                             <Input
                               type="number"
                               value={selectedImage.z}
@@ -891,7 +897,7 @@ export function OtherEffectsEditorDialog(props: {
                             />
                           </div>
                           <div className="space-y-1">
-                            <Label className="text-xs text-muted-foreground">Z</Label>
+                            <Label className="text-xs text-muted-foreground">レイヤー</Label>
                             <Input
                               type="number"
                               value={selectedPcEffect.z}
@@ -909,6 +915,7 @@ export function OtherEffectsEditorDialog(props: {
                     <div className="h-[360px] min-h-0">
                       <StageFrame ratio={16 / 9} className="w-full h-full">
                         <div
+                          key={previewNonce}
                           ref={previewRef}
                           className="absolute inset-0 rounded-lg border border-border bg-gradient-to-b from-background/70 to-background/30 overflow-hidden"
                           onPointerMove={onPointerMove}

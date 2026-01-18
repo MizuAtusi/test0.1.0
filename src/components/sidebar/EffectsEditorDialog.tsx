@@ -29,6 +29,7 @@ import { convertCenterRelToTopLeftRel } from '@/lib/effectsPosition';
 
 const EFFECT_BASE_WIDTH = 1200;
 const EFFECT_BASE_HEIGHT = 675;
+const DEFAULT_PREVIEW_SIZE = { width: 720, height: 405 };
 
 type SelectedTarget =
   | { kind: 'image'; effect: EffectKind; imageId: string }
@@ -58,7 +59,8 @@ export function EffectsEditorDialog(props: {
   const imgFileRef = useRef<HTMLInputElement>(null);
   const seFileRef = useRef<HTMLInputElement>(null);
   const previewRef = useRef<HTMLDivElement>(null);
-  const [previewSize, setPreviewSize] = useState<{ width: number; height: number }>({ width: 720, height: 405 });
+  const [previewSize, setPreviewSize] = useState<{ width: number; height: number }>(DEFAULT_PREVIEW_SIZE);
+  const [previewNonce, setPreviewNonce] = useState(0);
   const previewScale = Math.min(
     previewSize.width / EFFECT_BASE_WIDTH,
     previewSize.height / EFFECT_BASE_HEIGHT
@@ -291,7 +293,8 @@ export function EffectsEditorDialog(props: {
     if (!el) return;
     const ro = new ResizeObserver(() => {
       const rect = el.getBoundingClientRect();
-      setPreviewSize({ width: Math.max(1, rect.width), height: Math.max(1, rect.height) });
+      if (rect.width < 10 || rect.height < 10) return;
+      setPreviewSize({ width: rect.width, height: rect.height });
     });
     ro.observe(el);
     return () => ro.disconnect();
@@ -299,11 +302,14 @@ export function EffectsEditorDialog(props: {
 
   useEffect(() => {
     if (!open) return;
+    setPreviewSize(DEFAULT_PREVIEW_SIZE);
+    setPreviewNonce((prev) => prev + 1);
     const el = previewRef.current;
     if (!el) return;
     const id = window.requestAnimationFrame(() => {
       const rect = el.getBoundingClientRect();
-      setPreviewSize({ width: Math.max(1, rect.width), height: Math.max(1, rect.height) });
+      if (rect.width < 10 || rect.height < 10) return;
+      setPreviewSize({ width: rect.width, height: rect.height });
     });
     return () => window.cancelAnimationFrame(id);
   }, [open]);
@@ -742,6 +748,7 @@ export function EffectsEditorDialog(props: {
             <div className="w-full h-[520px] max-h-[60vh] min-h-[360px]">
               <StageFrame ratio={16 / 9} className="w-full h-full">
                 <div
+                  key={previewNonce}
                   ref={previewRef}
                   className="absolute inset-0 rounded-lg border border-border bg-gradient-to-b from-background/70 to-background/30 overflow-hidden"
                   onPointerMove={onPointerMove}

@@ -390,29 +390,14 @@ export function BackgroundScreenEditorDialog(props: {
                           onValueChange={(v) => updateImage(selectedImage.id, { opacity: v[0] })}
                         />
                       </div>
-                      <div className="flex gap-2">
-                        <Button
-                          type="button"
-                          variant="outline"
-                          size="sm"
-                          onClick={() => {
-                            const nextZ = getMaxZ(normalizeBackgroundScreenConfig(config)) + 1;
-                            updateImage(selectedImage.id, { z: nextZ });
-                          }}
-                        >
-                          手前に移動
-                        </Button>
-                        <Button
-                          type="button"
-                          variant="outline"
-                          size="sm"
-                          onClick={() => {
-                            const nextZ = getMinZ(normalizeBackgroundScreenConfig(config)) - 1;
-                            updateImage(selectedImage.id, { z: nextZ });
-                          }}
-                        >
-                          背後に移動
-                        </Button>
+                      <div className="space-y-1">
+                        <Label className="text-xs text-muted-foreground">レイヤー</Label>
+                        <Input
+                          type="number"
+                          value={Number.isFinite(selectedImage.z) ? selectedImage.z : 0}
+                          onChange={(e) => updateImage(selectedImage.id, { z: Number(e.target.value) || 0 })}
+                          className="h-8 text-xs"
+                        />
                       </div>
                     </div>
                   ) : (

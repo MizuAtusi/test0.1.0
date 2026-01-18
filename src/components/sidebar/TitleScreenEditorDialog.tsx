@@ -632,29 +632,14 @@ export function TitleScreenEditorDialog(props: {
                         />
                       </div>
                     </div>
-                    <div className="flex gap-2">
-                      <Button
-                        type="button"
-                        variant="outline"
-                        size="sm"
-                        onClick={() => {
-                          const nextZ = getMaxZ(normalizeTitleScreenConfig(config)) + 1;
-                          updateImage(selectedImage.id, { z: nextZ });
-                        }}
-                      >
-                        手前に移動
-                      </Button>
-                      <Button
-                        type="button"
-                        variant="outline"
-                        size="sm"
-                        onClick={() => {
-                          const nextZ = getMinZ(normalizeTitleScreenConfig(config)) - 1;
-                          updateImage(selectedImage.id, { z: nextZ });
-                        }}
-                      >
-                        背後に移動
-                      </Button>
+                    <div className="space-y-1">
+                      <Label className="text-xs text-muted-foreground">レイヤー</Label>
+                      <Input
+                        type="number"
+                        value={Number.isFinite(selectedImage.z) ? selectedImage.z : 0}
+                        onChange={(e) => updateImage(selectedImage.id, { z: Number(e.target.value) || 0 })}
+                        className="h-8 text-xs"
+                      />
                     </div>
                   </div>
                 ) : selectedPc && selectedPcEffect ? (
@@ -708,29 +693,14 @@ export function TitleScreenEditorDialog(props: {
                         />
                       </div>
                     </div>
-                    <div className="flex gap-2">
-                      <Button
-                        type="button"
-                        variant="outline"
-                        size="sm"
-                        onClick={() => {
-                          const nextZ = getMaxZ(normalizeTitleScreenConfig(config)) + 1;
-                          updatePc(selectedPc.id, { z: nextZ });
-                        }}
-                      >
-                        手前に移動
-                      </Button>
-                      <Button
-                        type="button"
-                        variant="outline"
-                        size="sm"
-                        onClick={() => {
-                          const nextZ = getMinZ(normalizeTitleScreenConfig(config)) - 1;
-                          updatePc(selectedPc.id, { z: nextZ });
-                        }}
-                      >
-                        背後に移動
-                      </Button>
+                    <div className="space-y-1">
+                      <Label className="text-xs text-muted-foreground">レイヤー</Label>
+                      <Input
+                        type="number"
+                        value={Number.isFinite(selectedPcEffect.z) ? selectedPcEffect.z : 0}
+                        onChange={(e) => updatePc(selectedPc.id, { z: Number(e.target.value) || 0 })}
+                        className="h-8 text-xs"
+                      />
                     </div>
                   </div>
                 ) : (
