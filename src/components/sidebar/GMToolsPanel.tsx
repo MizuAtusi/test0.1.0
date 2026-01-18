@@ -1621,11 +1621,11 @@ export function GMToolsPanel({
                 onClick={async () => {
                   await onUpdateStage({ background_url: null as any });
                   onUpdateRoom({ background_screen: {} } as any);
-                  toast({ title: '背景を消しました' });
+                  toast({ title: '背景を隠しました' });
                 }}
               >
                 <Trash2 className="w-4 h-4 mr-2" />
-                背景を消す
+                背景を隠す
               </Button>
               {stageState?.background_url && (
                 <div

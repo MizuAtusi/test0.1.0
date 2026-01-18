@@ -39,7 +39,7 @@ export function BackgroundScreenEditorDialog(props: {
   const [uploading, setUploading] = useState(false);
   const [config, setConfig] = useState<BackgroundScreenConfig>({ images: [] });
   const [selectedTarget, setSelectedTarget] = useState<SelectedTarget>(null);
-  const [newLabel, setNewLabel] = useState('');
+  const [registerLabel, setRegisterLabel] = useState('');
   const imgFileRef = useRef<HTMLInputElement>(null);
   const previewRef = useRef<HTMLDivElement>(null);
   const [previewSize, setPreviewSize] = useState<{ width: number; height: number }>(DEFAULT_PREVIEW_SIZE);
@@ -137,15 +137,15 @@ export function BackgroundScreenEditorDialog(props: {
 
   const handleUploadImage = async (file: File) => {
     if (!roomId) return;
-    if (!newLabel.trim()) {
-      toast({ title: '背景名を入力してください', variant: 'destructive' });
+    const label = registerLabel.trim();
+    if (!label) {
+      toast({ title: '登録名を入力してください', variant: 'destructive' });
       return;
     }
     setUploading(true);
     try {
       const url = await uploadFile(file, `backgrounds/${roomId}`);
       if (!url) throw new Error('upload failed');
-      const label = newLabel.trim();
       const payload = {
         room_id: roomId,
         kind: 'background',
@@ -179,7 +179,7 @@ export function BackgroundScreenEditorDialog(props: {
       if (error) throw error;
       if (data) onAssetAdded?.(data as Asset);
       addImage(url, label);
-      setNewLabel('');
+      setRegisterLabel('');
       toast({ title: '背景画像を追加しました' });
     } catch {
       toast({ title: 'アップロードに失敗しました', variant: 'destructive' });
@@ -282,7 +282,7 @@ export function BackgroundScreenEditorDialog(props: {
                           key={a.id}
                           type="button"
                           className="w-full flex items-center gap-2 rounded-md border px-2 py-1 text-left text-sm border-border/40"
-                          onClick={() => addImage(a.url, newLabel.trim() || a.label || '背景')}
+                          onClick={() => addImage(a.url, a.label || '背景')}
                         >
                           <div className="h-8 w-8 rounded bg-cover bg-center border border-border/40" style={{ backgroundImage: `url(${a.url})` }} />
                           <div className="flex-1 truncate">{a.label || '背景'}</div>
@@ -292,10 +292,10 @@ export function BackgroundScreenEditorDialog(props: {
                     )}
                   </div>
                   <div className="space-y-1">
-                    <Label className="text-xs text-muted-foreground">背景名</Label>
+                    <Label className="text-xs text-muted-foreground">登録名</Label>
                     <Input
-                      value={newLabel}
-                      onChange={(e) => setNewLabel(e.target.value)}
+                      value={registerLabel}
+                      onChange={(e) => setRegisterLabel(e.target.value)}
                       placeholder="例：森、街、屋敷…"
                     />
                   </div>
