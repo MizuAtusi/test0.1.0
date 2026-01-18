@@ -10,6 +10,7 @@ export interface Room {
   effects?: any;
   title_screen?: any;
   title_screen_visible?: boolean;
+  background_screen?: any;
   house_rules?: string;
   created_at: string;
 }

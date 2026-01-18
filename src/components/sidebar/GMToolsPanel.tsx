@@ -19,6 +19,7 @@ import { ThemeSettings } from './ThemeSettings';
 import { EffectsEditorDialog } from './EffectsEditorDialog';
 import { OtherEffectsEditorDialog } from './OtherEffectsEditorDialog';
 import { TitleScreenEditorDialog } from './TitleScreenEditorDialog';
+import { BackgroundScreenEditorDialog } from './BackgroundScreenEditorDialog';
 import { getDisplayText } from '@/lib/expressionTag';
 import { getPortraitTransform } from '@/lib/portraitTransforms';
 import { getPortraitTransformRel } from '@/lib/portraitTransformsShared';
@@ -338,6 +339,7 @@ export function GMToolsPanel({
   const [otherEffectsActiveId, setOtherEffectsActiveId] = useState<string | null>(null);
   const [effectsVersion, setEffectsVersion] = useState(0);
   const [titleScreenEditorOpen, setTitleScreenEditorOpen] = useState(false);
+  const [backgroundEditorOpen, setBackgroundEditorOpen] = useState(false);
   const [bgAddOpen, setBgAddOpen] = useState(false);
   const [bgmAddOpen, setBgmAddOpen] = useState(false);
   const [seAddOpen, setSeAddOpen] = useState(false);
@@ -1659,6 +1661,13 @@ export function GMToolsPanel({
               <Button
                 variant="outline"
                 className="w-full"
+                onClick={() => setBackgroundEditorOpen(true)}
+              >
+                背景を編集
+              </Button>
+              <Button
+                variant="outline"
+                className="w-full"
                 onClick={() => setBgAddOpen(true)}
               >
                 <Upload className="w-4 h-4 mr-2" />
@@ -2448,6 +2457,16 @@ export function GMToolsPanel({
         assets={assets}
         onSaved={(next) => {
           onUpdateRoom({ title_screen: next } as any);
+        }}
+      />
+
+      <BackgroundScreenEditorDialog
+        open={backgroundEditorOpen}
+        onOpenChange={setBackgroundEditorOpen}
+        room={room}
+        assets={assets}
+        onSaved={(next) => {
+          onUpdateRoom({ background_screen: next } as any);
         }}
       />
 

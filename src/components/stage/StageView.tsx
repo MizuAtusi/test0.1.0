@@ -14,6 +14,7 @@ import {
   type EffectImage,
 } from '@/lib/effects';
 import { buildTitleScreenRenderList, hasTitleScreenConfig, loadTitleScreenConfig } from '@/lib/titleScreen';
+import { buildBackgroundScreenRenderList, hasBackgroundScreenConfig, loadBackgroundScreenConfig } from '@/lib/backgroundScreen';
 import { TitleScreenCanvas } from '@/components/title/TitleScreenCanvas';
 import { StageFrame } from '@/components/stage/StageFrame';
 import { getPortraitTransformRel } from '@/lib/portraitTransformsShared';
@@ -90,9 +91,18 @@ export function StageView({
     () => buildTitleScreenRenderList({ config: titleScreenConfig, characters, assets: portraitAssets }),
     [titleScreenConfig, characters, portraitAssets]
   );
+  const backgroundScreenConfig = useMemo(() => loadBackgroundScreenConfig(room), [room]);
+  const backgroundScreenRender = useMemo(
+    () => buildBackgroundScreenRenderList(backgroundScreenConfig),
+    [backgroundScreenConfig]
+  );
   const titleScreenVisible = useMemo(
     () => !!room?.title_screen_visible && hasTitleScreenConfig(titleScreenConfig),
     [room?.title_screen_visible, titleScreenConfig]
+  );
+  const backgroundScreenVisible = useMemo(
+    () => hasBackgroundScreenConfig(backgroundScreenConfig),
+    [backgroundScreenConfig]
   );
   const overlayTextHeightPx = (() => {
     // Keep the overlay window from covering the entire stage when the stage gets small.
@@ -525,11 +535,23 @@ export function StageView({
       <div 
         className={`stage-background z-0 ${showSecretOverlay ? 'secret-blur' : ''}`}
         style={{
-          backgroundImage: stageState?.background_url 
+          backgroundImage: !backgroundScreenVisible && stageState?.background_url 
             ? `url(${stageState.background_url})` 
             : 'linear-gradient(to bottom, hsl(250 40% 8%), hsl(250 40% 4%))',
         }}
       />
+      {backgroundScreenVisible && backgroundScreenRender.images.length > 0 && (
+        <div className="absolute inset-0 z-0 pointer-events-none">
+          <TitleScreenCanvas
+            items={backgroundScreenRender.images}
+            stageRect={{ x: 0, y: 0, width: stageSize.width, height: stageSize.height }}
+            containerWidth={stageSize.width}
+            containerHeight={stageSize.height}
+            showGuide={showStageGuide}
+            pointerEvents="none"
+          />
+        </div>
+      )}
 
       {/* Gradient Overlay */}
       <div className="absolute inset-0 z-10 bg-gradient-to-t from-background via-transparent to-transparent opacity-60" />
